@@ -1,0 +1,29 @@
+# Secrets
+.env
+*.pem
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Node
+node_modules/
+dist/
+build/
+
+# Data (kept in the separate data repo)
+data/
+*.csv
+*.parquet
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

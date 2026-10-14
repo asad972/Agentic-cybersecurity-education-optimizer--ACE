@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ace/threat_event",
+  "title": "threats.events message",
+  "description": "Produced by the threat agent from public threat-intelligence feeds.",
+  "type": "object",
+  "required": ["event_id", "source", "country", "observed_at", "threat_type"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "source": { "type": "string", "examples": ["otx", "abuseipdb"] },
+    "country": { "type": "string", "pattern": "^[A-Z]{2}$" },
+    "observed_at": { "type": "string", "format": "date-time" },
+    "threat_type": { "type": "string", "examples": ["malware", "phishing", "ddos", "scanning"] },
+    "severity": { "type": "integer", "minimum": 0, "maximum": 10 }
+  },
+  "additionalProperties": false
+}

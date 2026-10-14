@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ace/raw_job",
+  "title": "raw.jobs / jobs.clean message",
+  "description": "Produced by the job ads agent; S1 forwards non-duplicates unchanged to jobs.clean.",
+  "type": "object",
+  "required": ["event_id", "source", "country", "posted_date", "job_title", "description"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "source": { "type": "string" },
+    "url": { "type": "string" },
+    "country": { "type": "string", "pattern": "^[A-Z]{2}$" },
+    "posted_date": { "type": "string", "format": "date" },
+    "job_title": { "type": "string" },
+    "company": { "type": "string" },
+    "description": { "type": "string" }
+  },
+  "additionalProperties": false
+}

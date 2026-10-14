@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ace/skills_needed",
+  "title": "skills.needed / skills.offered message",
+  "description": "Produced by S2 skill extraction. Same shape for skills.offered, where source is a profile dataset.",
+  "type": "object",
+  "required": ["event_id", "source", "country", "posted_date", "skills"],
+  "properties": {
+    "event_id": { "type": "string", "format": "uuid" },
+    "source": { "type": "string", "examples": ["linkedin_jobs", "linkedin_profiles"] },
+    "country": { "type": "string", "pattern": "^[A-Z]{2}$", "description": "ISO 3166-1 alpha-2; also the Kafka message key" },
+    "posted_date": { "type": "string", "format": "date" },
+    "job_title": { "type": "string" },
+    "ecsf_role": { "type": "string", "description": "ECSF role profile name" },
+    "skills": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+  },
+  "additionalProperties": false
+}
