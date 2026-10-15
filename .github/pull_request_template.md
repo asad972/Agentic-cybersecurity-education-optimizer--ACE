@@ -7,4 +7,5 @@
 
 ## Checklist
 - [ ] No secrets or large data files committed
-- [ ] Shared contracts (schemas, CQL, topics) unchanged, or the change was agreed by the whole team
+- [ ] Shared contracts (schemas, topics, CQL, taxonomy, shared `ace` package) unchanged, or the change was agreed by the whole team
+- [ ] A stream stage change includes at least one test with fake records

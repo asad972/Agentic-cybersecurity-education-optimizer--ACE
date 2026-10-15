@@ -38,6 +38,7 @@ services:
         condition: service_healthy
     volumes:
       - ./deploy/kafka/create-topics.sh:/create-topics.sh:ro
+      - ./shared/schemas/topics.csv:/topics.csv:ro
     entrypoint: ["/bin/bash", "/create-topics.sh"]
     environment:
       BOOTSTRAP: kafka:29092

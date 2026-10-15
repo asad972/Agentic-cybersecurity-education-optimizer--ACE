@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ace/alert",
+  "title": "alerts.drift / alerts.threats message",
+  "description": "Produced by S6 (drift) and S8 (threat_burst).",
+  "type": "object",
+  "required": [
+    "country",
+    "day",
+    "created_at",
+    "alert_type",
+    "subject",
+    "score"
+  ],
+  "properties": {
+    "country": {
+      "type": "string",
+      "pattern": "^([A-Z]{2}|EU)$",
+      "description": "Country, or EU for EU-level drift"
+    },
+    "day": {
+      "type": "string",
+      "format": "date"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "alert_type": {
+      "type": "string",
+      "enum": [
+        "drift",
+        "threat_burst"
+      ]
+    },
+    "subject": {
+      "type": "string",
+      "description": "Skill (drift) or threat type (threat_burst)"
+    },
+    "score": {
+      "type": "number"
+    },
+    "details": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ace/agg_top10",
+  "title": "agg.top10_demand message",
+  "description": "Top 10 for one country over the 30 days ending on day.",
+  "type": "object",
+  "required": [
+    "country",
+    "day",
+    "kind",
+    "items"
+  ],
+  "properties": {
+    "country": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$",
+      "description": "ISO 3166-1 alpha-2; also the Kafka message key"
+    },
+    "day": {
+      "type": "string",
+      "format": "date"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "skill",
+        "certification"
+      ]
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 10,
+      "items": {
+        "type": "object",
+        "required": [
+          "rank",
+          "item",
+          "count"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "item": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

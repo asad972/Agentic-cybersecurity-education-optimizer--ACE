@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ace/raw_programme",
+  "title": "raw.programmes message",
+  "description": "Produced by the education agent from ENISA's CYBERHEAD database.",
+  "type": "object",
+  "required": [
+    "programme_id",
+    "country",
+    "name",
+    "institution",
+    "ecsf_roles"
+  ],
+  "properties": {
+    "programme_id": {
+      "type": "string"
+    },
+    "country": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$",
+      "description": "ISO 3166-1 alpha-2; also the Kafka message key"
+    },
+    "name": {
+      "type": "string"
+    },
+    "institution": {
+      "type": "string"
+    },
+    "level": {
+      "type": "string",
+      "enum": [
+        "bachelor",
+        "master",
+        "phd",
+        "other"
+      ]
+    },
+    "ecsf_roles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "url": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

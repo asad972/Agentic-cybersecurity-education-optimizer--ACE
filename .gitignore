@@ -1,3 +1,6 @@
+# Personal notes (not shared)
+*.local.md
+
 # Secrets
 .env
 *.pem
@@ -21,6 +24,8 @@ build/
 data/
 *.csv
 *.parquet
+!shared/taxonomy/*.csv
+!shared/schemas/topics.csv
 
 # Editors and OS
 .vscode/

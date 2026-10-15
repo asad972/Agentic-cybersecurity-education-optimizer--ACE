@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ace/collect_task",
+  "title": "tasks.collect message",
+  "description": "Produced by the orchestrator. One collection task for one agent, from a fixed list of actions. Agents refuse any action not listed here.",
+  "type": "object",
+  "required": ["task_id", "agent", "action", "params", "reason", "decided_by", "created_at"],
+  "properties": {
+    "task_id": { "type": "string", "format": "uuid" },
+    "agent": { "type": "string", "enum": ["job-agent", "education-agent", "threat-agent", "platform-agent"], "description": "Also the Kafka message key" },
+    "action": { "type": "string", "enum": ["fetch_job_ads", "refresh_programmes", "refresh_threats", "rerun_platform_analysis"] },
+    "params": {
+      "type": "object",
+      "properties": {
+        "country": { "type": "string", "pattern": "^[A-Z]{2}$" },
+        "max_pages": { "type": "integer", "minimum": 1, "maximum": 10 },
+        "hours": { "type": "integer", "minimum": 1, "maximum": 24 }
+      },
+      "additionalProperties": false
+    },
+    "reason": { "type": "string", "maxLength": 300, "description": "One sentence: why the orchestrator chose this task" },
+    "decided_by": { "type": "string", "enum": ["llm", "rules"] },
+    "created_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}
