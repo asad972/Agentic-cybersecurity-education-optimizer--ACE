@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ace/invalid_message",
+  "title": "errors.invalid message",
+  "description": "Published by the shared ace package when a message fails its schema check. The original message is kept as text so nothing is lost.",
+  "type": "object",
+  "required": ["topic", "producer", "reason", "payload", "detected_at"],
+  "properties": {
+    "topic": { "type": "string", "description": "Topic the message was meant for; also the Kafka message key" },
+    "producer": { "type": "string", "examples": ["job-agent", "s4-demand-count"] },
+    "reason": { "type": "string", "description": "Validation error" },
+    "payload": { "type": "string", "description": "The original message, unchanged" },
+    "detected_at": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}

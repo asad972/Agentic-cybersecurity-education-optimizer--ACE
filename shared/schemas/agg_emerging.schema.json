@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ace/agg_emerging",
+  "title": "agg.emerging_skills message",
+  "description": "Produced by S9 once per closed day: Unmapped Skill mentions seen often in one country over the 30 days ending on day. Candidates for the Skill Taxonomy; never shown on maps.",
+  "type": "object",
+  "required": [
+    "country",
+    "day",
+    "items"
+  ],
+  "properties": {
+    "country": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$",
+      "description": "ISO 3166-1 alpha-2; also the Kafka message key"
+    },
+    "day": {
+      "type": "string",
+      "format": "date"
+    },
+    "items": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "required": [
+          "mention",
+          "count"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "mention": {
+            "type": "string",
+            "description": "Unmapped mention, lower-cased"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Lossy Counting estimate (never more than the true count)"
+          },
+          "max_error": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Upper bound on how much count may be below the true count"
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

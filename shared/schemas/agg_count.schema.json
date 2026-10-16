@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ace/agg_count",
+  "title": "agg.demand_daily / agg.supply_daily message",
+  "description": "One closed window for one country. For Supply, count is the 365-day stock as of day. job_ads is only set on agg.demand_daily.",
+  "type": "object",
+  "required": [
+    "country",
+    "day",
+    "counts"
+  ],
+  "properties": {
+    "country": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$",
+      "description": "ISO 3166-1 alpha-2; also the Kafka message key"
+    },
+    "day": {
+      "type": "string",
+      "format": "date"
+    },
+    "job_ads": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "counts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "kind",
+          "item",
+          "count"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "skill",
+              "certification",
+              "role"
+            ]
+          },
+          "item": {
+            "type": "string"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

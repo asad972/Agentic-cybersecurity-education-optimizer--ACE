@@ -1,0 +1,39 @@
+name: Shared contract change
+description: Propose a change to a file every member depends on (schemas, topics, CQL, taxonomy, shared ace package, API endpoints)
+labels: ["shared-contract"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Shared contracts are agreed by the whole team (see CONTRIBUTING.md). Mention every member and wait for everyone's 👍 before opening the pull request.
+  - type: dropdown
+    id: contract
+    attributes:
+      label: Which contract
+      options:
+        - Kafka message schema (shared/schemas/)
+        - Topic list (shared/schemas/topics.csv)
+        - Cassandra tables (storage/cql/schema.cql)
+        - Skill Taxonomy (shared/taxonomy/)
+        - Shared ace package (shared/python/ace/)
+        - API endpoint
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: The change
+      description: What changes, exactly (field, topic, column, function).
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+    validations:
+      required: true
+  - type: textarea
+    id: affects
+    attributes:
+      label: Who it affects
+      description: Which members' code has to change, and how.

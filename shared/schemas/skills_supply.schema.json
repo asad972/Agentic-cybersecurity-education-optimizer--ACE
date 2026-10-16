@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ace/skills_supply",
+  "title": "skills.supply message",
+  "description": "Produced by S2 from one anonymized profile. profile_date is the event time S5 windows on (e.g. last update or latest job start).",
+  "type": "object",
+  "required": [
+    "event_id",
+    "source",
+    "country",
+    "profile_date",
+    "skills"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source": {
+      "type": "string",
+      "examples": [
+        "stackoverflow_survey"
+      ]
+    },
+    "country": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$",
+      "description": "ISO 3166-1 alpha-2; also the Kafka message key"
+    },
+    "profile_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "ecsf_role": {
+      "type": "string"
+    },
+    "skills": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "certifications": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "unmapped": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": false
+}

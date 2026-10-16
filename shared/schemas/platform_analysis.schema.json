@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ace/platform_analysis",
+  "title": "analysis.platforms message",
+  "description": "Produced by the platform analysis agent. One message per platform and feature.",
+  "type": "object",
+  "required": [
+    "platform",
+    "feature",
+    "supported",
+    "analysed_at"
+  ],
+  "properties": {
+    "platform": {
+      "type": "string",
+      "examples": [
+        "cyberseek",
+        "enisa_ecsf",
+        "isc2_workforce_study"
+      ]
+    },
+    "feature": {
+      "type": "string",
+      "examples": [
+        "supply_demand_map",
+        "career_pathway",
+        "certifications"
+      ]
+    },
+    "supported": {
+      "type": "boolean"
+    },
+    "notes": {
+      "type": "string"
+    },
+    "analysed_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}

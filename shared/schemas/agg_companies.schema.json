@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ace/agg_companies",
+  "title": "agg.companies_daily message",
+  "description": "Produced by S10 once per closed day: estimated number of distinct companies posting job ads in one country, on that day and over the 30 days ending on day.",
+  "type": "object",
+  "required": [
+    "country",
+    "day",
+    "companies_day",
+    "companies_30d"
+  ],
+  "properties": {
+    "country": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$",
+      "description": "ISO 3166-1 alpha-2; also the Kafka message key"
+    },
+    "day": {
+      "type": "string",
+      "format": "date"
+    },
+    "companies_day": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "HyperLogLog estimate for this day"
+    },
+    "companies_30d": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "HyperLogLog estimate over the last 30 days (merge of the daily sketches)"
+    },
+    "missing_company": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Job ads on this day with no company field"
+    }
+  },
+  "additionalProperties": false
+}

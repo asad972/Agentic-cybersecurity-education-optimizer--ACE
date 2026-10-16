@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ace/raw_profile",
+  "title": "raw.profiles message",
+  "description": "Produced by the profile agent. Personal identifiers (name, URL, employer names) are removed before publishing.",
+  "type": "object",
+  "required": [
+    "event_id",
+    "source",
+    "country",
+    "profile_date",
+    "text"
+  ],
+  "properties": {
+    "event_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "source": {
+      "type": "string"
+    },
+    "country": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$",
+      "description": "ISO 3166-1 alpha-2; also the Kafka message key"
+    },
+    "profile_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "headline": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string",
+      "description": "Skills, summary and experience text without personal identifiers"
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,49 @@
+name: Task
+description: A piece of work from the WBS (agent, stream stage, dashboard, report section, …)
+labels: []
+body:
+  - type: dropdown
+    id: member
+    attributes:
+      label: Member
+      options:
+        - M1
+        - M2
+        - M3
+        - M4
+        - M5
+        - All members
+    validations:
+      required: true
+  - type: input
+    id: wbs
+    attributes:
+      label: WBS code
+      description: From the work breakdown structure, e.g. 5.9
+      placeholder: "5.9"
+  - type: textarea
+    id: what
+    attributes:
+      label: What to build
+      description: One or two sentences. Link the section of docs/ARCHITECTURE.md that describes it.
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: Done when
+      description: The deliverable another member can check.
+      value: |
+        - [ ]
+    validations:
+      required: true
+  - type: input
+    id: depends
+    attributes:
+      label: Waits on
+      description: Issue numbers this task needs first, e.g. #4, #7
+  - type: input
+    id: due
+    attributes:
+      label: Due
+      placeholder: "Nov 13"
