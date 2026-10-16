@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Architecture and work plan
+    url: https://github.com/asad972/Agentic-cybersecurity-education-optimizer--ACE/blob/master/docs/ARCHITECTURE.md
+    about: Read the design before opening a task.

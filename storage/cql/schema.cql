@@ -234,7 +234,7 @@ CREATE TABLE IF NOT EXISTS llm_cache (
 );
 
 CREATE TABLE IF NOT EXISTS replay_position (
-  dataset     text,          -- e.g. 'linkedin_jobs', 'testdata_profiles'
+  dataset     text,          -- e.g. 'de_job_postings', 'stackoverflow_survey', 'testdata_profiles'
   row_number  bigint,        -- last row published
   event_date  date,          -- event time of that row
   updated_at  timestamp,

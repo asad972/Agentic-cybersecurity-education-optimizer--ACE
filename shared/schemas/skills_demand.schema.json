@@ -19,7 +19,7 @@
     "source": {
       "type": "string",
       "examples": [
-        "linkedin_jobs"
+        "adzuna"
       ]
     },
     "country": {

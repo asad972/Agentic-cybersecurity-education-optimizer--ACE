@@ -13,11 +13,11 @@ Joint project for the **Open Source Technologies (OST)** and **Stream Mining (SM
 
 | Member | Area | Stream stages | Dashboard |
 | --- | --- | --- | --- |
-| M1 – _name_ | Job ads and profile agents; Skill Taxonomy | S1 near-duplicate filter, S2 skill extraction | Role explorer (career pathway) |
-| M2 – _name_ | Kafka, Cassandra, sink, deployment, monitoring | S3 Top 10 (Space-Saving), S4 Demand frequency (Count-Min) | Skills demand |
-| M3 – _name_ | Batch forecasting, Skills Gap, LLM module | S5 Supply frequency (exponential histograms), S6 drift detection (ADWIN) | Supply, gap and forecast |
-| M4 – _name_ | API and web app shell, Europe map, threat agent | S7 threat frequency, S8 burst detection (Half-Space Trees) | Threat landscape |
-| M5 – _name_ | Education, workforce and platform analysis agents | S9 emerging skills (Lossy Counting), S10 hiring companies (HyperLogLog) | Education and workforce |
+| M1 – Singh Multani Gurinder | Job ads and profile agents; Skill Taxonomy | S1 near-duplicate filter, S2 skill extraction | Role explorer (career pathway) |
+| M2 – Ullah Asad | Kafka, Cassandra, sink, deployment, monitoring | S3 Top 10 (Space-Saving), S4 Demand frequency (Count-Min) | Skills demand |
+| M3 – Bailey Kelen | Batch forecasting, Skills Gap, LLM module | S5 Supply frequency (exponential histograms), S6 drift detection (ADWIN) | Supply, gap and forecast |
+| M4 – Roomi Babar Ali | API and web app shell, Europe map, threat agent | S7 threat frequency, S8 burst detection (Half-Space Trees) | Threat landscape |
+| M5 – Richartz Lena | Education, workforce and platform analysis agents | S9 emerging skills (Lossy Counting), S10 hiring companies (HyperLogLog) | Education and workforce |
 
 ## Repository layout
 

@@ -1,8 +1,18 @@
 # ACE – System Architecture
 
-Last updated: Oct 15, 2026
+Last updated: Oct 16, 2026
 
-> **Status: proposal, not yet agreed by the team.** The Oct 15 changes are listed for discussion in [design-update-2026-10-15.md](design-update-2026-10-15.md). Until the team agrees, treat this document as a draft.
+## Team
+
+The document refers to members as M1–M5. The full split of work is in [Per-member work plan, schedule and risks](#per-member-work-plan-schedule-and-risks).
+
+| Code | Member | Main area |
+| --- | --- | --- |
+| M1 | Singh Multani Gurinder | Data agents (job ads, profiles), orchestrator, Skill Taxonomy |
+| M2 | Ullah Asad | Kafka, Cassandra, sink, deployment, monitoring; team coordinator |
+| M3 | Bailey Kelen | Batch forecasting, Skills Gap, LLM module |
+| M4 | Roomi Babar Ali | API, web app and Europe map, threat agent |
+| M5 | Richartz Lena | Education, workforce and platform analysis agents |
 
 ## Overview
 
@@ -26,7 +36,7 @@ The system has six layers. Each layer is a separate containerized service, and t
 | Requirement (from the brief) | ACE design |
 | --- | --- |
 | Agentic solution, separate AI agents per sub-task | 6 agents (job ads, profiles, education, workforce, threats, platform analysis) + skill extraction, directed by a planning orchestrator that decides what to collect |
-| Datasets: LinkedIn job ads and profiles, CYBERHEAD, ISC2 | All four, plus public threat-intelligence feeds for the threat map |
+| Dataset from online sources (e.g. LinkedIn job ads and professional user profiles, CYBERHEAD database, ISC2 annual reports) | European job APIs and a job-ads dataset for Demand, the Stack Overflow Developer Survey for Supply, CYBERHEAD for education, ISC2 reports for workforce figures, plus public threat-intelligence feeds for the threat map. Public LinkedIn data is almost all from the US, so it is not used (see Risks) |
 | Skills needed vs skills offered | Demand (job ads) vs Supply (profiles), compared through one shared Skill Taxonomy |
 | Kafka, Cassandra, Docker Swarm/Kubernetes, no Spark | Kafka (KRaft), Cassandra, Kubernetes with Swarm fallback, Python stream processing |
 | Batch 1: per-country and European skills-need forecasting | Forecasting job on Demand history (Prophet / ARIMA, LightGBM challenger) |
@@ -41,9 +51,9 @@ The system has six layers. Each layer is a separate containerized service, and t
 
 ## Architecture at a glance
 
-![ACE architecture: 6 layers in one cluster](images/architecture.png)
+![ACE system architecture: online sources, AI agents, Kafka, live pipelines, Cassandra, batch jobs and the website](images/architecture.png)
 
-Data flows top to bottom: agents publish to Kafka, pipelines aggregate back into Kafka, a sink writes everything to Cassandra, batch jobs read history and write forecasts back, and the API serves everything to the web app.
+The numbers follow the data: online sources (1) are collected by the AI agents (2) and published to Kafka (3). The live pipelines (4) read from Kafka, find the skills, count them and publish their results back. A sink saves the records and results in Cassandra (5), the batch jobs (6) read the history and write forecasts and the Skills Gap back, and the FastAPI service and React web app (7) show the results; the API also takes live alerts straight from Kafka, and Prometheus and Grafana track pipeline health. Each box names its owner (M1–M5); boxes marked AI use the AI model to read text. The AI model server itself is shown in the deployment diagram.
 
 ## CyberSeek comparison
 
@@ -62,8 +72,8 @@ Each sub-task runs as its own AI agent in its own container, owned by the member
 
 | Agent | Owner | Input source | Output topic | What it does |
 | --- | --- | --- | --- | --- |
-| Job ads agent | M1 | LinkedIn job ads (public datasets), job APIs | `raw.jobs` | Replays ads in `posted_date` order and tags country, date and title |
-| Profile agent | M1 | LinkedIn professional profiles (public or anonymized datasets) | `raw.profiles` | Replays profiles and strips personal identifiers |
+| Job ads agent | M1 | Live: Adzuna API (several Skills Scope countries), Bundesagentur für Arbeit job search API (DE), France Travail job offers API (FR). History: German job postings dataset (Hugging Face, 2015–2026) | `raw.jobs` | Replays the history dataset in `posted_date` order, fetches live ads when the orchestrator asks, and tags country, date, company and title |
+| Profile agent | M1 | Stack Overflow Developer Survey (yearly public CSVs), filtered to security roles and skills | `raw.profiles` | Replays survey answers as anonymous profiles, with the survey date as `profile_date`, and strips any identifying details |
 | Education agent | M5 | ENISA CYBERHEAD database | `raw.programmes` | Collects cybersecurity higher-education programmes per country and maps each to ECSF roles with an LLM |
 | Workforce agent | M5 | ISC2 annual workforce reports | `raw.workforce` | Parses report PDFs and tables into workforce figures per country and year |
 | Threat agent | M4 | Public threat-intelligence feeds (AlienVault OTX, AbuseIPDB) | `threats.events` | Collects live threat events and geolocates them to a country |
@@ -72,7 +82,7 @@ Each sub-task runs as its own AI agent in its own container, owned by the member
 
 **Skill Taxonomy:** every Skill, Certification and role is an entry in a closed, versioned list in [`shared/taxonomy/`](../shared/taxonomy/), derived from the [European Cybersecurity Skills Framework (ECSF)](https://www.enisa.europa.eu/topics/education/european-cybersecurity-skills-framework) with NICE cross-references. Mentions that match no entry are counted as Unmapped Skills for pipeline health and never shown on maps; S9 lists the most frequent ones as candidates for the next taxonomy version. The whole team builds the first version together: each member adds the Skills and Certifications for their own area, and M1 reviews and merges them. After that, M1 maintains it and changes are agreed by the whole team.
 
-**Replay in event time:** job ads and profiles come from static datasets, so their agents replay them into Kafka in date order, and every window uses event time, not arrival time. Threat events are live.
+**Replay in event time:** job-ad history and profiles come from static datasets, so their agents replay them into Kafka in date order, and every window uses event time, not arrival time. Live job ads from the APIs and threat events use their own posting or observation date in the same way.
 
 **Geography:** Demand and Supply are measured for the Skills Scope (EU27, EEA, UK and Switzerland); threats are measured worldwide. Countries are always ISO 3166-1 alpha-2 codes (`GR`, `GB`, never `EL`, `UK`). `EU` is a Region used only in forecasts, never in a `country` field.
 
@@ -80,7 +90,7 @@ Each sub-task runs as its own AI agent in its own container, owned by the member
 
 | Action | Agent | Limit per task |
 | --- | --- | --- |
-| Fetch job ads for a country from the job API | Job ads agent | 10 pages |
+| Fetch job ads for a country from a job API (Adzuna, Bundesagentur für Arbeit or France Travail) | Job ads agent | 10 pages |
 | Refresh education programmes for a country | Education agent | 1 country |
 | Refresh threat events for a country | Threat agent | 24 hours of events |
 | Rerun the platform comparison | Platform analysis agent | 1 run per week |
@@ -119,7 +129,7 @@ Example `skills.demand` message:
 ```json
 {
   "event_id": "uuid",
-  "source": "linkedin_jobs",
+  "source": "adzuna",
   "country": "HU",
   "posted_date": "2026-10-01",
   "job_title": "SOC Analyst",
@@ -139,15 +149,14 @@ Everything except the React app is Python, so the code every member needs lives 
 | Stage base (`ace.stage`) | Runs a stream stage: consumes, checks message formats, applies event time and the grace period, emits once per window, publishes, and counts late and invalid records. Supports windowed stages (S3, S4, S5, S7, S9, S10) and per-record stages (S1, S2, S6, S8). Each stage supplies only its algorithm. | All 10 stages | M2 |
 | Contracts (`ace.contracts`) | Reads [`shared/schemas/topics.csv`](../shared/schemas/topics.csv) (topic, schema, key), validates every message before it is published, and gives every module the topic names. | All agents and stages | M2 |
 | Skill matcher (`ace.taxonomy`) | Loads the Skill Taxonomy and maps a mention to a Skill, Certification or Role by exact name or listed alias, ignoring case; anything else is Unmapped. | S2, S3, S4, S5, gap job, education agent, role explorer | M1 |
-| LLM module (`ace.llm`) | The only path to an LLM. Switches between a local open-source model (development) and a hosted model (final runs) with one setting, caches answers in the `llm_cache` table so nothing is paid for twice, retries when the provider is busy, checks that answers are valid JSON, and stops at a daily budget (`LLM_DAILY_BUDGET_EUR`). | S2, education agent, platform analysis agent | M3 |
+| LLM module (`ace.llm`) | The only path to an LLM. Switches between a local open-source model (Qwen via Ollama) and a hosted model (Claude Haiku 5.5) with one setting, caches answers in the `llm_cache` table so nothing is paid for twice, retries when the provider is busy, checks that answers are valid JSON, and stops at a daily budget (`LLM_DAILY_BUDGET_EUR`). | S2, education agent, platform analysis agent | M3 |
 | Replay module (`ace.replay`) | Replays a static dataset into Kafka in event-time order at a set speed (`REPLAY_SECONDS_PER_DAY`), and resumes from the position saved in `replay_position` after a restart. Each agent supplies only how to turn one dataset row into a message. | Job ads agent, profile agent | M1 |
 
 - **Invalid messages** are not dropped: the contracts part publishes them to `errors.invalid` with the reason, and they are counted on the pipeline-health panels.
 - **Testing:** the stage base runs either on Kafka or on an in-memory list of records, so every stage is tested with plain lists of fake records and no running Kafka. Every stage ships at least one such test. The LLM module replays recorded answers in tests, so tests never pay for LLM calls.
-- **Test data:** a small fake dataset (about 200 job ads and 200 profiles across several countries, one JSON message per line) lives in `shared/testdata/` from **Oct 22**. The replay module plays it like the real dataset, so the whole pipeline runs from the first week, before the real dataset is chosen.
+- **Test data:** a small fake dataset (about 200 job ads and 200 profiles across several countries, one JSON message per line) lives in `shared/testdata/` from **Oct 22**. The replay module plays it like the real datasets, so the whole pipeline runs from the first week.
 - **Timeline:** the package and one example stage (S4) are ready by **Oct 27**, so all stages start from the same base on Nov 2.
-- **LLM provider:** the final choice between a local open-source model and a hosted model is made by the team after comparing extraction quality on the hand-labelled sample. The LLM module supports both, so the choice does not block development.
-- **API read helper:** a shared Cassandra read helper for the API endpoints is postponed. M4 decides around Nov 15, once two dashboards exist.
+- **LLM choice:** Qwen, an open-source model run locally through Ollama, is the default: it is free, handles German and French job ads well, and keeps all data on our own machines. Claude Haiku 5.5 is the hosted fallback. Both are compared on a hand-labelled sample of about 50 job ads (including German and French ones); if Qwen is clearly less accurate, the final run switches to Claude Haiku 5.5 with one setting.
 
 ## Stream processing
 
@@ -181,7 +190,7 @@ Ten stream stages, two per member, consume from Kafka and publish their results 
 - **S6:** one ADWIN detector per (Country, Skill) for Skills that have appeared in that Country's Top 10 at least once, plus one per Skill for the EU-wide sum. EU-level drift triggers early forecast retraining; Country-level drift shows as alerts.
 - **S8:** features are log-scaled hourly counts per threat type plus hour-of-day. Each Country has its own model, so "unusual" means unusual for that Country.
 - **S9:** Lossy Counting keeps every Unmapped mention whose count may be above a support threshold, with a known maximum error, in bounded memory. Each day it emits the most frequent mentions per Country over the last 30 days. M1 reviews them when updating the Skill Taxonomy; they are never shown on maps.
-- **S10:** one HyperLogLog sketch of company names per (Country, day). Sketches are mergeable, so the 30-day count is the merge of the last 30 daily sketches. Job ads with no company are counted separately, so missing data stays visible. This needs a company field in the job-ads dataset, checked during dataset selection.
+- **S10:** one HyperLogLog sketch of company names per (Country, day). Sketches are mergeable, so the 30-day count is the merge of the last 30 daily sketches. Job ads with no company are counted separately, so missing data stays visible.
 
 ## Storage (Cassandra)
 
@@ -268,20 +277,21 @@ Every component ships as a Docker image. Development runs on Docker Compose, and
 
 ![ACE deployment: containers, groups and ports](images/deployment.png)
 
-Every box is one Docker container. Kafka and Cassandra run as 3-node StatefulSets, and each stream stage runs as its own pod so it can scale with its topic partitions.
+Every box is one Docker container. Arrows point from the container that opens a connection to the one it calls, and the numbers are the ports (Kafka 9092, Cassandra 9042, the AI model server 11434). Kafka and Cassandra run as 3-node StatefulSets, each stream stage runs as its own pod so it can scale with its topic partitions, and the browser loads the page from the web app and calls the API, both through the ingress.
 
 | Component | Kubernetes object | Replicas |
 | --- | --- | --- |
 | Kafka brokers (KRaft mode) | StatefulSet | 3 |
 | Cassandra nodes | StatefulSet | 3 |
 | Agents | Deployment, one per agent | 1–2 each |
+| LLM server (Ollama with Qwen) | Deployment + Service | 1 |
 | Stream stages | Deployment, one per stage | 1–3 (up to the partition count) |
 | Sink | Deployment | 2 |
 | Forecast and gap jobs | CronJob | Runs on schedule |
 | API | Deployment + Service | 2 |
 | Web app | Deployment + Ingress | 2 |
 
-- **Configuration:** ConfigMaps hold the topics the sink writes, schedules, `GAP_MIN_SUPPLY`, `LLM_PROVIDER`, `LLM_DAILY_BUDGET_EUR` and `REPLAY_SECONDS_PER_DAY`. Secrets hold API keys, including the LLM key.
+- **Configuration:** ConfigMaps hold the topics the sink writes, schedules, `GAP_MIN_SUPPLY`, `LLM_PROVIDER`, `LLM_DAILY_BUDGET_EUR` and `REPLAY_SECONDS_PER_DAY`. Secrets hold API keys: the job APIs (Adzuna, France Travail), the threat feeds and the hosted LLM fallback.
 - **Monitoring:** Kafka UI to inspect topics, Prometheus and Grafana for service health and pipeline health.
 - **CI:** GitHub Actions builds the images and runs tests on every pull request.
 
@@ -289,7 +299,7 @@ Every box is one Docker container. Kafka and Cassandra run as 3-node StatefulSet
 
 | Layer | Technology | Why |
 | --- | --- | --- |
-| Agents | Python, LangGraph or CrewAI, a hosted LLM or a local open-source model (Ollama) | Separate agents per sub-task, as the brief requires |
+| Agents | Python, LangGraph or CrewAI, Qwen via Ollama (local, open source), Claude Haiku 5.5 as hosted fallback | Separate agents per sub-task, as the brief requires |
 | Ingestion | Apache Kafka (KRaft) | Required by the brief; real-time and replayable |
 | Stream processing | Quix Streams, River | Python stream processing on Kafka without Spark; maintained, with event-time windows |
 | Storage | Apache Cassandra | Required by the brief; fast time-series writes |
@@ -305,56 +315,40 @@ Each member is responsible for one component, two stream stages, one dashboard a
 
 | Member | Component | Stream stages | Dashboard | Report and slides |
 | --- | --- | --- | --- | --- |
-| M1 | Job ads and profile agents, orchestrator, Skill Taxonomy (review and merge), skill matcher, replay module, fake test data, dataset selection | S1 near-duplicate filter, S2 skill extraction | Role explorer | Datasets section |
-| M2 | Kafka, Cassandra, sink, Docker/Kubernetes, CI, monitoring and pipeline-health panels, stage base and contracts | S3 Top 10 (Space-Saving), S4 Demand frequency (Count-Min) | Skills demand | System architecture section |
-| M3 | Batch forecasting, Skills Gap job, LLM module | S5 Supply frequency (exponential histograms), S6 drift detection (ADWIN) | Supply, gap and forecast | Testing and experiments section |
-| M4 | FastAPI service and React app shell, Europe map, map components, threat agent | S7 threat frequency, S8 burst detection (Half-Space Trees) | Threat landscape | Abstract, introduction, slide deck |
-| M5 | Education (CYBERHEAD), workforce (ISC2) and platform analysis agents; proposes the S9 and S10 topics and tables | S9 emerging skills (Lossy Counting), S10 hiring companies (HyperLogLog) | Education and workforce | Related work (similar platforms) |
+| M1 – Singh Multani Gurinder | Job ads and profile agents, orchestrator, Skill Taxonomy (review and merge), skill matcher, replay module, fake test data, dataset selection | S1 near-duplicate filter, S2 skill extraction | Role explorer | Datasets section |
+| M2 – Ullah Asad | Kafka, Cassandra, sink, Docker/Kubernetes, CI, monitoring and pipeline-health panels, stage base and contracts | S3 Top 10 (Space-Saving), S4 Demand frequency (Count-Min) | Skills demand | System architecture section |
+| M3 – Bailey Kelen | Batch forecasting, Skills Gap job, LLM module | S5 Supply frequency (exponential histograms), S6 drift detection (ADWIN) | Supply, gap and forecast | Testing and experiments section |
+| M4 – Roomi Babar Ali | FastAPI service and React app shell, Europe map, map components, threat agent | S7 threat frequency, S8 burst detection (Half-Space Trees) | Threat landscape | Abstract, introduction, slide deck |
+| M5 – Richartz Lena | Education (CYBERHEAD), workforce (ISC2) and platform analysis agents; proposes the S9 and S10 topics and tables | S9 emerging skills (Lossy Counting), S10 hiring companies (HyperLogLog) | Education and workforce | Related work (similar platforms) |
 
 Every member writes the agents, API endpoints and dashboard page for their own area, adds the Skills and Certifications for their area to the Skill Taxonomy, contributes 2–4 references for their own algorithms, and proofreads the report.
 
 **Schedule**
 
-![ACE schedule, Oct 14 to Dec 6, 2026](images/schedule.png)
+![ACE schedule, Oct 15 to Dec 4, 2026](images/schedule.png)
 
-The plan aims for the Nov 26 (12:00 CET) early submission, which secures December slots for both theory exams. Dec 6 is the fallback.
+The plan aims for the Nov 26 (12:00 CET) early submission. Dec 6 is the fallback.
 
 **Risks**
 
-- **European data coverage:** most public LinkedIn job-ad datasets are US-heavy. Mitigation: M1 checks candidate datasets for rows per country in the Skills Scope, a date field on profiles, and a company field on job ads (needed by S10), by Oct 17. If coverage is thin, the Skills Scope is narrowed to the countries with enough data.
-- **LinkedIn access:** scraping breaks LinkedIn's terms and gets blocked. Mitigation: public datasets and job APIs.
+- **European data coverage:** public LinkedIn job-ad datasets are almost all from the US (under 1% of rows in the Skills Scope), LinkedIn has no public API for reading job ads, and scraping breaks its terms. Mitigation: European job APIs, a German job-ads dataset and the Stack Overflow survey instead. If coverage is still thin (target: about 100 cybersecurity job ads per country per month), the Skills Scope is narrowed to the countries with enough data.
+- **Short live history:** the job APIs only return ads that are open now, so by Nov 26 we hold about 6 weeks of live data. Mitigation: forecasts train on the replayed history; live data feeds the 30-day stages (S3, S9, S10).
 - **Personal data in profiles:** names and identifiers are removed at the profile agent, and only skills, country and date are stored.
 - **LLM cost and accuracy:** all LLM calls go through one module that caches answers, enforces a daily budget and can switch to a free local model. Extraction results are spot-checked against a hand-labelled sample, and the Unmapped Skills rate and daily LLM spend are tracked.
-- **New member catching up:** M5 joined after the design work started. M5 builds against the fake test data from Oct 22, and S9 and S10 depend only on S1 and S2 outputs, so they can start as soon as the stage base is ready.
 
-## References
-
-The course allows 10–15 references, no older than 10 years, with 2–3 exceptions. The foundational algorithm papers below are older, so the report keeps at most 3 of them and cites the recent papers for the rest. Each citation must be checked against the original paper before it goes into the report.
-
-**Recent (2016 or later)**
-
-- ENISA. (2022). *European Cybersecurity Skills Framework (ECSF)*. European Union Agency for Cybersecurity.
-- Gomes, H. M., Read, J., Bifet, A., Barddal, J. P., & Gama, J. (2019). Machine learning for streaming data: State of the art, challenges, and opportunities. *ACM SIGKDD Explorations Newsletter, 21*(2), 6–22.
-- ISC2. (2024). *ISC2 Cybersecurity Workforce Study*. ISC2.
-- Montiel, J., et al. (2021). River: Machine learning for streaming data in Python. *Journal of Machine Learning Research, 22*(110), 1–8.
-- Petersen, R., Santos, D., Wetzel, K., Smith, M., & Witte, G. (2020). *Workforce Framework for Cybersecurity (NICE Framework)* (NIST SP 800-181 Rev. 1). NIST.
-- Taylor, S. J., & Letham, B. (2018). Forecasting at scale. *The American Statistician, 72*(1), 37–45.
-- Zhang, M., Jensen, K. N., Sonniks, S. D., & Plank, B. (2022). SkillSpan: Hard and soft skill extraction from English job postings. In *Proceedings of NAACL 2022*.
-
-**Foundational algorithms (older than 10 years)**
-
-- Agarwal, P. K., Cormode, G., Huang, Z., Phillips, J. M., Wei, Z., & Yi, K. (2013). Mergeable summaries. *ACM Transactions on Database Systems, 38*(4). (S3 30-day merge)
-- Bifet, A., & Gavaldà, R. (2007). Learning from time-changing data with adaptive windowing. In *Proceedings of the SIAM International Conference on Data Mining*. (ADWIN, S6)
-- Broder, A. Z. (1997). On the resemblance and containment of documents. In *Compression and Complexity of Sequences*. IEEE. (MinHash, S1)
-- Cormode, G., & Muthukrishnan, S. (2005). An improved data stream summary: The count-min sketch and its applications. *Journal of Algorithms, 55*(1), 58–75. (S4)
-- Datar, M., Gionis, A., Indyk, P., & Motwani, R. (2002). Maintaining stream statistics over sliding windows. *SIAM Journal on Computing, 31*(6), 1794–1813. (Exponential histograms, S5)
-- Flajolet, P., Fusy, É., Gandolfi, O., & Meunier, F. (2007). HyperLogLog: The analysis of a near-optimal cardinality estimation algorithm. In *Proceedings of the 2007 Conference on Analysis of Algorithms (AofA)*, DMTCS Proceedings. (S10)
-- Manku, G. S., & Motwani, R. (2002). Approximate frequency counts over data streams. In *Proceedings of the 28th International Conference on Very Large Data Bases (VLDB)*, 346–357. (Lossy Counting, S9)
-- Metwally, A., Agrawal, D., & El Abbadi, A. (2005). Efficient computation of frequent and top-k elements in data streams. In *ICDT 2005*. Springer. (Space-Saving, S3)
-- Tan, S. C., Ting, K. M., & Liu, T. F. (2011). Fast anomaly detection for streaming data. In *Proceedings of IJCAI 2011*. (Half-Space Trees, S8)
+## Platforms and data sources
 
 **Platforms analysed**
 
 - [CyberSeek](https://www.cyberseek.org): cybersecurity supply and demand heat map and career pathway (US).
 - [ENISA ECSF](https://www.enisa.europa.eu/topics/education/european-cybersecurity-skills-framework): European role profiles.
 - [ENISA CYBERHEAD](https://www.enisa.europa.eu/topics/education/cyberhead): European cybersecurity higher-education database.
+
+**Data sources**
+
+- [Adzuna API](https://developer.adzuna.com/overview): job ads for several European countries (free developer key).
+- [Bundesagentur für Arbeit job search API](https://github.com/bundesAPI/jobsuche-api): German job ads (open, unofficial documentation).
+- [France Travail job offers API](https://francetravail.io): French job ads (free account).
+- [German job postings dataset](https://huggingface.co/datasets/mischeiwiller/german-job-postings): German job ads 2015–2026 with ESCO skills, used as job-ad history.
+- [Stack Overflow Developer Survey](https://survey.stackoverflow.co): yearly survey of IT professionals with country, role and skills (ODbL), used for Supply.
+- [Cedefop Skills-OVATE](https://www.cedefop.europa.eu/en/tools/skills-ovate): EU online job-ad statistics by country, occupation and skill, used to check our Demand numbers.
