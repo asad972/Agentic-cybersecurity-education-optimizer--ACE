@@ -182,7 +182,7 @@ Comment:
 
 ## E. Open items, whatever we decide
 
-- [x] **Datasets (most urgent).** Checked on Oct 16: public LinkedIn datasets have almost no European data, so we use other online sources instead (see F1). M1 still finishes the dataset check by **Oct 17**, and we compare the results.
+- [x] **Datasets (most urgent).** Checked on Oct 16: public LinkedIn datasets have almost no European data, so we use other online sources instead (see F1). I took over the dataset check (issue #4) and finish the open points by **Oct 17**.
 - [x] **Diagrams** in `docs/images/` show the agreed design, including M5, S9 and S10.
 - [ ] **Tell the professor (Oct 19)** which data sources we use (F1) and why LinkedIn is not one of them. Threat data will come from OTX and AbuseIPDB; is that fine?
 - [ ] **Check before building:** the real country list and free limits of the Adzuna API, which security roles the Stack Overflow survey lists, and whether Cedefop data can be downloaded as files.
@@ -200,6 +200,8 @@ Comment:
 | Profiles (Supply) | **Stack Overflow Developer Survey** (yearly, free, about 80k answers), filtered to security roles | Real IT professionals with country, role and skills; each answer acts as an anonymous profile |
 | Check on our Demand numbers | **Cedefop Skills-OVATE** (EU statistics from over 100 million job ads) | Official European figures to compare against |
 | Education and workforce | **CYBERHEAD** and **ISC2** reports, as before | Named in the brief and already in our design |
+
+Update Oct 18: France Travail is dropped. Its general job offers API is no longer in the public francetravail.io catalogue, so we can't subscribe to it. Adzuna covers France instead (see issue #4).
 
 Nothing else in the pipeline changes: the agents still publish the same messages to Kafka, and the stages, tables and dashboards stay as they are.
 - [ ] Agree 

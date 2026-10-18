@@ -1,6 +1,6 @@
 # ACE – System Architecture
 
-Last updated: Oct 16, 2026
+Last updated: Oct 18, 2026
 
 ## Team
 
@@ -72,7 +72,7 @@ Each sub-task runs as its own AI agent in its own container, owned by the member
 
 | Agent | Owner | Input source | Output topic | What it does |
 | --- | --- | --- | --- | --- |
-| Job ads agent | M1 | Live: Adzuna API (several Skills Scope countries), Bundesagentur für Arbeit job search API (DE), France Travail job offers API (FR). History: German job postings dataset (Hugging Face, 2015–2026) | `raw.jobs` | Replays the history dataset in `posted_date` order, fetches live ads when the orchestrator asks, and tags country, date, company and title |
+| Job ads agent | M1 | Live: Adzuna API (AT, BE, CH, DE, ES, FR, GB, IT, NL, PL), Bundesagentur für Arbeit job search API (DE). History: German job postings dataset (Hugging Face, 2015–2026) | `raw.jobs` | Replays the history dataset in `posted_date` order, fetches live ads when the orchestrator asks, and tags country, date, company and title |
 | Profile agent | M1 | Stack Overflow Developer Survey (yearly public CSVs), filtered to security roles and skills | `raw.profiles` | Replays survey answers as anonymous profiles, with the survey date as `profile_date`, and strips any identifying details |
 | Education agent | M5 | ENISA CYBERHEAD database | `raw.programmes` | Collects cybersecurity higher-education programmes per country and maps each to ECSF roles with an LLM |
 | Workforce agent | M5 | ISC2 annual workforce reports | `raw.workforce` | Parses report PDFs and tables into workforce figures per country and year |
@@ -90,7 +90,7 @@ Each sub-task runs as its own AI agent in its own container, owned by the member
 
 | Action | Agent | Limit per task |
 | --- | --- | --- |
-| Fetch job ads for a country from a job API (Adzuna, Bundesagentur für Arbeit or France Travail) | Job ads agent | 10 pages |
+| Fetch job ads for a country from a job API (Adzuna or Bundesagentur für Arbeit) | Job ads agent | 10 pages |
 | Refresh education programmes for a country | Education agent | 1 country |
 | Refresh threat events for a country | Threat agent | 24 hours of events |
 | Rerun the platform comparison | Platform analysis agent | 1 run per week |
@@ -291,7 +291,7 @@ Every box is one Docker container. Arrows point from the container that opens a 
 | API | Deployment + Service | 2 |
 | Web app | Deployment + Ingress | 2 |
 
-- **Configuration:** ConfigMaps hold the topics the sink writes, schedules, `GAP_MIN_SUPPLY`, `LLM_PROVIDER`, `LLM_DAILY_BUDGET_EUR` and `REPLAY_SECONDS_PER_DAY`. Secrets hold API keys: the job APIs (Adzuna, France Travail), the threat feeds and the hosted LLM fallback.
+- **Configuration:** ConfigMaps hold the topics the sink writes, schedules, `GAP_MIN_SUPPLY`, `LLM_PROVIDER`, `LLM_DAILY_BUDGET_EUR` and `REPLAY_SECONDS_PER_DAY`. Secrets hold API keys: Adzuna, the threat feeds and the hosted LLM fallback.
 - **Monitoring:** Kafka UI to inspect topics, Prometheus and Grafana for service health and pipeline health.
 - **CI:** GitHub Actions builds the images and runs tests on every pull request.
 
@@ -346,9 +346,8 @@ The plan aims for the Nov 26 (12:00 CET) early submission. Dec 6 is the fallback
 
 **Data sources**
 
-- [Adzuna API](https://developer.adzuna.com/overview): job ads for several European countries (free developer key).
+- [Adzuna API](https://developer.adzuna.com/overview): job ads for 10 countries in the Skills Scope, including France (free developer key).
 - [Bundesagentur für Arbeit job search API](https://github.com/bundesAPI/jobsuche-api): German job ads (open, unofficial documentation).
-- [France Travail job offers API](https://francetravail.io): French job ads (free account).
 - [German job postings dataset](https://huggingface.co/datasets/mischeiwiller/german-job-postings): German job ads 2015–2026 with ESCO skills, used as job-ad history.
 - [Stack Overflow Developer Survey](https://survey.stackoverflow.co): yearly survey of IT professionals with country, role and skills (ODbL), used for Supply.
 - [Cedefop Skills-OVATE](https://www.cedefop.europa.eu/en/tools/skills-ovate): EU online job-ad statistics by country, occupation and skill, used to check our Demand numbers.
