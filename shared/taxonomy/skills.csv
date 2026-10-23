@@ -1,1 +1,43 @@
 skill,ecsf_roles,nice_ids,aliases
+Business continuity,Chief Information Security Officer (CISO);Cybersecurity Risk Manager;Cyber Incident Responder,,Business continuity management;BCM;Disaster recovery
+Compliance,"Cyber Legal, Policy and Compliance Officer;Cybersecurity Auditor",,Regulatory compliance;Security compliance;IT compliance
+Data privacy,"Cyber Legal, Policy and Compliance Officer;Chief Information Security Officer (CISO)",,Data protection;Privacy
+GDPR,"Cyber Legal, Policy and Compliance Officer;Cybersecurity Auditor;Chief Information Security Officer (CISO)",,General Data Protection Regulation;DSGVO;RGPD
+ISO 27001,"Cybersecurity Auditor;Cybersecurity Risk Manager;Cyber Legal, Policy and Compliance Officer;Chief Information Security Officer (CISO)",,ISO/IEC 27001;ISO27001;ISO 27001:2022
+NIS2,"Cyber Legal, Policy and Compliance Officer;Chief Information Security Officer (CISO);Cybersecurity Risk Manager",,NIS 2;NIS-2;NIS2 Directive
+NIST Cybersecurity Framework,Cybersecurity Risk Manager;Cybersecurity Auditor;Chief Information Security Officer (CISO),,NIST;NIST CSF;NIST 800-53;NIST SP 800-53
+Risk assessment,Cybersecurity Risk Manager;Cybersecurity Auditor;Chief Information Security Officer (CISO),,Risk analysis;Security risk assessment
+Risk management,Cybersecurity Risk Manager;Chief Information Security Officer (CISO),,Cyber risk management;Information risk management
+Security auditing,Cybersecurity Auditor,,Security audit;IT audit;Information security audit
+Security policy,"Chief Information Security Officer (CISO);Cyber Legal, Policy and Compliance Officer",,Security policies;Information security policy
+Third-party risk management,Cybersecurity Risk Manager;Cybersecurity Auditor,,Vendor risk management;Supplier risk management;TPRM
+Digital forensics,Digital Forensics Investigator;Cyber Incident Responder,,Computer forensics;Forensic analysis;DFIR
+Incident response,Cyber Incident Responder,,Incident handling;Incident management;Security incident response
+Malware analysis,Cyber Threat Intelligence Specialist;Digital Forensics Investigator;Cybersecurity Researcher,,Malware reverse engineering;Reverse engineering
+Network traffic analysis,Cyber Incident Responder;Digital Forensics Investigator,,Packet analysis;Traffic analysis
+Security monitoring,Cyber Incident Responder,,Security operations;SOC operations;Log monitoring
+SIEM,Cyber Incident Responder;Cyber Threat Intelligence Specialist,,Security Information and Event Management
+Threat hunting,Cyber Threat Intelligence Specialist;Cyber Incident Responder,,Cyber threat hunting
+Threat intelligence,Cyber Threat Intelligence Specialist,,Cyber threat intelligence;CTI;Threat intel
+Penetration testing,Penetration Tester,,Pentesting;Pen testing;Pentest;Ethical hacking
+Red teaming,Penetration Tester,,Red team;Adversary emulation
+Vulnerability management,Cybersecurity Implementer;Cybersecurity Risk Manager;Penetration Tester,,Vulnerability assessment;Vulnerability scanning
+Vulnerability research,Cybersecurity Researcher;Penetration Tester,,Exploit development;Security research
+Web application security,Penetration Tester;Cybersecurity Implementer,,Application security;AppSec;OWASP;OWASP Top 10
+Cloud security,Cybersecurity Architect;Cybersecurity Implementer,,Cloud computing security;Cloud security architecture
+Container security,Cybersecurity Implementer;Cybersecurity Architect,,Kubernetes security;Docker security
+Cryptography,Cybersecurity Architect;Cybersecurity Implementer;Cybersecurity Researcher,,Encryption;PKI;Public key infrastructure
+DevSecOps,Cybersecurity Implementer;Cybersecurity Architect,,Secure DevOps
+Endpoint security,Cybersecurity Implementer,,Endpoint protection;EDR;Endpoint detection and response
+Firewalls,Cybersecurity Implementer,,Firewall management;Firewall configuration;NGFW;Next-generation firewalls
+Identity and access management,Cybersecurity Architect;Cybersecurity Implementer,,IAM;Identity management;Access management
+Infrastructure as code,Cybersecurity Implementer,,IaC
+Network security,Cybersecurity Architect;Cybersecurity Implementer,,Network defence;Network defense
+OT security,Cybersecurity Implementer;Cybersecurity Architect,,Operational technology security;ICS security;SCADA security;Industrial control systems security
+Secure software development,Cybersecurity Implementer,,Secure coding;Secure SDLC;Secure development lifecycle
+Security architecture,Cybersecurity Architect;Chief Information Security Officer (CISO),,Enterprise security architecture
+Zero trust,Cybersecurity Architect,,Zero trust architecture;ZTA
+Linux,Cybersecurity Implementer;Cyber Incident Responder;Penetration Tester,,Linux administration;Unix
+Python,Cybersecurity Implementer;Cybersecurity Researcher;Penetration Tester;Cyber Threat Intelligence Specialist,,Python scripting;Python programming
+Scripting,Cybersecurity Implementer;Cyber Incident Responder,,Shell scripting;Bash;PowerShell
+Security awareness training,Cybersecurity Educator;Chief Information Security Officer (CISO),,Security awareness;Awareness training;Phishing simulation
