@@ -1,0 +1,10 @@
+skill,ecsf_roles,nice_ids,aliases
+AWS Security,Cybersecurity Architect|Cybersecurity Implementer,NF-COM-004|K0863|K0898,Amazon Web Services Security|AWS Cloud Security
+Azure,Cybersecurity Architect|Cybersecurity Implementer,NF-COM-004|K0863|K0898,Microsoft Azure|Azure Security|Azure Cloud Security
+Cloud Security,Cybersecurity Architect|Cybersecurity Implementer,NF-COM-004|K0863|K0898,Cloud Cybersecurity|Cloud Infrastructure Security
+Docker,Cybersecurity Implementer,K1373,Docker Security|Docker Containers
+Firewalls,Cybersecurity Architect|Cybersecurity Implementer,K0877|K0878|S0618|S0950,Firewall|Firewall Administration|Firewall Management|Application Firewall|Network Firewall
+Kubernetes,Cybersecurity Architect|Cybersecurity Implementer,K1373,K8s|Kubernetes Security|K8s Security
+Linux,Cybersecurity Implementer,NF-COM-009|K0744|S0606|S0678,GNU/Linux|Linux Security|Linux Administration
+Network Security,Cybersecurity Architect|Cybersecurity Implementer,K1014|S0077|S0418|S0583,Network Cybersecurity|Secure Network Architecture|Securing Networks
+Terraform,Cybersecurity Architect|Cybersecurity Implementer,K0755|K1121|K1122|K1369,HashiCorp Terraform|Terraform Security
