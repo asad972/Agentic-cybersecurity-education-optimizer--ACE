@@ -20,3 +20,61 @@ Rules for everyone:
 - Publish to Kafka only through `ace.contracts`, never with a hand-typed topic name.
 - Call an LLM only through `ace.llm`.
 - Every stream stage uses `ace.stage` and ships at least one test with fake records.
+
+## LLM client (`ace.llm`, M3)
+
+`ace.llm` is the only supported way to call a language model. It synchronously
+selects Ollama/Qwen or Anthropic/Claude from `LLM_PROVIDER`, requires structured
+Pydantic output, caches validated answers in Cassandra, retries temporary
+failures, suppresses duplicate concurrent calls with a Cassandra lease, and
+enforces one hosted-model budget across all agent processes per UTC day.
+
+```python
+from pydantic import BaseModel
+
+from ace.llm import BudgetExceededError, LLMClient
+
+
+class SkillExtraction(BaseModel):
+    skills: list[str]
+    certifications: list[str]
+    ecsf_role: str | None = None
+
+
+with LLMClient.from_env() as client:
+    try:
+        result = client.generate(
+            task="skill_extraction",
+            prompt_version="v1",
+            system_prompt="Extract only cybersecurity taxonomy candidates.",
+            prompt="Analyse this job advertisement: ...",
+            response_model=SkillExtraction,
+        )
+        extraction = result.value
+    except BudgetExceededError:
+        # The caller owns its non-LLM fallback; the client never changes provider.
+        extraction = None
+```
+
+M1's S2 agent and M5's education/platform agents create one client per process
+and reuse it. They handle `BudgetExceededError` explicitly; the module never
+silently changes provider. Cache hits remain available after the hosted budget
+is exhausted.
+
+Configuration is documented in `.env.example`. Hosted mode requires the API
+key and current input/output prices expressed in EUR per million tokens. Model
+defaults are `qwen3:4b` and `claude-haiku-5-5`, and both are configurable.
+
+Tests inject `InMemoryLLMStore` and `RecordedProvider`; production configuration
+accepts only `local` or `hosted`. A missing recording fails immediately instead
+of accessing the network. Public failures are typed as `LLMConfigurationError`,
+`LLMProviderError`, `LLMResponseError`, `BudgetExceededError`, `CacheBusyError`,
+and `RecordingNotFoundError`.
+
+Until M2 merges the shared package metadata, install the temporary dependency
+manifest and run the offline suite from the repository root:
+
+```bash
+python -m pip install -r shared/python/requirements-llm.txt
+PYTHONPATH=shared/python python -m pytest shared/python/tests -q
+```
