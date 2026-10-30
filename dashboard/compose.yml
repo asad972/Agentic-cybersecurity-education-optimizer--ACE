@@ -1,0 +1,6 @@
+# Independent shell preview: no API or database required.
+services:
+  dashboard:
+    build: .
+    ports:
+      - "127.0.0.1:${ACE_DASHBOARD_PORT:-5173}:80"
