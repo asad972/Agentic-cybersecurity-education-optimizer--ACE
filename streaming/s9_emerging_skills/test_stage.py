@@ -1,60 +1,65 @@
-"""Tests for mapping skills.demand messages into S9 daily output."""
+"""Test S9 through the shared event-time runner and message contracts."""
 
+import uuid
 import unittest
 
+from ace.stage import WindowedStage, run_local
 from stage import EmergingSkillsStage
 
 
-class EmergingSkillsStageTests(unittest.TestCase):
-    """Check S9 message mapping and stateful rolling-window aggregation."""
+def demand(day: str, unmapped: list[str]) -> dict[str, object]:
+    """Build one valid skills.demand input record for a test."""
+    return {
+        "event_id": str(uuid.uuid4()),
+        "source": "test",
+        "country": "DE",
+        "posted_date": day,
+        "skills": ["SIEM"],
+        "unmapped": unmapped,
+    }
 
-    def test_aggregates_only_target_day_unmapped_mentions(self) -> None:
-        stage = EmergingSkillsStage()
-        output = stage.process_day(
-            [
-                {
-                    "country": "DE",
-                    "posted_date": "2026-01-31",
-                    "unmapped": ["Zero Trust", "zero trust"],
-                },
-                {
-                    "country": "FR",
-                    "posted_date": "2026-01-31",
-                    "unmapped": ["Cloud Security"],
-                },
-                {
-                    "country": "DE",
-                    "posted_date": "2026-01-30",
-                    "unmapped": ["Not included"],
-                },
-            ],
-            "2026-01-31",
-        )
-        self.assertEqual([row["country"] for row in output], ["DE", "FR"])
+
+class EmergingSkillsStageTests(unittest.TestCase):
+    """Check S9 windowing, rolling memory, and schema validation."""
+
+    def test_is_a_shared_windowed_stage_and_emits_contract_valid_output(self) -> None:
+        stage = EmergingSkillsStage(epsilon=0.1)
+        records = [
+            demand("2026-01-30", ["Zero Trust"]),
+            demand("2026-01-31", ["zero trust"]),
+        ]
+
+        self.assertIsInstance(stage, WindowedStage)
+        result = run_local(stage, records)
+
+        self.assertEqual(result.invalid, [])
+        output = result.published("agg.emerging_skills")
+        self.assertEqual(len(output), 2)
         self.assertEqual(
-            output[0]["items"],
+            output[-1]["items"],
             [{"mention": "zero trust", "count": 2, "max_error": 0}],
         )
 
-    def test_preserves_previous_days_for_rolling_30_day_count(self) -> None:
-        stage = EmergingSkillsStage()
-        first = stage.process_day(
-            [{"country": "DE", "posted_date": "2026-01-30", "unmapped": ["SIEM"]}],
-            "2026-01-30",
+    def test_drops_previous_day_records_that_arrive_after_the_grace_period(self) -> None:
+        late_record = demand("2026-01-30", ["IAM"])
+        result = run_local(
+            EmergingSkillsStage(epsilon=0.1),
+            [demand("2026-02-01", ["SIEM"]), late_record],
         )
-        second = stage.process_day(
-            [{"country": "DE", "posted_date": "2026-01-31", "unmapped": ["SIEM"]}],
-            "2026-01-31",
-        )
-        self.assertEqual(first[0]["items"][0]["count"], 1)
-        self.assertEqual(second[0]["items"][0]["count"], 2)
 
-    def test_rejects_invalid_unmapped_payload(self) -> None:
-        with self.assertRaises(ValueError):
-            EmergingSkillsStage().process_day(
-                [{"country": "DE", "posted_date": "2026-01-31", "unmapped": "SIEM"}],
-                "2026-01-31",
-            )
+        self.assertEqual(result.late, [late_record])
+        self.assertEqual(
+            result.published("agg.emerging_skills")[-1]["day"], "2026-02-01"
+        )
+
+    def test_routes_schema_invalid_input_to_errors_invalid(self) -> None:
+        bad = demand("2026-01-31", ["SIEM"])
+        bad["unmapped"] = "not-a-list"
+
+        result = run_local(EmergingSkillsStage(), [bad])
+
+        self.assertEqual(result.published("agg.emerging_skills"), [])
+        self.assertEqual(result.invalid[0]["topic"], "skills.demand")
 
 
 if __name__ == "__main__":

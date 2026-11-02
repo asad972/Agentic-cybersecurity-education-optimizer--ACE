@@ -84,6 +84,30 @@ class HiringCompaniesCounter:
         )
         sketch.add(company)
 
+    def add_daily_sketch(
+        self,
+        country: str,
+        day: date | str,
+        sketch: HyperLogLog,
+        missing_company: int,
+    ) -> None:
+        """Store a completed Flink window without retaining its raw job ads."""
+        self._validate_country(country)
+        event_day = self._parse_day(day)
+        if sketch.precision != self.precision:
+            raise ValueError("daily sketch precision does not match the counter")
+        if isinstance(missing_company, bool) or not isinstance(missing_company, int):
+            raise ValueError("missing_company must be a non-negative integer")
+        if missing_company < 0:
+            raise ValueError("missing_company must be a non-negative integer")
+
+        country_daily = self._daily.setdefault(country, {})
+        if event_day in country_daily:
+            raise ValueError(f"a daily sketch already exists for {country} on {event_day}")
+        country_daily[event_day] = sketch
+        if missing_company:
+            self._missing.setdefault(country, {})[event_day] = missing_company
+
     def emit(self, country: str, day: date | str) -> dict[str, object]:
         """Return the daily and rolling distinct-company estimates."""
         self._validate_country(country)

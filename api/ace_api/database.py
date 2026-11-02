@@ -29,14 +29,23 @@ class CassandraConnection:
         with self._lock:
             if self._session is not None:
                 return
-            from cassandra.cluster import Cluster
-            from cassandra.policies import DCAwareRoundRobinPolicy
+            if self._factory is None:
+                from cassandra.cluster import Cluster
+                from cassandra.policies import DCAwareRoundRobinPolicy
 
-            cluster = (self._factory or Cluster)(
+                factory = Cluster
+                load_balancing_policy = DCAwareRoundRobinPolicy(
+                    local_dc=self.settings.cassandra_local_dc
+                )
+            else:
+                factory = self._factory
+                load_balancing_policy = None
+
+            cluster = factory(
                 list(self.settings.cassandra_hosts),
                 port=self.settings.cassandra_port,
                 protocol_version=4,
-                load_balancing_policy=DCAwareRoundRobinPolicy(local_dc=self.settings.cassandra_local_dc),
+                load_balancing_policy=load_balancing_policy,
                 connect_timeout=5,
             )
             try:

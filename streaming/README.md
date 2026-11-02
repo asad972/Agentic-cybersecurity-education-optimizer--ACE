@@ -17,7 +17,7 @@ Every stage uses event time, a grace period (1 h for job ads and profiles, 15 mi
 | `s9_emerging_skills` | S9 Emerging skills | M5 | skills.demand → agg.emerging_skills | Lossy Counting over Unmapped Skills |
 | `s10_hiring_companies` | S10 Hiring companies | M5 | jobs.clean → agg.companies_daily | HyperLogLog, 30-day merge |
 
-S9 and S10 have algorithm implementations, message adapters, and unit tests in
-their respective folders. The adapters keep in-memory state between daily
-calls; they are not yet Flink jobs and do not persist or restore state across
-restarts. Wire them into the shared `ace.stage` once that package is available.
+S9 and S10 subclass the shared `ace.stage.WindowedStage`. They use event-time
+windows, the shared input/output schema checks, the configured grace period,
+and picklable per-country checkpoint memory. Their fake-record tests run
+through `ace.stage.run_local`; the Flink runner uses the same stage classes.
