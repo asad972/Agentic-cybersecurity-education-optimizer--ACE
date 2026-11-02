@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ace"
+version = "0.1.0"
+description = "Shared code for ACE: contracts (topics and message checks) and the stream stage base"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "jsonschema[format]==4.26.0",
+]
+
+[project.optional-dependencies]
+# Stream stages run on Apache Flink (PyFlink). Agents and the sink only need the contracts.
+flink = ["apache-flink==2.3.0"]
+dev = ["pytest==9.1.1"]
+
+[tool.setuptools.packages.find]
+include = ["ace*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["flink: runs the stage on a local Flink (needs Java; about 30 s)"]
