@@ -1,8 +1,8 @@
 """Turns one Kafka message into the Cassandra rows it is stored as.
 
 Every topic the sink reads has one small function in ace_sink/topics/ that
-takes a message and the time Kafka received it, and returns its rows, one per
-target table:
+takes a message and the time the sink received it, and returns its rows, one
+per target table:
 
     @rows_for("agg.companies_daily")
     def companies(message, received_at):
@@ -29,9 +29,17 @@ RowFunction = Callable[[dict[str, Any], datetime], list["Row"]]
 _functions: dict[str, RowFunction] = {}
 
 
+class Unstorable(ValueError):
+    """A message that passed its schema check but cannot be stored, e.g. an hourly count with no hour.
+
+    The sink sends it to errors.invalid. Any other error in a row function is a
+    bug and stops the sink, so it is noticed instead of hiding valid messages.
+    """
+
+
 @dataclass(frozen=True)
 class Row:
-    """One row for one table: column name -> value. None means the column is left unset."""
+    """One row for one table: column name -> value. None is stored as null."""
 
     table: str
     values: dict[str, Any]

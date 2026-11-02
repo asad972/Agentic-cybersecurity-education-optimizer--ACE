@@ -14,5 +14,11 @@ def month(text: str) -> str:
 
 
 def timestamp(text: str) -> datetime:
-    """'2026-10-01T12:00:00Z' -> datetime in UTC, for CQL timestamp columns."""
-    return datetime.fromisoformat(text).astimezone(timezone.utc)
+    """'2026-10-01T12:00:00Z' -> datetime in UTC, for CQL timestamp columns.
+
+    A time without a zone is read as UTC, as ace.stage does, never as local time.
+    """
+    parsed = datetime.fromisoformat(text)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)

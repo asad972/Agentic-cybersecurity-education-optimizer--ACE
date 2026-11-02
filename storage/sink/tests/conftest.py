@@ -17,7 +17,7 @@ CQL_TYPES = {
     "text": str,
     "int": int,
     "bigint": int,
-    "double": (float, int),
+    "double": float,
     "boolean": bool,
     "date": date,
     "timestamp": datetime,
@@ -41,6 +41,8 @@ def _tables():
 
 TABLES = _tables()
 
+INT_RANGES = {"int": 2**31, "bigint": 2**63}
+
 
 @pytest.fixture
 def stored():
@@ -58,6 +60,11 @@ def stored():
             for column, value in row.values.items():
                 expected = CQL_TYPES[columns[column]]
                 assert value is None or isinstance(value, expected), f"{row.table}.{column}: {value!r}"
+                if value is None:
+                    continue
+                if columns[column] in INT_RANGES:
+                    limit = INT_RANGES[columns[column]]
+                    assert not isinstance(value, bool) and -limit <= value < limit, f"{row.table}.{column}: {value!r}"
                 if columns[column] == "date":
                     assert not isinstance(value, datetime), f"{row.table}.{column} needs a date"
                 if columns[column] == "timestamp":
