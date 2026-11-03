@@ -1,0 +1,10 @@
+skill,ecsf_roles,nice_ids,aliases
+SIEM,Cyber Incident Responder|Cybersecurity Operations,NF-COM-006|K0888|S0419,Security Information and Event Management|SIEM Tools|SIEM Systems
+Splunk,Cyber Incident Responder|Cybersecurity Operations,K0888|S0419,Splunk SIEM|Splunk Enterprise|Splunk Cloud
+Incident response,Cyber Incident Responder,NF-COM-006|K0888|K1070|S0078,Incident Handling|Incident Management|IR|Cyber Incident Response
+Wireshark,Cyber Incident Responder|Cybersecurity Operations,K1014|S0077|S0583,Network Packet Analyzer|Packet Analysis|PCAP
+Penetration testing,Cyber Threat Intelligence Specialist|Cybersecurity Implementer,NF-COM-008|K0860|S0044|S0070,Pentesting|Pen Testing|Ethical Hacking|Penetration Test
+Metasploit,Cyber Threat Intelligence Specialist|Cybersecurity Implementer,K0860|S0070,Metasploit Framework|MSF
+Burp Suite,Cyber Threat Intelligence Specialist|Cybersecurity Implementer,K0860|S0070,BurpSuite|Burp Suite Pro|PortSwigger Burp
+Kali Linux,Cyber Threat Intelligence Specialist|Cybersecurity Implementer,NF-COM-009|K0744|S0606,Kali
+Nmap,Cyber Threat Intelligence Specialist|Cybersecurity Operations,K1014|S0077,Network Mapper|Port Scannings
