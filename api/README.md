@@ -19,6 +19,8 @@ Stop the API with `docker compose -f api/compose.yml stop`. Stop the root databa
 
 ## Local development
 
+**Windows:** run the API using Docker Desktop with Linux containers and the commands above. The Cassandra driver's native connection backend can fail to load on Windows with Python 3.12+. Local unit tests use fake connections and do not load that backend, but running the API against Cassandra should use Docker. The virtual-environment commands below use a macOS/Linux shell.
+
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
@@ -32,13 +34,22 @@ Build the API alone with `docker build -t ace-api -f api/Dockerfile api` (the bu
 
 ## Add a teammate router
 
-Put a module in `ace_api/routers/` and export an `APIRouter`. At the bottom of `main.py`, import the router and pass it to the existing factory:
+Create a module such as `api/ace_api/routers/demand.py` and export an `APIRouter` named `router`:
 
 ```python
-from .routers.demand import router as demand_router
+from fastapi import APIRouter
 
-app = create_app(extra_routers=[demand_router])
+router = APIRouter(prefix="/demand", tags=["Demand"])
+
+
+@router.get("/status")
+def status():
+    return {"status": "ok"}
 ```
+
+The application automatically discovers these modules when `create_app()` runs. Restart the API (or use `--reload` locally), then check `/demand/status` and `/docs`. You do not need to edit `main.py` or `routers/__init__.py`.
+
+Discovery loads public `.py` modules directly inside `routers/` in alphabetical order. Modules starting with `_`, subpackages, and modules without a `router` export are not registered. An invalid `router` export or a module import error stops application creation so a broken endpoint is visible immediately. Keep module imports free of database connections; access the managed session inside requests. Use distinct URL prefixes for each member's endpoints. The optional `extra_routers` factory argument remains available for tests or explicit extensions; do not pass a router that is already discovered.
 
 Inside a route, use `request.app.state.database.session` for prepared, bounded Cassandra reads. The session is opened and closed by the service. Use synchronous `def` routes for blocking driver operations (FastAPI runs these in its worker thread pool), or explicitly offload reads in async routes. Handle connection failures with a suitable 503 response. Do not execute unrestricted scans or introduce database writes in browser-facing endpoints.
 

@@ -1,9 +1,23 @@
 from types import SimpleNamespace
+import builtins
 
 import pytest
 
 from ace_api.config import Settings
 from ace_api.database import CassandraConnection
+
+
+@pytest.fixture(autouse=True)
+def block_native_driver_imports(monkeypatch):
+    """Exercise all fake-connection tests as if the driver cannot load."""
+    original_import = builtins.__import__
+
+    def guarded_import(name, *args, **kwargs):
+        if name == "cassandra" or name.startswith("cassandra."):
+            raise AssertionError("Fake connections must not import Cassandra")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", guarded_import)
 
 
 class Cluster:
