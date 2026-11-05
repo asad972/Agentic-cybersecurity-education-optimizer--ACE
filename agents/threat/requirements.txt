@@ -1,0 +1,4 @@
+# Install from the repository root; shared contracts are installed separately.
+httpx>=0.28,<1
+pycountry>=24.6.1,<25
+confluent-kafka>=2.6,<3
