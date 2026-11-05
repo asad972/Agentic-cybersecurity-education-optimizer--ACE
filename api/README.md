@@ -32,13 +32,21 @@ Build the API alone with `docker build -t ace-api -f api/Dockerfile api` (the bu
 
 ## Add a teammate router
 
-Put a module in `ace_api/routers/` and export an `APIRouter`. At the bottom of `main.py`, import the router and pass it to the existing factory:
+Put a module in `ace_api/routers/` and export an `APIRouter`. The API discovers
+these modules and registers their routers during app creation. `create_app`
+still accepts `extra_routers` for tests and explicitly supplied extensions.
 
-```python
-from .routers.demand import router as demand_router
+The M5 read-only endpoints are:
 
-app = create_app(extra_routers=[demand_router])
-```
+- `GET /education?country=DE` — programmes and workforce baseline for a country.
+- `GET /emerging?country=DE&day=2026-11-02` — S9 snapshot for a country and day.
+- `GET /companies?country=DE&day=2026-11-02` — S10 estimates for a country and day.
+- `GET /platforms` — evidence rows for CyberSeek, ENISA ECSF and the ISC2 Workforce Study.
+
+The reads use bounded Cassandra partition queries. `/education` requires an
+uppercase ISO alpha-2 country code; `/emerging` and `/companies` also require
+an ISO date. These endpoints return database-backed data only: there is no
+sample-data fallback.
 
 Inside a route, use `request.app.state.database.session` for prepared, bounded Cassandra reads. The session is opened and closed by the service. Use synchronous `def` routes for blocking driver operations (FastAPI runs these in its worker thread pool), or explicitly offload reads in async routes. Handle connection failures with a suitable 503 response. Do not execute unrestricted scans or introduce database writes in browser-facing endpoints.
 

@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import Settings
 from .database import CassandraConnection
+from .routers import discover_routers
 
 log = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ def create_app(settings: Settings | None = None, database=None,
             raise HTTPException(status_code=503, detail="Cassandra is unavailable")
         return {"status": "ready", "database": "connected"}
 
-    for router in extra_routers:
+    for router in (*discover_routers(), *extra_routers):
         app.include_router(router)
     return app
 
