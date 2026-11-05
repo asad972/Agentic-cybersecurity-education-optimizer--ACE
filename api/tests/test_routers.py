@@ -54,11 +54,69 @@ def test_private_modules_helpers_and_subpackages_are_not_registered(router_direc
     assert routers.discover_routers() == []
 
 
-@pytest.mark.parametrize("source,error,match", [
-    ("router = 'invalid'\n", TypeError, "router must be an APIRouter"),
-    ("raise RuntimeError('broken router dependency')\n", RuntimeError, "broken router dependency"),
+@pytest.mark.parametrize("source,match", [
+    ("router = 'invalid'\n", "router must be an APIRouter"),
+    ("raise RuntimeError('broken router dependency')\n", "broken router dependency"),
+    ("this is invalid python !\n", "SyntaxError"),
 ])
-def test_broken_router_fails_app_creation(router_directory, source, error, match):
+def test_broken_router_keeps_service_available(router_directory, source, match, caplog):
     (router_directory / "issue60_broken.py").write_text(source)
-    with pytest.raises(error, match=match):
-        create_app()
+    database = SimpleNamespace(open=lambda: None, close=lambda: None, ready=lambda: True)
+    with TestClient(create_app(database=database)) as client:
+        assert client.get("/health").status_code == 200
+        assert client.get("/ready").status_code == 200
+    assert "issue60_broken" in caplog.text and match in caplog.text
+
+
+def test_top_level_driver_import_is_isolated_on_windows(router_directory, monkeypatch, caplog):
+    monkeypatch.setitem(sys.modules, "cassandra.cluster", None)
+    (router_directory / "issue60_bad_driver.py").write_text(
+        "from cassandra.cluster import NoHostAvailable\n"
+        "from fastapi import APIRouter\nrouter = APIRouter()\n")
+    (router_directory / "issue60_good.py").write_text(
+        "from fastapi import APIRouter\nrouter = APIRouter()\n"
+        "@router.get('/good')\ndef good(): return {'ok': True}\n")
+    # Reload exercises the module-level app = create_app(), not just the factory.
+    import importlib
+    import ace_api.main as main_module
+    importlib.reload(main_module)
+    with TestClient(main_module.create_app(database=SimpleNamespace(
+            open=lambda: None, close=lambda: None, ready=lambda: True))) as client:
+        assert client.get("/health").status_code == 200
+        assert client.get("/ready").status_code == 200
+        assert client.get("/good").json() == {"ok": True}
+    assert "issue60_bad_driver" in caplog.text
+
+
+def test_discovered_reexported_and_explicit_router_registered_once(router_directory, monkeypatch):
+    from fastapi import APIRouter, FastAPI
+    router = APIRouter()
+    @router.get("/unique")
+    def unique():
+        return {"ok": True}
+    monkeypatch.setitem(sys.modules, "ace_api.routers.issue60_original", SimpleNamespace(router=router))
+    (router_directory / "issue60_original.py").write_text("# supplied test module\n")
+    (router_directory / "issue60_reexport.py").write_text(
+        "from ace_api.routers.issue60_original import router\n")
+    calls = []
+    include = FastAPI.include_router
+    def counted(app, candidate, *args, **kwargs):
+        calls.append(candidate)
+        return include(app, candidate, *args, **kwargs)
+    monkeypatch.setattr(FastAPI, "include_router", counted)
+    app = create_app(extra_routers=[router, router])
+    assert calls == [router]
+    assert "/unique" in app.openapi()["paths"]
+
+
+def test_nested_router_cannot_shadow_service_probe(caplog):
+    from fastapi import APIRouter
+    child, parent = APIRouter(), APIRouter()
+    @child.get("/ready")
+    def ready():
+        return {"wrong": True}
+    parent.include_router(child)
+    database = SimpleNamespace(open=lambda: None, close=lambda: None, ready=lambda: True)
+    with TestClient(create_app(database=database, extra_routers=[parent])) as client:
+        assert client.get("/ready").json() == {"status": "ready", "database": "connected"}
+    assert "clashes with built-in paths" in caplog.text

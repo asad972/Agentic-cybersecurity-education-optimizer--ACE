@@ -30,16 +30,17 @@ class CassandraConnection:
             if self._session is not None:
                 return
             factory = self._factory
+            # Policies are pure Python; only cassandra.cluster loads a native reactor.
+            from cassandra.policies import DCAwareRoundRobinPolicy
+
             options = dict(port=self.settings.cassandra_port,
-                           protocol_version=4, connect_timeout=5)
+                           protocol_version=4, connect_timeout=5,
+                           load_balancing_policy=DCAwareRoundRobinPolicy(
+                               local_dc=self.settings.cassandra_local_dc))
             if factory is None:
                 # Fake connections must not load the native driver on Windows.
                 from cassandra.cluster import Cluster
-                from cassandra.policies import DCAwareRoundRobinPolicy
-
                 factory = Cluster
-                options["load_balancing_policy"] = DCAwareRoundRobinPolicy(
-                    local_dc=self.settings.cassandra_local_dc)
             cluster = factory(list(self.settings.cassandra_hosts), **options)
             try:
                 session = cluster.connect(self.settings.cassandra_keyspace)

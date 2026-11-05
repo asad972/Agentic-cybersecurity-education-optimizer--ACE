@@ -2,7 +2,10 @@ name: API native Windows tests
 
 on:
   push:
-    branches: [m4/issue-60-api-fixes]
+    branches: [master]
+    paths:
+      - 'api/**'
+      - '.github/workflows/api-windows.yml'
   pull_request:
     paths:
       - 'api/**'

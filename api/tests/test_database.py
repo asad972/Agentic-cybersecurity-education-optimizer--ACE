@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-import builtins
+import sys
 
 import pytest
 
@@ -9,15 +9,8 @@ from ace_api.database import CassandraConnection
 
 @pytest.fixture(autouse=True)
 def block_native_driver_imports(monkeypatch):
-    """Exercise all fake-connection tests as if the driver cannot load."""
-    original_import = builtins.__import__
-
-    def guarded_import(name, *args, **kwargs):
-        if name == "cassandra" or name.startswith("cassandra."):
-            raise AssertionError("Fake connections must not import Cassandra")
-        return original_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", guarded_import)
+    """Block the native-driver entry point, leaving pure-Python policies usable."""
+    monkeypatch.setitem(sys.modules, "cassandra.cluster", None)
 
 
 class Cluster:
@@ -71,3 +64,28 @@ def test_readiness_closes_broken_session_then_reconnects(monkeypatch):
     database.close()
     database.close()
     assert second.closed
+
+
+@pytest.mark.parametrize("injected", [True, False])
+def test_both_factories_receive_configured_dc(monkeypatch, injected):
+    from cassandra.policies import DCAwareRoundRobinPolicy
+    captured = {}
+    cluster = Cluster()
+
+    def factory(hosts, **options):
+        captured.update(hosts=hosts, **options)
+        return cluster
+
+    if not injected:
+        monkeypatch.setitem(sys.modules, "cassandra.cluster", SimpleNamespace(Cluster=factory))
+    settings = Settings(cassandra_hosts=("db.example",), cassandra_port=9142,
+                        cassandra_local_dc="team-dc")
+    database = CassandraConnection(settings, factory if injected else None)
+    database.open()
+    assert captured["hosts"] == ["db.example"]
+    assert captured["port"] == 9142 and captured["protocol_version"] == 4
+    assert isinstance(captured["load_balancing_policy"], DCAwareRoundRobinPolicy)
+    assert captured["load_balancing_policy"].local_dc == "team-dc"
+    assert database.session.default_timeout == 5
+    database.close()
+    assert cluster.closed
