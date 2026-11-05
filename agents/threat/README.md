@@ -32,7 +32,8 @@ S7/S8 tests. Fixture mode needs no API keys and makes no network calls unless
 ## Build and run with Docker
 
 The build context is the repository root. The Docker-specific ignore file limits
-it to the shared package, schemas and this collector.
+it to the shared package, schemas and this collector. `.env`, `.env.*`, SQLite
+state and JSONL data are excluded, including when they exist inside the source folder.
 
 ```sh
 docker build -f agents/threat/Dockerfile -t ace-threat:issue-35 .
@@ -81,9 +82,13 @@ docker run --rm --network YOUR_KAFKA_NETWORK --env-file .env \
 `kafka:29092` is the internal listener in this repository's root Compose stack.
 Host Python uses `localhost:9092` instead. For ongoing collection, remove `--once`
 and add `--consume-tasks`; polling defaults to **every six hours**. Logs show
-observations, skipped rows and whether each bounded batch completed. Credentials,
-quota failures and network failures produce a nonzero exit after pending/successful
-feed observations are delivered where possible; restart after addressing the error.
+observations, skipped rows and whether each bounded batch completed. Provider
+failures defer only that provider, with its retry deadline saved across restarts.
+The other feed keeps running. Missing credentials still fail startup with a clear
+message; rejected credentials in a running process are logged and retried hourly.
+`--once` performs a single bounded attempt; inspect the logs for deferred/partial
+feeds and run continuously to finish saved work. Nonfatal Kafka errors retry in
+process; fatal client errors and local state-write failures require intervention.
 
 Do not publish synthetic fixtures into a real-data topic. Use a disposable broker
 for `--fixture --publish`, and keep fixture state separate from live state.
@@ -95,33 +100,60 @@ for `--fixture --publish`, and keep fixture state separate from live state.
 | `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Broker bootstrap address |
 | `THREAT_COLLECTOR_STATE` / `--state` | `data/threat/collector.sqlite`; `/state/collector.sqlite` in Docker | Persistent SQLite outbox, cursors and task receipts |
 | `--source` | `both` | `otx`, `abuseipdb` or `both` |
-| `--hours` | `24` | Observation window, 1–24 hours |
+| `--hours` | `24` | Initial lookback, 1–24 hours; later windows continue from saved progress |
 | `--country` | all | ISO country filter, e.g. `HU`, `GB` |
 | `--max-pages` | `1` | OTX page budget, 1–10 |
 | `--max-indicators` | `100` | OTX indicator budget, 1–1000 |
 | `--abuse-limit` | `100` | Blacklist row budget, 1–1000; at most one country lookup per in-window IP |
 | `--poll-seconds` | `21600` | Scheduled interval; extra orchestrator tasks also spend provider quota |
 
-HTTP requests use connection/read timeouts and at most four attempts for transient
-errors, with a 30-second retry-delay cap. Authentication failures are not retried.
-OTX pagination remains on the subscribed-pulses HTTPS endpoint; redirects are not
-followed. OTX cursors retain the original time window and page offset for resume.
-Changing provider pages and bounded budgets mean coverage is not exhaustive.
+| `--retention-days` | `30` | Retain acknowledged observation IDs and completed task receipts for this many days |
 
-The task consumer uses its own `ace-threat-agent` consumer group, validates the
-Kafka key against `agent`, and accepts only `refresh_threats` for `threat-agent`.
-Other agents' valid tasks are ignored. Malformed tasks go to `errors.invalid`.
-Input offsets are committed after processing/delivery, never after a provider or
-Kafka failure. Task IDs are remembered durably. A task represents one bounded
-attempt, so partial source pages are reported as `batch_complete=False`, not as
-full historical coverage. The consumer's maximum poll interval is one hour;
-keep provider budgets small enough to finish a batch within that interval.
+HTTP requests use connection/read timeouts and at most four attempts for transport
+errors and server 5xx responses. A 429 is not retried immediately: the scheduler
+honors `Retry-After` (seconds or HTTP date) and `X-RateLimit-Reset`, or waits six
+hours if no usable hint is present. Other feed failures use exponential backoff
+from one minute to one hour. These cooldowns apply across scheduled and task work
+and survive restart. Authentication failures pause that feed for one hour.
+
+A failed per-IP lookup saves the already-resolved events together with the remaining
+rows and original time window. A retry starts at the failed row without repeating
+earlier lookups or fetching another AbuseIPDB blacklist. OTX pagination stays on
+the subscribed-pulses HTTPS endpoint; redirects are not followed. Partial OTX pages
+are saved so the current page can resume even if the provider changes it later.
+Successful partial batches resume after 60 seconds, subject to feed cooldowns.
+
+Completed windows advance from `fetched_through`, in chunks no larger than 24 hours,
+so a short initial lookback with a longer polling interval does not discard time.
+Backlogs catch up with a short interval between chunks. This preserves requested
+windows, but cannot recover historical data a provider no longer serves: AbuseIPDB
+is a current ranked snapshot and neither feed guarantees exhaustive coverage.
+
+The task consumer uses its own `ace-threat-agent` group, checks the Kafka key and
+validates each incoming task once. Valid threat tasks are saved to SQLite before
+the input offset is committed. Other agents' valid tasks are ignored; malformed
+tasks are sent to `errors.invalid` before acknowledgement. The local durable task
+queue resumes incomplete tasks after restart, independent of the Kafka offset.
+A task completes only after every configured feed finishes its window and its
+outbox is acknowledged; completed feed cursors are skipped while others retry.
+Task cursors are deleted on completion. Keep `/state` persistent: removing the
+volume also loses queued tasks whose input offsets have already been committed.
+The consumer's maximum poll interval is one hour; keep provider budgets small
+enough to finish a collection iteration within that interval.
 
 Cursor updates and outbox inserts are atomic. Kafka acknowledgements precede
-marking rows sent. Repeated polls and restarts suppress already-sent IDs; a crash
-between Kafka delivery and the SQLite acknowledgement can still replay an ID.
-Downstream S7 must deduplicate `event_id` (at-least-once delivery). Use one process
-per state file; retained IDs/cursors grow and need a retention policy for long runs.
+marking rows handled. Stale/schema-invalid outbox rows are routed to `errors.invalid`
+and retired only after that delivery is confirmed; later rows continue normally.
+Transient consumer/producer/commit errors are logged and retried; only fatal Kafka
+errors stop the daemon. The pending message is retained when processing or commit
+fails, so its offset cannot be silently skipped.
+
+Pending rows are indexed and never pruned. Acknowledged observations and completed
+task receipts expire after `--retention-days`, checked hourly. The existing SQLite
+schema upgrades in place. Use one process per state file. Replays older than the
+retention horizon may be emitted again; a crash between delivery and the SQLite
+acknowledgement can also replay an ID. Downstream S7 must deduplicate `event_id`
+(at-least-once delivery).
 
 ## What the data means
 

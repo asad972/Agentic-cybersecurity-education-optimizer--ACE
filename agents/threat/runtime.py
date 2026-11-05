@@ -11,6 +11,14 @@ EVENTS_TOPIC = contracts.topic("threats.events").name
 TASKS_TOPIC = contracts.topic("tasks.collect").name
 
 
+class KafkaDeliveryError(RuntimeError):
+    """Retry delivery from the durable outbox without stopping collection."""
+
+
+class FatalKafkaError(RuntimeError):
+    """An unrecoverable broker/client error requiring operator intervention."""
+
+
 class Publisher:
     def __init__(self, transport, producer="threat-agent"):
         self.transport, self.producer = transport, producer
@@ -30,21 +38,31 @@ class KafkaTransport:
                                  "delivery.timeout.ms": 60000})
         self.producer = producer
         self.errors = []
+        self.fatal_error = False
 
     def _delivered(self, error, _message):
         if error:
             self.errors.append(str(error))
+            self.fatal_error |= bool(getattr(error, "fatal", lambda: False)())
 
     def __call__(self, topic: str, key: str, payload: bytes):
-        self.producer.produce(topic, key=key.encode("utf-8"), value=payload,
-                              on_delivery=self._delivered)
-        self.producer.poll(0)
+        from confluent_kafka import KafkaException
+        try:
+            self.producer.produce(topic, key=key.encode("utf-8"), value=payload,
+                                  on_delivery=self._delivered)
+            self.producer.poll(0)
+        except (KafkaException, BufferError) as error:
+            if isinstance(error, KafkaException) and error.args[0].fatal():
+                raise FatalKafkaError(str(error)) from error
+            raise KafkaDeliveryError(str(error)) from error
 
     def flush(self):
         remaining = self.producer.flush(65)
+        if self.fatal_error:
+            raise FatalKafkaError(f"Kafka fatal delivery error: {self.errors}")
         if remaining or self.errors:
             errors, self.errors = self.errors, []
-            raise RuntimeError(f"Kafka delivery failed ({remaining} pending): {errors}")
+            raise KafkaDeliveryError(f"Kafka delivery failed ({remaining} pending): {errors}")
 
 
 def create_consumer(bootstrap_servers: str):

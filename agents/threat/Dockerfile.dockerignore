@@ -13,4 +13,7 @@
 **/.pytest_cache/
 **/.venv/
 **/.env
+**/.env.*
+**/*.sqlite*
+**/*.jsonl
 **/*.local.md

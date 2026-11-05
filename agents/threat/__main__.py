@@ -8,24 +8,69 @@ from ace import contracts
 
 from .collector import CollectorStore, ThreatCollector
 from .fixtures import fixture_events
-from .runtime import EVENTS_TOPIC, TASKS_TOPIC, KafkaTransport, Publisher, create_consumer, validate_task
+from .runtime import EVENTS_TOPIC, TASKS_TOPIC, KafkaTransport, Publisher, create_consumer, KafkaDeliveryError, FatalKafkaError
 from .sources import AbuseIPDB, OTX
 from .utils import country_code, write_jsonl
 
 
+LOG = logging.getLogger(__name__)
+
+
 def process_task(message, collector, publisher, flush):
-    """Return only after delivery; caller commits the Kafka input after success."""
+    """Acknowledge only after durable task enqueue or confirmed error delivery."""
     try:
         task = json.loads(message.value())
-        validate_task(task, message.key() or b"")
+        collector.accept_task(task, message.key() or b"")
     except (contracts.InvalidMessage, ValueError, UnicodeError, TypeError) as error:
         rejected = contracts.invalid_record(TASKS_TOPIC, "threat-agent", str(error),
             (message.value() or b"").decode("utf-8", errors="replace"))
         publisher.publish(contracts.INVALID_TOPIC, rejected)
         flush()
-        return
-    # Provider/delivery failures propagate, leaving this task uncommitted.
-    collector.handle_task(task, message.key() or b"")
+
+
+def poll_task(consumer):
+    message = consumer.poll(1)
+    if message is not None and message.error():
+        error = message.error()
+        if error.fatal():
+            raise FatalKafkaError(str(error))
+        LOG.warning("Recoverable Kafka consumer error: %s", error)
+        return None
+    return message
+
+
+def run_loop(collector, consumer, publisher, flush, *, hours, max_pages, country,
+             poll_seconds, once=False, retention_days=30, sleep=time.sleep):
+    from confluent_kafka import KafkaException
+    pending_message = None
+    next_prune = 0.0
+    while True:
+        try:
+            # Each source persists its own next poll and retry deadline in SQLite.
+            collector.collect(hours=hours, max_pages=max_pages, country=country,
+                              poll_seconds=poll_seconds)
+            collector.run_pending_tasks()
+            if time.monotonic() >= next_prune:
+                collector.store.prune(retention_days)
+                next_prune = time.monotonic() + 3600
+            if once:
+                return
+            if consumer is not None:
+                if pending_message is None:
+                    pending_message = poll_task(consumer)
+                if pending_message is not None:
+                    process_task(pending_message, collector, publisher, flush)
+                    consumer.commit(message=pending_message, asynchronous=False)
+                    pending_message = None
+        except (KafkaDeliveryError, KafkaException) as error:
+            if isinstance(error, KafkaException) and error.args[0].fatal():
+                raise FatalKafkaError(str(error)) from error
+            LOG.warning("Kafka temporarily unavailable; durable work will retry (%s)", type(error).__name__)
+            if once:
+                raise
+            sleep(5)
+            continue
+        sleep(1)
 
 
 def main(argv=None):
@@ -44,7 +89,10 @@ def main(argv=None):
     parser.add_argument("--once", action="store_true", help="Run one bounded live collection batch and exit")
     parser.add_argument("--consume-tasks", action="store_true")
     parser.add_argument("--poll-seconds", type=int, default=21600, help="Scheduled polling interval; default 6 hours")
+    parser.add_argument("--retention-days", type=int, default=30, help="Retain acknowledged IDs for this many days")
     args = parser.parse_args(argv)
+    if args.retention_days < 1:
+        parser.error("retention-days must be positive")
     if not 1 <= args.hours <= 24 or not 1 <= args.max_pages <= 10 or args.poll_seconds < 1:
         parser.error("hours=1..24, max-pages=1..10, poll-seconds>=1 required")
     if not 1 <= args.max_indicators <= 1000 or not 1 <= args.abuse_limit <= 1000:
@@ -83,31 +131,17 @@ def main(argv=None):
         transport = KafkaTransport(bootstrap)
         publisher = Publisher(transport)
         store = CollectorStore(args.state)
-        store.drain(publisher, transport.flush)
         if events is not None:
+            store.drain(publisher, transport.flush)
             store.save(events)
             print(f"Published {store.drain(publisher, transport.flush)} fixture observations")
             return
         collector = ThreatCollector(sources, store, publisher, transport.flush)
         if args.consume_tasks:
             consumer = create_consumer(bootstrap)
-        next_poll = 0.0
-        while True:
-            if time.monotonic() >= next_poll:
-                collector.collect(hours=args.hours, max_pages=args.max_pages, country=args.country)
-                next_poll = time.monotonic() + args.poll_seconds
-                if args.once:
-                    return
-            if consumer is None:
-                time.sleep(min(1, max(0, next_poll - time.monotonic())))
-                continue
-            message = consumer.poll(1)
-            if message is None:
-                continue
-            if message.error():
-                raise RuntimeError(str(message.error()))
-            process_task(message, collector, publisher, transport.flush)
-            consumer.commit(message=message, asynchronous=False)
+        run_loop(collector, consumer, publisher, transport.flush, hours=args.hours,
+                 max_pages=args.max_pages, country=args.country, poll_seconds=args.poll_seconds,
+                 once=args.once, retention_days=args.retention_days)
     except KeyboardInterrupt:
         logging.info("collector stopped; pending outbox remains on disk")
     finally:

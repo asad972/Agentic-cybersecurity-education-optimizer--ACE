@@ -64,8 +64,8 @@ def test_otx_rejects_offsite_paging_and_does_not_follow_redirects():
         seen.append(request.url.host)
         return httpx.Response(302, headers={'Location': 'https://untrusted.example/'})
     source = OTX(FeedHTTP(httpx.Client(transport=httpx.MockTransport(respond), follow_redirects=False)), 'test-only')
-    with pytest.raises(httpx.HTTPStatusError):
-        source.fetch(START, END)
+    result = source.fetch(START, END)
+    assert not result.complete and isinstance(result.retry_error, httpx.HTTPStatusError)
     assert seen == ['otx.alienvault.com']
     for url in ('http://otx.alienvault.com/api/v1/pulses/subscribed',
                 'https://otx.alienvault.com.evil.example/api/v1/pulses/subscribed',
@@ -126,10 +126,11 @@ def test_provider_failure_does_not_block_pending_or_other_feed_delivery(tmp_path
     collector = ThreatCollector([SimpleNamespace(name='bad', fetch=fail),
                                  SimpleNamespace(name='good', fetch=succeed)], store, publisher, lambda: None)
     try:
-        with pytest.raises(RuntimeError, match='bad'):
-            collector.handle_task(task())
+        collector.handle_task(task())
         assert len(output) == 2
-        assert store.cursor('bad:*:' + task()['task_id']) == {}
+        assert 'since' in store.cursor('bad:*:' + task()['task_id'])
+        assert store.feed_state('bad')[1] > 0
+        assert store.pending_tasks() == [task()]
         assert not store.task_done(task()['task_id'])
     finally:
         store.close()
@@ -152,12 +153,12 @@ def test_invalid_task_goes_to_error_topic_before_ack():
     contracts.validate(records[0][0], json.loads(records[0][2]))
 
 
-def test_task_delivery_failure_propagates_for_redelivery():
+def test_task_enqueue_failure_propagates_for_redelivery():
     def fail(*args):
         raise RuntimeError('not acknowledged')
     message = SimpleNamespace(value=lambda: json.dumps(task()).encode(), key=lambda: b'threat-agent')
     with pytest.raises(RuntimeError, match='not acknowledged'):
-        process_task(message, SimpleNamespace(handle_task=fail), None, None)
+        process_task(message, SimpleNamespace(accept_task=fail), None, None)
 
 
 @pytest.mark.parametrize('pending,error', [(1, None), (0, 'broker rejected message')])

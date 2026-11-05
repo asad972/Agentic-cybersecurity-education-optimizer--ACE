@@ -53,7 +53,7 @@ def test_otx_country_is_indicator_location_and_budget_cursor_resumes():
         source.fetch(START, END, cursor={"next_url": "https://evil.example/steal"})
 
 
-def test_retry_is_bounded_and_does_not_retry_bad_credentials():
+def test_rate_limit_is_left_to_persistent_scheduler():
     attempts, delays = [], []
     def respond(request):
         attempts.append(request)
@@ -61,7 +61,7 @@ def test_retry_is_bounded_and_does_not_retry_bad_credentials():
     http = FeedHTTP(httpx.Client(transport=httpx.MockTransport(respond)), sleep=delays.append)
     with pytest.raises(httpx.HTTPStatusError):
         http.get("https://api.abuseipdb.com/api/v2/blacklist", headers={})
-    assert len(attempts) == 4 and delays == [30, 30, 30]
+    assert len(attempts) == 1 and delays == []
 
 
 def test_outbox_survives_ack_gap_and_deduplicates_after_restart(tmp_path):
