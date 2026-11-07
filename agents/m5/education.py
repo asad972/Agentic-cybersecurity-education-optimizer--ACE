@@ -59,10 +59,10 @@ def _required_text(value: Any, field: str) -> str:
 
 
 def _country(value: Any) -> str:
-    country = _required_text(value, "country")
-    if len(country) != 2 or not country.isalpha():
+    country = _required_text(value, "country").upper()
+    if len(country) != 2 or not country.isascii() or not country.isalpha():
         raise ValueError("country must be a two-letter ISO country code")
-    return country.upper()
+    return country
 
 
 def _text_list(value: Any, field: str) -> list[str]:

@@ -7,7 +7,7 @@ from typing import Any
 def normalize_workforce_record(record: Mapping[str, Any]) -> dict[str, Any]:
     """Convert one country/year workforce figure to the ACE message contract."""
     country = _text(record.get("country"), "country").upper()
-    if len(country) != 2 or not country.isalpha():
+    if len(country) != 2 or not country.isascii() or not country.isalpha():
         raise ValueError("country must be a two-letter ISO country code")
 
     year = record.get("year")

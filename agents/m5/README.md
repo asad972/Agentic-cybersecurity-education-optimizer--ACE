@@ -1,7 +1,8 @@
 # M5 data-processing modules
 
-These modules turn extracted source records into ACE Kafka-message-shaped
-Python dictionaries. Source extraction is intentionally separate because
+These modules normalize source records and the containerized agents publish
+them to Kafka through `ace.contracts`. The agents accept canonical JSON,
+JSONL, or CSV inputs. Source-specific extraction is intentionally separate:
 CYBERHEAD export layouts and the exact ISC2 report tables are not part of this
 repository. Do not treat sample or manually estimated values as source data.
 
@@ -17,8 +18,40 @@ repository. Do not treat sample or manually estimated values as source data.
   caller must provide an explicit boolean decision and evidence notes where
   appropriate; the module does not invent product capabilities.
 - `platform_evidence.json` contains a small, cited comparison of facts verified
-  from CyberSeek, ENISA and ISC2 first-party pages. It is evidence input, not a
-  live feed, and is not published to Cassandra automatically.
+  from CyberSeek, ENISA and ISC2 first-party pages. The platform agent publishes
+  these reviewed rows to `analysis.platforms`; this is evidence input, not a
+  live feed.
+
+## Publishing agents
+
+Build each image from the repository root:
+
+```powershell
+docker build -f agents/m5/education_agent/Dockerfile -t ace-m5-education .
+docker build -f agents/m5/workforce_agent/Dockerfile -t ace-m5-workforce .
+docker build -f agents/m5/platform_agent/Dockerfile -t ace-m5-platform .
+```
+
+With the local Compose stack running, resolve its network, then attach one-off
+agent containers and mount the canonical input read-only:
+
+```powershell
+$network = docker inspect ace-kafka --format '{{range $name, $network := .NetworkSettings.Networks}}{{$name}}{{end}}'
+docker run --rm --network $network -v "${PWD}\data\m5:/data:ro" ace-m5-education --input /data/programmes.jsonl
+docker run --rm --network $network -v "${PWD}\data\m5:/data:ro" ace-m5-workforce --input /data/workforce.csv
+docker run --rm --network $network ace-m5-platform
+```
+
+Set `KAFKA_BOOTSTRAP_SERVERS` when the broker is not reachable as
+`kafka:29092`. CSV `ecsf_roles` cells must contain a JSON array, CSV workforce
+numbers must be integers, and CSV platform decisions must be `true` or
+`false`. Invalid messages are routed by `ace.contracts` to `errors.invalid`.
+
+These are ingestion/publishing agents, not source scrapers: they do not
+download CYBERHEAD data or extract ISC2 report PDFs. Education input must
+already contain a reviewed `ecsf_roles` mapping; no LLM mapping is attempted
+because the `ace.llm` module is not present in this checkout. The report
+comparison draft is in [M5-related-work.md](../../docs/M5-related-work.md).
 
 Example:
 
@@ -40,6 +73,7 @@ message = normalize_programme(
 Run the local tests from the repository root:
 
 ```powershell
+python -m pip install -e shared/python
 python -m unittest discover -s agents\m5 -p test_*.py -v
 ```
 
@@ -64,12 +98,13 @@ python -m unittest discover -s streaming\s9_emerging_skills -p "test_*.py" -v
 python -m unittest discover -s streaming\s10_hiring_companies -p "test_*.py" -v
 ```
 
-## Still required for production
+## Remaining source-specific work
 
-The normalizers are not source collectors. Add source-specific CYBERHEAD and
-ISC2 readers after confirming their current formats and access conditions.
-Map education programmes to ECSF roles only with a reviewed mapping process.
-The platform comparison needs citations or other retained evidence in its
-notes. The normalizers still need source-specific CYBERHEAD and ISC2 readers,
-and their owners must publish messages through the shared `ace.contracts`
-package rather than writing directly to Cassandra.
+The publishers deliberately do not guess source layouts or values. Production
+collection still needs a CYBERHEAD export adapter and an ISC2 PDF/table
+extractor that are verified against the actual source artifacts. Education
+role mapping also needs the reviewed mapping workflow and the shared `ace.llm`
+interface; this checkout does not contain that module. The platform publisher
+uses cited, curated evidence and does not run an LLM or refresh itself.
+The related-work section and its references are now included in
+[design-submission.md](../../docs/design-submission.md#5-related-work).

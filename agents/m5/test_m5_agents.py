@@ -61,6 +61,15 @@ class EducationAgentTests(unittest.TestCase):
                 }
             )
         with self.assertRaises(ValueError):
+            normalize_programme(
+                {
+                    "programme_id": "unicode-country",
+                    "country": "ßA",
+                    "name": "Course",
+                    "institution": "Example",
+                }
+            )
+        with self.assertRaises(ValueError):
             normalize_programmes([{"programme_id": "bad"}])
 
 
@@ -93,6 +102,7 @@ class WorkforceAgentTests(unittest.TestCase):
             {**base, "workforce_gap": -1},
             {**base, "workforce_size": 12.5},
             {**base, "country": "Germany"},
+            {**base, "country": "ßA"},
         ):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 normalize_workforce_record(invalid)
