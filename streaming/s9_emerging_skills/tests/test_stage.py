@@ -4,7 +4,7 @@ import uuid
 import unittest
 
 from ace.stage import WindowedStage, run_local
-from stage import EmergingSkillsStage
+from ..stage import EmergingSkillsStage
 
 
 def demand(day: str, unmapped: list[str]) -> dict[str, object]:
@@ -60,6 +60,18 @@ class EmergingSkillsStageTests(unittest.TestCase):
 
         self.assertEqual(result.published("agg.emerging_skills"), [])
         self.assertEqual(result.invalid[0]["topic"], "skills.demand")
+
+    def test_skips_blank_mentions_instead_of_failing_the_stage(self) -> None:
+        result = run_local(
+            EmergingSkillsStage(epsilon=0.1),
+            [demand("2026-01-31", ["", " ", "SIEM"])],
+        )
+
+        self.assertEqual(result.invalid, [])
+        self.assertEqual(
+            result.published("agg.emerging_skills")[0]["items"],
+            [{"mention": "siem", "count": 1, "max_error": 0}],
+        )
 
 
 if __name__ == "__main__":

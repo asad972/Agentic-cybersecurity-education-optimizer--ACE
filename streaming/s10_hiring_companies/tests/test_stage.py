@@ -4,7 +4,7 @@ import uuid
 import unittest
 
 from ace.stage import WindowedStage, run_local
-from stage import HiringCompaniesStage
+from ..stage import HiringCompaniesStage
 
 
 def job(day: str, company: str | None = None) -> dict[str, object]:
@@ -64,6 +64,14 @@ class HiringCompaniesStageTests(unittest.TestCase):
 
         self.assertEqual(result.published("agg.companies_daily"), [])
         self.assertEqual(result.invalid[0]["topic"], "jobs.clean")
+
+    def test_skips_non_text_company_if_it_reaches_the_stage(self) -> None:
+        stage = HiringCompaniesStage(precision=8)
+        state = stage.new()
+
+        stage.add(state, {"company": 123})
+
+        self.assertEqual(state["missing_company"], 1)
 
 
 if __name__ == "__main__":

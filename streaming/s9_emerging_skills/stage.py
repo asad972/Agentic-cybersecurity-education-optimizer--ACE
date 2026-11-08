@@ -4,7 +4,7 @@ from typing import Any
 
 from ace.stage import Window, WindowedStage
 
-from lossy_counting import EmergingSkillsCounter, LossyCounting
+from .lossy_counting import EmergingSkillsCounter, LossyCounting
 
 
 class EmergingSkillsStage(WindowedStage):
@@ -35,7 +35,7 @@ class EmergingSkillsStage(WindowedStage):
         # Count each unmapped mention in this event-time window.
         for mention in mentions:
             if not isinstance(mention, str):
-                raise ValueError("each unmapped mention must be text")
+                continue
             state.add(mention)
         return state
 

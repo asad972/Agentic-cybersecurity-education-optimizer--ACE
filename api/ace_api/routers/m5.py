@@ -10,9 +10,6 @@ from fastapi import APIRouter, HTTPException, Query, Request
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["M5 education and workforce"])
 
-_PLATFORMS = ("cyberseek", "enisa_ecsf", "isc2_workforce_study")
-
-
 def _session(request: Request):
     """Return the connected Cassandra session or report service unavailability."""
     database = request.app.state.database
@@ -130,16 +127,23 @@ def get_hiring_companies(
 
 @router.get("/platforms")
 def get_platforms(request: Request) -> dict[str, Any]:
-    """Return evidence rows from the three known platform partitions."""
-    rows = []
-    for platform in _PLATFORMS:
-        results = _read(
-            request,
-            "SELECT platform, feature, supported, notes, analysed_at "
-            "FROM platform_analysis WHERE platform = %s LIMIT 100",
-            (platform,),
-        )
-        rows.extend(
+    """Return evidence for every platform partition currently in Cassandra."""
+    partitions = _read(
+        request, "SELECT DISTINCT platform FROM platform_analysis", ()
+    )
+    platforms = tuple(row.platform for row in partitions)
+    if not platforms:
+        return {"items": []}
+
+    placeholders = ", ".join("%s" for _ in platforms)
+    results = _read(
+        request,
+        "SELECT platform, feature, supported, notes, analysed_at "
+        f"FROM platform_analysis WHERE platform IN ({placeholders}) LIMIT 500",
+        platforms,
+    )
+    return {
+        "items": [
             {
                 "platform": row.platform,
                 "feature": row.feature,
@@ -148,5 +152,5 @@ def get_platforms(request: Request) -> dict[str, Any]:
                 "analysed_at": row.analysed_at,
             }
             for row in results
-        )
-    return {"items": rows}
+        ]
+    }

@@ -4,7 +4,7 @@ from typing import Any
 
 from ace.stage import Window, WindowedStage
 
-from hyperloglog import HiringCompaniesCounter, HyperLogLog
+from .hyperloglog import HiringCompaniesCounter, HyperLogLog
 
 
 class HiringCompaniesStage(WindowedStage):
@@ -28,11 +28,9 @@ class HiringCompaniesStage(WindowedStage):
     def add(self, state: dict[str, Any], record: dict[str, Any]) -> dict[str, Any]:
         # A missing or blank company is counted separately and not hashed.
         company = record.get("company")
-        if company is None or (isinstance(company, str) and not company.strip()):
+        if company is None or not isinstance(company, str) or not company.strip():
             state["missing_company"] += 1
             return state
-        if not isinstance(company, str):
-            raise ValueError("jobs.clean company must be text when present")
 
         # Normalize and add the company name to the current day's sketch.
         state["companies"].add(company)

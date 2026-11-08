@@ -102,11 +102,13 @@ class HiringCompaniesCounter:
             raise ValueError("missing_company must be a non-negative integer")
 
         country_daily = self._daily.setdefault(country, {})
-        if event_day in country_daily:
-            raise ValueError(f"a daily sketch already exists for {country} on {event_day}")
+        # Replays and restored checkpoints can close the same event-time day
+        # again; replace the previous sketch instead of failing the stage.
         country_daily[event_day] = sketch
         if missing_company:
             self._missing.setdefault(country, {})[event_day] = missing_company
+        else:
+            self._missing.get(country, {}).pop(event_day, None)
 
     def emit(self, country: str, day: date | str) -> dict[str, object]:
         """Return the daily and rolling distinct-company estimates."""

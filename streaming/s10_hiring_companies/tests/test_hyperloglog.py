@@ -3,7 +3,7 @@
 from datetime import date
 import unittest
 
-from hyperloglog import HiringCompaniesCounter, HyperLogLog
+from ..hyperloglog import HiringCompaniesCounter, HyperLogLog
 
 
 class HyperLogLogTests(unittest.TestCase):
@@ -99,6 +99,27 @@ class HyperLogLogTests(unittest.TestCase):
         """Precision is limited to the supported HyperLogLog range."""
         with self.assertRaises(ValueError):
             HyperLogLog(precision=3)
+
+    def test_replaces_daily_sketch_and_missing_count_on_replay(self) -> None:
+        counter = HiringCompaniesCounter(precision=8)
+        first = HyperLogLog(precision=8)
+        first.add("Old Company")
+        replacement = HyperLogLog(precision=8)
+        replacement.add("New Company")
+
+        counter.add_daily_sketch("DE", "2026-01-31", first, missing_company=4)
+        counter.add_daily_sketch("DE", "2026-01-31", replacement, missing_company=0)
+
+        self.assertEqual(
+            counter.emit("DE", "2026-01-31"),
+            {
+                "country": "DE",
+                "day": "2026-01-31",
+                "companies_day": 1,
+                "companies_30d": 1,
+                "missing_company": 0,
+            },
+        )
 
 
 if __name__ == "__main__":

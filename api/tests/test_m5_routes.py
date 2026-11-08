@@ -43,14 +43,25 @@ class CassandraSession:
                 )
             ]
         if "platform_analysis" in query:
+            if "DISTINCT" in query:
+                return [
+                    SimpleNamespace(platform=platform)
+                    for platform in (
+                        "cyberseek",
+                        "enisa_ecsf",
+                        "isc2_workforce_study",
+                        "new_platform",
+                    )
+                ]
             return [
                 SimpleNamespace(
-                    platform=parameters[0],
+                    platform=platform,
                     feature="career_pathway",
                     supported=True,
                     notes="Reviewed source.",
                     analysed_at=datetime(2026, 11, 2, tzinfo=timezone.utc),
                 )
+                for platform in parameters
             ]
         raise AssertionError(f"Unexpected query: {query}")
 
@@ -94,8 +105,11 @@ def test_emerging_companies_and_platform_endpoints_return_live_rows():
     assert companies.status_code == 200
     assert companies.json()["companies_30d"] == 5
     assert platforms.status_code == 200
-    assert len(platforms.json()["items"]) == 3
-    assert len(database.session.calls) == 5
+    assert len(platforms.json()["items"]) == 4
+    assert {item["platform"] for item in platforms.json()["items"]} >= {
+        "new_platform"
+    }
+    assert len(database.session.calls) == 4
 
 
 def test_education_endpoint_rejects_non_iso_country_codes():

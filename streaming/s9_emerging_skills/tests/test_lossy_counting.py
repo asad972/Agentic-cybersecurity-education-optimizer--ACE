@@ -3,7 +3,7 @@
 from datetime import date
 import unittest
 
-from lossy_counting import EmergingSkillsCounter, LossyCounting
+from ..lossy_counting import EmergingSkillsCounter, LossyCounting
 
 
 class LossyCountingTests(unittest.TestCase):
@@ -26,14 +26,15 @@ class LossyCountingTests(unittest.TestCase):
                 estimate.max_error, int(counter.epsilon * counter.total)
             )
 
-    def test_normalizes_mentions_and_rejects_empty_items(self) -> None:
-        """Equivalent casing is grouped and blank mentions are invalid."""
+    def test_normalizes_mentions_and_ignores_empty_items(self) -> None:
+        """Equivalent casing is grouped and blank mentions are skipped."""
         counter = LossyCounting(epsilon=0.1)
         counter.add("  SIEM  ")
+        counter.add("")
+        counter.add("   ")
 
         self.assertIn("siem", counter.estimates())
-        with self.assertRaises(ValueError):
-            counter.add("   ")
+        self.assertEqual(counter.total, 1)
 
     def test_emits_separate_country_results_for_the_30_day_window(self) -> None:
         """The output uses a 30-day window without mixing countries."""
@@ -109,6 +110,21 @@ class LossyCountingTests(unittest.TestCase):
             counter.add("DE", "not-a-date", "siem")
         with self.assertRaises(ValueError):
             counter.emit("DE", "not-a-date")
+
+    def test_replaces_daily_sketch_when_a_window_is_replayed(self) -> None:
+        counter = EmergingSkillsCounter(epsilon=0.1)
+        first = LossyCounting(epsilon=0.1)
+        first.add("old")
+        replacement = LossyCounting(epsilon=0.1)
+        replacement.add("new")
+
+        counter.add_daily_sketch("DE", "2026-01-31", first)
+        counter.add_daily_sketch("DE", "2026-01-31", replacement)
+
+        self.assertEqual(
+            counter.emit("DE", "2026-01-31")["items"],
+            [{"mention": "new", "count": 1, "max_error": 0}],
+        )
 
 
 if __name__ == "__main__":

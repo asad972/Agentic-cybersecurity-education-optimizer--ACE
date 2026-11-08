@@ -113,7 +113,11 @@ function BarChart({
 
 export function EducationPage() {
   const [country, setCountry] = useState('DE');
-  const [day, setDay] = useState(() => new Date().toISOString().slice(0, 10));
+  const [day, setDay] = useState(() => {
+    const yesterday = new Date();
+    yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+    return yesterday.toISOString().slice(0, 10);
+  });
   const [education, setEducation] = useState<EducationData | null>(null);
   const [emerging, setEmerging] = useState<EmergingData | null>(null);
   const [companies, setCompanies] = useState<CompaniesData | null>(null);

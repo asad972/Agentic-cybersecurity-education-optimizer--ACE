@@ -6,10 +6,14 @@ import unittest
 from pathlib import Path
 from typing import Any
 
-from m5_runtime import publish_records, read_records
+from m5_runtime import publish_normalized_records, publish_records, read_records
 from education_agent.__main__ import normalize_input as normalize_programme_input
+from education_agent.__main__ import normalize_record as normalize_programme_record
 from platform_agent.__main__ import normalize_input as normalize_platform_input
+from platform_agent.__main__ import normalize_record as normalize_platform_record
 from workforce_agent.__main__ import normalize_input as normalize_workforce_input
+from workforce_agent.__main__ import normalize_record as normalize_workforce_record
+from datetime import datetime, timezone
 
 
 class RecordingProducer:
@@ -82,6 +86,64 @@ class M5RuntimeTests(unittest.TestCase):
                 FailingProducer(),
             )
 
+    def test_bad_rows_route_to_invalid_without_dropping_good_rows(self) -> None:
+        producer = RecordingProducer()
+        rows = [
+            {
+                "programme_id": "good",
+                "country": "DE",
+                "name": "Security",
+                "institution": "Example University",
+                "level": "master",
+            },
+            {
+                "programme_id": "bad",
+                "country": "FR",
+                "name": "Security",
+                "institution": "Example University",
+                "level": "diploma",
+            },
+        ]
+
+        sent = publish_normalized_records(
+            "raw.programmes",
+            "m5-education",
+            rows,
+            normalize_programme_record,
+            producer,
+        )
+
+        self.assertEqual(sent, 2)
+        self.assertEqual(
+            [message[0] for message in producer.sent],
+            ["raw.programmes", "errors.invalid"],
+        )
+        invalid = json.loads(producer.sent[1][2])
+        self.assertIn("row 2", invalid["reason"])
+        self.assertEqual(json.loads(invalid["payload"]), rows[1])
+
+    def test_invalid_csv_integer_routes_to_invalid_and_keeps_good_workforce_row(self) -> None:
+        producer = RecordingProducer()
+        rows = [
+            {"country": "DE", "year": "2024", "workforce_size": "12000", "source": "isc2_2024"},
+            {"country": "FR", "year": "2024", "workforce_size": "12 345", "source": "isc2_2024"},
+        ]
+
+        publish_normalized_records(
+            "raw.workforce",
+            "m5-workforce",
+            rows,
+            normalize_workforce_record,
+            producer,
+        )
+
+        self.assertEqual(
+            [message[0] for message in producer.sent],
+            ["raw.workforce", "errors.invalid"],
+        )
+        invalid = json.loads(producer.sent[1][2])
+        self.assertIn("row 2", invalid["reason"])
+
     def test_agent_csv_inputs_are_converted_before_normalization(self) -> None:
         programmes = normalize_programme_input(
             [
@@ -112,6 +174,12 @@ class M5RuntimeTests(unittest.TestCase):
         self.assertEqual(programmes[1]["ecsf_roles"], [])
         self.assertEqual(workforce[0]["workforce_size"], 120)
         self.assertTrue(platforms[0]["supported"])
+        timestamp = datetime(2026, 11, 8, tzinfo=timezone.utc)
+        platform = normalize_platform_record(
+            {"platform": "ENISA ECSF", "feature": "roles", "supported": "true"},
+            analysed_at=timestamp,
+        )
+        self.assertEqual(platform["analysed_at"], "2026-11-08T00:00:00+00:00")
 
 
 if __name__ == "__main__":

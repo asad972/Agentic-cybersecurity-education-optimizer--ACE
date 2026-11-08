@@ -3,7 +3,7 @@
 import csv
 import json
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -14,6 +14,18 @@ class Producer(Protocol):
     """The small Kafka producer interface used by the M5 publishers."""
 
     def send(self, topic: str, *, key: bytes, value: bytes) -> Any: ...
+
+
+class KafkaUnavailable(RuntimeError):
+    """Kafka could not be reached using the configured bootstrap servers."""
+
+
+def _send(outgoing: contracts.Outgoing, producer: Producer) -> Any:
+    return producer.send(
+        outgoing.topic,
+        key=outgoing.key.encode("utf-8"),
+        value=json.dumps(outgoing.value, ensure_ascii=False).encode("utf-8"),
+    )
 
 
 def read_records(path: str | Path) -> list[Mapping[str, Any]]:
@@ -66,13 +78,40 @@ def publish_records(
     deliveries = []
     for record in records:
         outgoing = contracts.route(topic, dict(record), producer=producer_name)
-        deliveries.append(
-            producer.send(
-                outgoing.topic,
-                key=outgoing.key.encode("utf-8"),
-                value=json.dumps(outgoing.value, ensure_ascii=False).encode("utf-8"),
+        deliveries.append(_send(outgoing, producer))
+    for delivery in deliveries:
+        if delivery is not None:
+            delivery.get()
+    return len(records)
+
+
+def publish_normalized_records(
+    topic: str,
+    producer_name: str,
+    records: Sequence[Mapping[str, Any]],
+    normalize: Callable[[Mapping[str, Any]], Mapping[str, Any]],
+    producer: Producer,
+) -> int:
+    """Publish valid rows and route row-level normalization failures as invalid."""
+    deliveries = []
+    for row_number, record in enumerate(records, start=1):
+        try:
+            message = dict(normalize(record))
+            outgoing = contracts.route(topic, message, producer=producer_name)
+        except ValueError as error:
+            invalid = contracts.invalid_record(
+                topic,
+                producer_name,
+                f"row {row_number}: {error}",
+                dict(record),
             )
-        )
+            outgoing = contracts.Outgoing(
+                contracts.INVALID_TOPIC,
+                topic,
+                invalid,
+            )
+        deliveries.append(_send(outgoing, producer))
+
     for delivery in deliveries:
         if delivery is not None:
             delivery.get()
@@ -82,15 +121,22 @@ def publish_records(
 def create_producer() -> Any:
     """Create the Kafka producer configured for ACE's internal broker."""
     from kafka import KafkaProducer
+    from kafka.errors import NoBrokersAvailable
 
     bootstrap_servers = os.environ.get(
         "KAFKA_BOOTSTRAP_SERVERS", "kafka:29092"
     )
-    return KafkaProducer(
-        bootstrap_servers=bootstrap_servers,
-        acks="all",
-        retries=5,
-    )
+    try:
+        return KafkaProducer(
+            bootstrap_servers=bootstrap_servers,
+            acks="all",
+            retries=5,
+        )
+    except NoBrokersAvailable as error:
+        raise KafkaUnavailable(
+            "Kafka is unavailable at KAFKA_BOOTSTRAP_SERVERS="
+            f"{bootstrap_servers}"
+        ) from error
 
 
 def publish_file(
@@ -102,6 +148,24 @@ def publish_file(
     producer = create_producer()
     try:
         count = publish_records(topic, producer_name, records, producer)
+        producer.flush()
+        return count
+    finally:
+        producer.close()
+
+
+def publish_normalized_file(
+    topic: str,
+    producer_name: str,
+    records: Sequence[Mapping[str, Any]],
+    normalize: Callable[[Mapping[str, Any]], Mapping[str, Any]],
+) -> int:
+    """Create a Kafka producer and publish normalized rows before exiting."""
+    producer = create_producer()
+    try:
+        count = publish_normalized_records(
+            topic, producer_name, records, normalize, producer
+        )
         producer.flush()
         return count
     finally:

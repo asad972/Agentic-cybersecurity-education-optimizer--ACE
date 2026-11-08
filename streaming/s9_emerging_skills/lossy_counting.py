@@ -39,7 +39,7 @@ class LossyCounting:
         normalized = item.strip().lower()
         # Empty names cannot be meaningful emerging-skill candidates.
         if not normalized:
-            raise ValueError("item must not be empty")
+            return
 
         # Advance the stream length before determining this item's bucket.
         self.total += 1
@@ -110,10 +110,8 @@ class EmergingSkillsCounter:
             raise ValueError("country must be an uppercase ISO alpha-2 code")
         # Normalize the day so the dictionary key is always a date object.
         event_day = self._parse_day(day)
-        # A window should close only once; reject accidental duplicate insertion.
-        if event_day in self._daily[country]:
-            raise ValueError(f"a daily sketch already exists for {country} on {event_day}")
-        # Keep the stage's bounded sketch rather than replaying raw mentions.
+        # A replay or checkpoint restore can close a day again; the latest
+        # completed window replaces that day's previous checkpointed result.
         self._daily[country][event_day] = sketch
 
     def emit(self, country: str, day: date | str) -> dict[str, object]:

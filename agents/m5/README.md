@@ -47,13 +47,26 @@ Set `KAFKA_BOOTSTRAP_SERVERS` when the broker is not reachable as
 numbers must be integers, and CSV platform decisions must be `true` or
 `false`. Invalid messages are routed by `ace.contracts` to `errors.invalid`.
 
-These are ingestion/publishing agents, not source scrapers: they do not
-download CYBERHEAD data or extract ISC2 report PDFs. Education input must
-already contain a reviewed `ecsf_roles` mapping; no LLM mapping is attempted
-because the `ace.llm` module is not present in this checkout. The report
-comparison is included in
-[design-submission.md](../../docs/design-submission.md#5-related-work); its
-standalone working draft remains in
+## Current scope and placeholders
+
+- **Education:** the agent reads ready-made canonical files. CYBERHEAD
+  collection/extraction is not implemented. Input `ecsf_roles` must already be
+  reviewed; LLM role mapping is not implemented because `ace.llm` is not
+  available in this checkout.
+- **Workforce:** the agent reads ready-made canonical files. ISC2 PDF/table
+  extraction is not implemented; figures must come from verified report data.
+- **Platform analysis:** the agent republishes the hand-curated
+  `platform_evidence.json`; it does not run an automated or LLM comparison.
+  `analysed_at` records the publication run time, not the date the source fact
+  was independently verified.
+
+At row level, normalization failures are sent to `errors.invalid` with the
+input row number, and valid rows in the same file are still published. File
+parsing failures (for example malformed JSON) stop the run because records
+cannot be reliably separated. Kafka broker startup failures report the
+configured `KAFKA_BOOTSTRAP_SERVERS` value.
+
+The related-work section and references are in
 [M5-related-work.md](../../docs/M5-related-work.md).
 
 Example:
@@ -97,8 +110,8 @@ Run the S9 and S10 algorithm and stage tests from the repository root after
 installing `shared/python` as described in `shared/python/README.md`:
 
 ```powershell
-python -m unittest discover -s streaming\s9_emerging_skills -p "test_*.py" -v
-python -m unittest discover -s streaming\s10_hiring_companies -p "test_*.py" -v
+python -m unittest discover -s streaming\s9_emerging_skills -t streaming -p "test_*.py" -v
+python -m unittest discover -s streaming\s10_hiring_companies -t streaming -p "test_*.py" -v
 ```
 
 ## Remaining source-specific work
@@ -109,5 +122,3 @@ extractor that are verified against the actual source artifacts. Education
 role mapping also needs the reviewed mapping workflow and the shared `ace.llm`
 interface; this checkout does not contain that module. The platform publisher
 uses cited, curated evidence and does not run an LLM or refresh itself.
-The related-work section and its references are now included in
-[design-submission.md](../../docs/design-submission.md#5-related-work).
