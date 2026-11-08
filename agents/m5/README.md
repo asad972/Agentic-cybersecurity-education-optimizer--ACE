@@ -51,7 +51,10 @@ These are ingestion/publishing agents, not source scrapers: they do not
 download CYBERHEAD data or extract ISC2 report PDFs. Education input must
 already contain a reviewed `ecsf_roles` mapping; no LLM mapping is attempted
 because the `ace.llm` module is not present in this checkout. The report
-comparison draft is in [M5-related-work.md](../../docs/M5-related-work.md).
+comparison is included in
+[design-submission.md](../../docs/design-submission.md#5-related-work); its
+standalone working draft remains in
+[M5-related-work.md](../../docs/M5-related-work.md).
 
 Example:
 
