@@ -5,9 +5,11 @@ import logging
 
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 
 from .config import Settings
 from .database import CassandraConnection
+from .routers import discover_routers
 
 log = logging.getLogger(__name__)
 
@@ -47,8 +49,21 @@ def create_app(settings: Settings | None = None, database=None,
             raise HTTPException(status_code=503, detail="Cassandra is unavailable")
         return {"status": "ready", "database": "connected"}
 
-    for router in extra_routers:
-        app.include_router(router)
+    reserved_paths = {route.path for route in app.routes}
+    registered = set()
+    for router in [*discover_routers(), *extra_routers]:
+        if id(router) in registered:
+            continue
+        registered.add(id(router))
+        try:
+            # get_openapi expands nested routers across supported FastAPI versions.
+            paths = get_openapi(title="Router validation", version="0", routes=router.routes)["paths"]
+            clashes = reserved_paths.intersection(paths)
+            if clashes:
+                raise ValueError(f"Router clashes with built-in paths: {sorted(clashes)}")
+            app.include_router(router)
+        except Exception:
+            log.exception("Skipping invalid router %r", router)
     return app
 
 
