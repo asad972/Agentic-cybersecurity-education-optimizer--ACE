@@ -50,6 +50,7 @@ def companies(message, received_at):
         "country": message["country"],
         "companies_day": message["companies_day"],
         "companies_30d": message["companies_30d"],
+        "missing_company": message.get("missing_company"),
     })]
 
 

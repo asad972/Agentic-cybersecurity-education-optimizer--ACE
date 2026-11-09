@@ -46,8 +46,15 @@ def test_emerging_skills_one_row_per_mention(stored):
 def test_companies_per_country_and_day(stored):
     message = {"country": "NL", "day": "2026-10-01", "companies_day": 31, "companies_30d": 210, "missing_company": 3}
     assert stored("agg.companies_daily", message, RECEIVED) == [
-        Row("companies_by_day", {"day": DAY, "country": "NL", "companies_day": 31, "companies_30d": 210}),
+        Row("companies_by_day", {"day": DAY, "country": "NL", "companies_day": 31, "companies_30d": 210,
+                                 "missing_company": 3}),
     ]
+
+
+def test_companies_without_missing_company_store_null():
+    message = {"country": "NL", "day": "2026-10-01", "companies_day": 31, "companies_30d": 210}
+    [row] = sink_rows.rows("agg.companies_daily", message, RECEIVED)
+    assert row.values["missing_company"] is None
 
 
 @pytest.mark.parametrize("topic, alert_type, subject", [

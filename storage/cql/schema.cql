@@ -168,6 +168,8 @@ CREATE TABLE IF NOT EXISTS companies_by_day (
   missing_company int,       -- Job ads with no company field (S10)
   PRIMARY KEY (day, country)
 );
+-- missing_company came later; CREATE TABLE IF NOT EXISTS leaves an older table as it is.
+ALTER TABLE companies_by_day ADD IF NOT EXISTS missing_company int;
 
 CREATE TABLE IF NOT EXISTS platform_analysis (
   platform    text,
