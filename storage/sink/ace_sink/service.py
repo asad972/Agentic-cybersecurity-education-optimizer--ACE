@@ -127,6 +127,7 @@ def run(settings: Settings, consumer: Any, producer: Any, writer: Any,
 
 def main() -> None:
     """Entry point of the container: connect to Kafka and Cassandra, then run until stopped."""
+    from cassandra import InvalidRequest
     from cassandra.cluster import Cluster
     from cassandra.policies import DCAwareRoundRobinPolicy
     from confluent_kafka import Consumer, Producer
@@ -154,7 +155,8 @@ def main() -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         signal.signal(sig, lambda *_: stopping.append(True))
     try:
-        run(settings, consumer, producer, CassandraWriter(session), stop=lambda: bool(stopping))
+        writer = CassandraWriter(session, rejected=(InvalidRequest,))
+        run(settings, consumer, producer, writer, stop=lambda: bool(stopping))
     finally:
         consumer.close()
         producer.flush(10)

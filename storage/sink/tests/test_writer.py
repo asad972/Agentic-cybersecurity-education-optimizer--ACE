@@ -83,3 +83,27 @@ def test_bad_table_or_column_name_is_refused():
 def test_failed_write_raises():
     with pytest.raises(TimeoutError):
         CassandraWriter(Session(error=TimeoutError("write timed out"))).write([Row("t", {"a": 1})])
+
+
+class Refused(Exception):
+    """Stands in for the driver's InvalidRequest, e.g. a key longer than 64 KB."""
+
+
+def test_row_cassandra_refuses_is_unstorable():
+    writer = CassandraWriter(Session(error=Refused("Key length of 70000 is longer than maximum of 65535")),
+                             rejected=(Refused,))
+    with pytest.raises(Unstorable, match="top10: Cassandra refused the row: Key length of 70000"):
+        writer.write([Row("top10", {"item": "x" * 70000})])
+
+
+def test_error_not_listed_as_rejected_still_stops_the_sink():
+    writer = CassandraWriter(Session(error=TimeoutError("write timed out")), rejected=(Refused,))
+    with pytest.raises(TimeoutError):
+        writer.write([Row("t", {"a": 1})])
+
+
+def test_every_write_is_awaited_before_a_refused_row_is_reported():
+    session = Session(error=Refused("refused"))
+    with pytest.raises(Unstorable):
+        CassandraWriter(session, rejected=(Refused,)).write([Row("t", {"a": 1}), Row("t", {"a": 2})])
+    assert len(session.writes) == 2
