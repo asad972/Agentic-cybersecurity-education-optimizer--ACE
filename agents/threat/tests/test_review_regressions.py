@@ -92,7 +92,8 @@ def test_lookup_rate_limit_keeps_events_and_resumes_exact_row_after_restart(tmp_
         finally:
             source.http.close()
             store.close()
-    assert len(feed_calls) == 1  # Resume saved rows, never re-fetch the snapshot/page.
+    # Snapshot rows are retained; OTX resumes the page URL at its saved offset.
+    assert len(feed_calls) == (1 if provider_class is AbuseIPDB else 2)
     assert lookups == ['192.0.2.1', '192.0.2.2', '192.0.2.2', '192.0.2.3']
     assert len({json.loads(item[2])['event_id'] for item in output}) == 3
 

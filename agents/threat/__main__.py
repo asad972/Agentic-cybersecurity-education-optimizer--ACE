@@ -8,7 +8,7 @@ from ace import contracts
 
 from .collector import CollectorStore, ThreatCollector
 from .fixtures import fixture_events
-from .runtime import EVENTS_TOPIC, TASKS_TOPIC, KafkaTransport, Publisher, create_consumer, KafkaDeliveryError, FatalKafkaError
+from .runtime import EVENTS_TOPIC, TASKS_TOPIC, KafkaTransport, Publisher, create_consumer, KafkaDeliveryError, FatalKafkaError, is_fatal_kafka
 from .sources import AbuseIPDB, OTX
 from .utils import country_code, write_jsonl
 
@@ -28,11 +28,11 @@ def process_task(message, collector, publisher, flush):
         flush()
 
 
-def poll_task(consumer):
-    message = consumer.poll(1)
+def poll_task(consumer, timeout=0):
+    message = consumer.poll(timeout)
     if message is not None and message.error():
         error = message.error()
-        if error.fatal():
+        if is_fatal_kafka(error):
             raise FatalKafkaError(str(error))
         LOG.warning("Recoverable Kafka consumer error: %s", error)
         return None
@@ -46,24 +46,38 @@ def run_loop(collector, consumer, publisher, flush, *, hours, max_pages, country
     next_prune = 0.0
     while True:
         try:
+            # Drain ready input before slow feed work. A bounded burst prevents
+            # a continuously busy topic from starving scheduled collection.
+            for _ in range(1000 if consumer is not None and not once else 0):
+                if pending_message is None:
+                    pending_message = poll_task(consumer)
+                if pending_message is None:
+                    break
+                process_task(pending_message, collector, publisher, flush)
+                try:
+                    consumer.commit(message=pending_message, asynchronous=False)
+                except KafkaException as error:
+                    if is_fatal_kafka(error):
+                        raise FatalKafkaError(str(error)) from error
+                    # Work is already durable (or its rejection acknowledged).
+                    # Poll again so a rebalance can finish; redelivery is safe.
+                    LOG.warning("Kafka task commit deferred; continuing to poll: %s", error)
+                pending_message = None
             # Each source persists its own next poll and retry deadline in SQLite.
-            collector.collect(hours=hours, max_pages=max_pages, country=country,
-                              poll_seconds=poll_seconds)
+            result = collector.collect(hours=hours, max_pages=max_pages, country=country,
+                                       poll_seconds=poll_seconds, force=once)
+            if once:
+                if result.failures:
+                    LOG.error("One-shot collection failed: %s", result.failures)
+                    raise SystemExit(1)
+                LOG.info("One-shot collection sent=%d complete=%s", result.sent, result.complete)
+                return
             collector.run_pending_tasks()
             if time.monotonic() >= next_prune:
                 collector.store.prune(retention_days)
                 next_prune = time.monotonic() + 3600
-            if once:
-                return
-            if consumer is not None:
-                if pending_message is None:
-                    pending_message = poll_task(consumer)
-                if pending_message is not None:
-                    process_task(pending_message, collector, publisher, flush)
-                    consumer.commit(message=pending_message, asynchronous=False)
-                    pending_message = None
         except (KafkaDeliveryError, KafkaException) as error:
-            if isinstance(error, KafkaException) and error.args[0].fatal():
+            if is_fatal_kafka(error):
                 raise FatalKafkaError(str(error)) from error
             LOG.warning("Kafka temporarily unavailable; durable work will retry (%s)", type(error).__name__)
             if once:

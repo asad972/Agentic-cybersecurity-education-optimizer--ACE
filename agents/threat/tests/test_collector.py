@@ -49,8 +49,8 @@ def test_otx_country_is_indicator_location_and_budget_cursor_resumes():
     assert second.complete
     assert first.events[0]["event_id"] != second.events[0]["event_id"]
     assert all(row["country"] == "HU" for row in first.events + second.events)
-    with pytest.raises(ValueError, match="pagination"):
-        source.fetch(START, END, cursor={"next_url": "https://evil.example/steal"})
+    rejected = source.fetch(START, END, cursor={"next_url": "https://evil.example/steal"})
+    assert rejected.complete and "next_url" not in rejected.cursor
 
 
 def test_rate_limit_is_left_to_persistent_scheduler():
@@ -97,15 +97,18 @@ def test_tasks_filter_validate_bound_and_remember_completion(tmp_path):
     collector = ThreatCollector([FakeSource()], store, Publisher(lambda *args: None, "test"), lambda: None)
     task = {"task_id": str(uuid4()), "agent": "job-agent", "action": "fetch_job_ads", "params": {},
             "reason": "test", "decided_by": "rules", "created_at": "2026-10-20T00:00:00Z"}
-    assert collector.handle_task(task) == 0 and calls == []
+    collector.accept_task(task)
+    assert collector.run_pending_tasks() == 0 and calls == []
     task.update(agent="threat-agent", action="refresh_threats", params={"hours": 24, "max_pages": 2, "country": "HU"})
-    collector.handle_task(task)
-    collector.handle_task(task)
+    collector.accept_task(task)
+    collector.run_pending_tasks()
+    collector.accept_task(task)
+    collector.run_pending_tasks()
     assert len(calls) == 1
     assert (calls[0][1] - calls[0][0]).total_seconds() == 86400
     assert calls[0][2]["country"] == "HU" and calls[0][2]["max_pages"] == 2
     with pytest.raises(InvalidMessage):
-        collector.handle_task({**task, "params": {"hours": 25}})
+        collector.accept_task({**task, "params": {"hours": 25}})
     with pytest.raises(InvalidMessage):
-        collector.handle_task({**task, "params": {"country": "ZZ"}})
+        collector.accept_task({**task, "params": {"country": "ZZ"}})
     store.close()

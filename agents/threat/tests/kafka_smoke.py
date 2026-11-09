@@ -78,14 +78,14 @@ def main():
         store = CollectorStore(state)
         try:
             collector = ThreatCollector(feeds, store, publisher, transport.flush)
-            assert collector.collect(now=parse_time('2026-10-20T00:00:00Z')) == 2
+            assert collector.collect(now=parse_time('2026-10-20T00:00:00Z')).sent == 2
         finally:
             store.close()
         # Reopening the durable store and replaying the same feed sends nothing.
         store = CollectorStore(state)
         try:
             assert ThreatCollector(feeds, store, publisher, transport.flush).collect(
-                now=parse_time('2026-10-20T00:00:00Z')) == 0
+                now=parse_time('2026-10-20T00:00:00Z')).sent == 0
         finally:
             store.close()
             for feed in feeds:

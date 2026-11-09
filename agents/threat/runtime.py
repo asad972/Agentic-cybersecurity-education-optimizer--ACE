@@ -19,6 +19,13 @@ class FatalKafkaError(RuntimeError):
     """An unrecoverable broker/client error requiring operator intervention."""
 
 
+def is_fatal_kafka(error) -> bool:
+    from confluent_kafka import KafkaException
+    if isinstance(error, KafkaException) and error.args:
+        error = error.args[0]
+    return bool(getattr(error, "fatal", lambda: False)())
+
+
 class Publisher:
     def __init__(self, transport, producer="threat-agent"):
         self.transport, self.producer = transport, producer
@@ -43,7 +50,7 @@ class KafkaTransport:
     def _delivered(self, error, _message):
         if error:
             self.errors.append(str(error))
-            self.fatal_error |= bool(getattr(error, "fatal", lambda: False)())
+            self.fatal_error |= is_fatal_kafka(error)
 
     def __call__(self, topic: str, key: str, payload: bytes):
         from confluent_kafka import KafkaException
@@ -52,7 +59,7 @@ class KafkaTransport:
                                   on_delivery=self._delivered)
             self.producer.poll(0)
         except (KafkaException, BufferError) as error:
-            if isinstance(error, KafkaException) and error.args[0].fatal():
+            if is_fatal_kafka(error):
                 raise FatalKafkaError(str(error)) from error
             raise KafkaDeliveryError(str(error)) from error
 

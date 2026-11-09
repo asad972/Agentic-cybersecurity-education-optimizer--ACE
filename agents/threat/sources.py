@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ipaddress
+import logging
 import os
 import time
 from dataclasses import dataclass
@@ -12,6 +13,15 @@ from uuid import NAMESPACE_URL, uuid5
 
 import httpx
 from .utils import country_code, parse_time, utc_text
+
+LOG = logging.getLogger(__name__)
+
+
+def permanent_lookup_error(error: Exception) -> bool:
+    """A bad lookup row must not block later rows in the same feed batch."""
+    return (isinstance(error, httpx.HTTPStatusError)
+            and 400 <= error.response.status_code < 500
+            and error.response.status_code not in {408, 429})
 
 
 @dataclass
@@ -64,6 +74,7 @@ def event(source: str, identity: str, country: str, observed: datetime, kind: st
 
 class AbuseIPDB:
     name = "abuseipdb"
+    snapshot_only = True  # The blacklist cannot replay historical windows.
 
     def __init__(self, http: FeedHTTP | None = None, api_key: str | None = None, limit: int = 100):
         self.http = http or FeedHTTP()
@@ -109,7 +120,8 @@ class AbuseIPDB:
                     continue
                 output.append(event(self.name, f"{ip}:{utc_text(observed)}", code, observed, "abuse_report"))
             except httpx.HTTPError as error:
-                if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 404:
+                if permanent_lookup_error(error):
+                    LOG.warning("feed=%s skipped lookup row after HTTP %s", self.name, error.response.status_code)
                     skipped += 1
                     continue
                 return FetchResult(output, {"pending_rows": rows[index:],
@@ -135,6 +147,8 @@ class OTX:
 
     @staticmethod
     def _safe_page(url: str):
+        if not isinstance(url, str):
+            raise ValueError("OTX returned a non-string pagination URL")
         parsed = urlparse(url)
         if parsed.scheme != "https" or parsed.netloc != "otx.alienvault.com" or parsed.path.rstrip("/") != "/api/v1/pulses/subscribed":
             raise ValueError("OTX returned an unexpected pagination URL")
@@ -153,24 +167,36 @@ class OTX:
         if not 1 <= max_pages <= 10:
             raise ValueError("max_pages must be between 1 and 10")
         cursor = cursor or {}
-        url = self._safe_page(cursor.get("next_url") or self.endpoint)
-        offset = int(cursor.get("indicator_offset", 0))  # Read old pre-review cursors too.
-        params = None if cursor.get("next_url") else {"modified_since": utc_text(since), "limit": 20}
-        headers = {"X-OTX-API-KEY": self.api_key, "Accept": "application/json"}
-        output, skipped, processed, geolocation = [], 0, 0, {}
         window = {"since": utc_text(since), "until": utc_text(until)}
+        output, skipped, processed, geolocation = [], 0, 0, {}
+
+        def closed_bad_page():
+            LOG.error("feed=otx rejected pagination URL; closing this window without following it")
+            return FetchResult(output, {"fetched_through": utc_text(until)}, skipped + 1)
+
+        try:
+            saved_url = cursor.get("page_url") or cursor.get("next_url")
+            url = self._safe_page(saved_url or self.endpoint)
+        except ValueError:
+            return closed_bad_page()  # Also repairs previously persisted unsafe cursors.
+        offset = max(0, int(cursor.get("indicator_offset", 0)))
+        params = None if saved_url else {"modified_since": utc_text(since), "limit": 20}
+        headers = {"X-OTX-API-KEY": self.api_key, "Accept": "application/json"}
         for page_index in range(max_pages):
-            if page_index == 0 and "pending_items" in cursor:
+            legacy = page_index == 0 and "pending_items" in cursor
+            request_url = url + ("?" + urlencode(params) if params else "")
+            if legacy:
+                # Finish old snapshot cursors without losing their saved progress.
                 flattened, next_url = cursor["pending_items"], cursor.get("next_url")
+                offset = 0
             else:
-                request_url = url + ("?" + urlencode(params) if params else "")
                 try:
                     page = self.http.get(url, headers=headers, params=params)
                     pulses = page.get("results")
                     if not isinstance(pulses, list):
                         raise ValueError("OTX response omitted results")
                 except (httpx.HTTPError, ValueError) as error:
-                    return FetchResult(output, {**window, "next_url": request_url,
+                    return FetchResult(output, {**window, "page_url": request_url,
                         "indicator_offset": offset}, skipped, False, error)
                 flattened = []
                 for pulse in pulses:
@@ -179,12 +205,21 @@ class OTX:
                         continue
                     metadata = {key: pulse[key] for key in ("id", "created", "tags") if key in pulse}
                     flattened.extend((metadata, row) for row in pulse["indicators"])
-                flattened = flattened[offset:]
                 next_url = page.get("next")
-            for index, (pulse, row) in enumerate(flattened):
-                pending = {**window, "pending_items": flattened[index:], "next_url": next_url}
+            # Validate before a URL can enter any persisted partial cursor.
+            bad_next = False
+            if next_url:
+                try:
+                    next_url = self._safe_page(next_url)
+                except ValueError:
+                    bad_next, next_url = True, None
+            for index in range(offset, len(flattened)):
+                pulse, row = flattened[index]
+                pending = {**window, "page_url": request_url, "indicator_offset": index}
+                if legacy:
+                    pending = {**window, "pending_items": flattened[index:], "next_url": next_url}
                 if processed >= self.max_indicators:
-                    return FetchResult(output, pending, skipped, False)
+                    return closed_bad_page() if bad_next else FetchResult(output, pending, skipped, False)
                 processed += 1
                 try:
                     if not isinstance(row, dict):
@@ -207,18 +242,16 @@ class OTX:
                     identity = f"{pulse['id']}:{row.get('id', ip)}:{utc_text(observed)}"
                     output.append(event(self.name, identity, code, observed, self._kind(pulse)))
                 except httpx.HTTPError as error:
-                    if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 404:
+                    if permanent_lookup_error(error):
+                        LOG.warning("feed=%s skipped lookup row after HTTP %s", self.name, error.response.status_code)
                         skipped += 1
                         continue
-                    return FetchResult(output, pending, skipped, False, error)
+                    return closed_bad_page() if bad_next else FetchResult(output, pending, skipped, False, error)
                 except (KeyError, TypeError, ValueError):
                     skipped += 1
+            if bad_next:
+                return closed_bad_page()
             if not next_url:
                 return FetchResult(output, {"fetched_through": utc_text(until)}, skipped, True)
-            try:
-                url = self._safe_page(next_url)
-            except ValueError as error:
-                return FetchResult(output, {**window, "pending_items": [], "next_url": next_url},
-                                   skipped, False, error)
-            params, offset = None, 0
-        return FetchResult(output, {**window, "next_url": url, "indicator_offset": 0}, skipped, False)
+            url, params, offset = next_url, None, 0
+        return FetchResult(output, {**window, "page_url": url, "indicator_offset": 0}, skipped, False)

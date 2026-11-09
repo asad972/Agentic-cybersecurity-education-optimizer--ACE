@@ -70,8 +70,8 @@ def test_otx_rejects_offsite_paging_and_does_not_follow_redirects():
     for url in ('http://otx.alienvault.com/api/v1/pulses/subscribed',
                 'https://otx.alienvault.com.evil.example/api/v1/pulses/subscribed',
                 'https://otx.alienvault.com/api/v1/other'):
-        with pytest.raises(ValueError, match='pagination'):
-            source.fetch(START, END, cursor={'next_url': url})
+        rejected = source.fetch(START, END, cursor={'next_url': url})
+        assert rejected.complete and "next_url" not in rejected.cursor
     assert len(seen) == 1
 
 
@@ -126,7 +126,8 @@ def test_provider_failure_does_not_block_pending_or_other_feed_delivery(tmp_path
     collector = ThreatCollector([SimpleNamespace(name='bad', fetch=fail),
                                  SimpleNamespace(name='good', fetch=succeed)], store, publisher, lambda: None)
     try:
-        collector.handle_task(task())
+        collector.accept_task(task())
+        collector.run_pending_tasks()
         assert len(output) == 2
         assert 'since' in store.cursor('bad:*:' + task()['task_id'])
         assert store.feed_state('bad')[1] > 0
