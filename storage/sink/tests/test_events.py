@@ -69,6 +69,13 @@ def test_alerts_from_both_topics_go_to_one_table(stored, topic, alert_type, subj
     assert row.values["score"] == 3.0 and isinstance(row.values["score"], float)
 
 
+def test_alert_time_with_lower_case_z_is_stored(stored):
+    message = {"country": "DE", "day": "2026-10-01", "created_at": "2026-10-01t10:00:00z",
+               "alert_type": "drift", "subject": "SIEM", "score": 3}
+    [row] = stored("alerts.drift", message, RECEIVED)
+    assert row.values["created_at"] == datetime(2026, 10, 1, 10, tzinfo=timezone.utc)
+
+
 def test_alert_score_too_large_for_a_double_cannot_be_stored():
     message = {"country": "DE", "day": "2026-10-01", "created_at": "2026-10-01T10:00:00Z",
                "alert_type": "drift", "subject": "SIEM", "score": 10**400}
