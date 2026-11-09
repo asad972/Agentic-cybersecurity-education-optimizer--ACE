@@ -1,0 +1,45 @@
+skill,ecsf_roles,nice_ids,aliases
+Burp Suite,Penetration Tester,,Burp|Burp Suite Professional
+Business continuity,Chief Information Security Officer (CISO)|Cybersecurity Risk Manager|Cyber Incident Responder,,Business continuity management|BCM
+Compliance,"Cyber Legal, Policy and Compliance Officer|Cybersecurity Auditor",,Regulatory compliance|Security compliance|IT compliance
+Container security,Cybersecurity Implementer|Cybersecurity Architect,,Container image security
+Cryptography,Cybersecurity Architect|Cybersecurity Implementer|Cybersecurity Researcher,,Encryption|PKI|Public key infrastructure
+Data privacy,"Cyber Legal, Policy and Compliance Officer|Chief Information Security Officer (CISO)",,Data protection
+DevSecOps,Cybersecurity Implementer|Cybersecurity Architect,,Secure DevOps
+Digital forensics,Digital Forensics Investigator|Cyber Incident Responder,,Computer forensics|Forensic analysis|DFIR
+Endpoint security,Cybersecurity Implementer,,Endpoint protection|EDR|Endpoint detection and response
+GDPR,"Cyber Legal, Policy and Compliance Officer|Cybersecurity Auditor|Chief Information Security Officer (CISO)",,General Data Protection Regulation|DSGVO|RGPD
+Identity and access management,Cybersecurity Architect|Cybersecurity Implementer,,IAM|Identity management|Access management
+Incident response,Cyber Incident Responder,,Incident handling|Security incident response
+Infrastructure as code,Cybersecurity Implementer,,IaC
+ISO 27001,"Cybersecurity Auditor|Cybersecurity Risk Manager|Cyber Legal, Policy and Compliance Officer|Chief Information Security Officer (CISO)",,ISO/IEC 27001|ISO27001|ISO 27001:2022
+Kali Linux,Penetration Tester,,Kali
+Malware analysis,Cyber Threat Intelligence Specialist|Digital Forensics Investigator|Cybersecurity Researcher,,Malware reverse engineering
+Metasploit,Penetration Tester,,Metasploit Framework
+Network traffic analysis,Cyber Incident Responder|Digital Forensics Investigator,,Packet analysis|Traffic analysis
+NIS2,"Cyber Legal, Policy and Compliance Officer|Chief Information Security Officer (CISO)|Cybersecurity Risk Manager",,NIS 2|NIS-2|NIS2 Directive
+NIST Cybersecurity Framework,Cybersecurity Risk Manager|Cybersecurity Auditor|Chief Information Security Officer (CISO),,NIST|NIST CSF|NIST 800-53|NIST SP 800-53
+Nmap,Penetration Tester,,Network Mapper
+OT security,Cybersecurity Implementer|Cybersecurity Architect,,Operational technology security|ICS security|SCADA security|Industrial control systems security
+Penetration testing,Penetration Tester,,Pentesting|Pen testing|Pentest|Ethical hacking
+Python,Cybersecurity Implementer|Cybersecurity Researcher|Penetration Tester|Cyber Threat Intelligence Specialist,,Python scripting|Python programming
+Red teaming,Penetration Tester,,Red team|Adversary emulation
+Risk assessment,Cybersecurity Risk Manager|Cybersecurity Auditor|Chief Information Security Officer (CISO),,Risk analysis|Security risk assessment
+Risk management,Cybersecurity Risk Manager|Chief Information Security Officer (CISO),,Cyber risk management|Information risk management
+Scripting,Cybersecurity Implementer|Cyber Incident Responder,,Shell scripting|Bash|PowerShell
+Secure software development,Cybersecurity Implementer,,Secure coding|Secure SDLC|Secure development lifecycle
+Security architecture,Cybersecurity Architect|Chief Information Security Officer (CISO),,Enterprise security architecture
+Security auditing,Cybersecurity Auditor,,Security audit|IT audit|Information security audit
+Security awareness training,Cybersecurity Educator|Chief Information Security Officer (CISO),,Security awareness|Awareness training|Phishing simulation
+Security monitoring,Cyber Incident Responder,,Security operations|SOC operations|Log monitoring
+Security policy,"Chief Information Security Officer (CISO)|Cyber Legal, Policy and Compliance Officer",,Security policies|Information security policy
+SIEM,Cyber Incident Responder|Cyber Threat Intelligence Specialist,,Security Information and Event Management
+Splunk,Cyber Incident Responder|Cyber Threat Intelligence Specialist,,Splunk Enterprise|Splunk Enterprise Security|Splunk ES
+Third-party risk management,Cybersecurity Risk Manager|Cybersecurity Auditor,,Vendor risk management|Supplier risk management|TPRM
+Threat hunting,Cyber Threat Intelligence Specialist|Cyber Incident Responder,,Cyber threat hunting
+Threat intelligence,Cyber Threat Intelligence Specialist,,Cyber threat intelligence|CTI|Threat intel
+Vulnerability management,Cybersecurity Implementer|Cybersecurity Risk Manager|Penetration Tester,,Vulnerability assessment|Vulnerability scanning
+Vulnerability research,Cybersecurity Researcher|Penetration Tester,,Exploit development
+Web application security,Penetration Tester|Cybersecurity Implementer,,Application security|AppSec|OWASP|OWASP Top 10
+Wireshark,Cyber Incident Responder|Digital Forensics Investigator,,
+Zero trust,Cybersecurity Architect,,Zero trust architecture|ZTA

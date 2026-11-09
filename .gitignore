@@ -25,6 +25,7 @@ data/
 *.csv
 *.parquet
 !shared/taxonomy/*.csv
+!shared/taxonomy/contributions/*.csv
 !shared/schemas/topics.csv
 
 # Editors and OS
