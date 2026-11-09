@@ -236,6 +236,10 @@ CREATE TABLE IF NOT EXISTS llm_cache (
   PRIMARY KEY ((task, input_hash))
 );
 
+-- Upgrade existing installations created before token usage was recorded.
+ALTER TABLE llm_cache ADD IF NOT EXISTS input_tokens int;
+ALTER TABLE llm_cache ADD IF NOT EXISTS output_tokens int;
+
 -- Distributed single-flight lease: only one agent calls an LLM for a cache miss.
 -- An expired claim may be taken over. Any attached reservation is charged
 -- pessimistically before the replacement worker starts a new hosted attempt.

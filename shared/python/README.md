@@ -92,10 +92,19 @@ of accessing the network. Public failures are typed as `LLMConfigurationError`,
 `LLMProviderError`, `LLMResponseError`, `BudgetExceededError`, `CacheBusyError`,
 and `RecordingNotFoundError`.
 
-Until M2 merges the shared package metadata, install the temporary dependency
-manifest and run the offline suite from the repository root:
+Install the LLM and test dependencies through the shared package metadata, then
+run the offline suite from the repository root:
 
 ```bash
-python -m pip install -r shared/python/requirements-llm.txt
-PYTHONPATH=shared/python python -m pytest shared/python/tests -q
+python -m pip install -e "shared/python[llm,dev]"
+python -m pytest shared/python/tests -q
+```
+
+The ordinary test suite uses recorded or injected providers and requires no
+Kafka, Cassandra, Ollama, Anthropic, or network access. The real Cassandra
+contention and budget checks are optional integration tests:
+
+```bash
+ACE_CASSANDRA_INTEGRATION=1 \
+python -m pytest shared/python/tests/test_llm_cassandra.py -q
 ```
