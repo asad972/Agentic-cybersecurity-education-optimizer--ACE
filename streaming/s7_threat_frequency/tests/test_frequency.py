@@ -8,10 +8,10 @@ from uuid import NAMESPACE_URL, uuid5
 import pytest
 
 from ace import contracts
-from ace.stage import WindowedStage
-from streaming.s7_threat_frequency import ThreatFrequencyStage
-from streaming.s7_threat_frequency.__main__ import main
-from streaming.s7_threat_frequency.job import run_s7_flink_local, run_s7_local
+from ace.stage import WindowedStage, run_flink_local, run_local
+from s7_threat_frequency import ThreatFrequencyStage
+from s7_threat_frequency.__main__ import main
+from s7_threat_frequency.job import run_s7_flink_local, run_s7_local
 
 
 def event(timestamp, country="HU", kind="malware", identity=None):
@@ -188,7 +188,7 @@ def test_combined_flink_graph_matches_local_and_routes_invalid_once():
         event("2026-11-01T00:20:00Z", "DE", "scanning"),
         event("2026-11-01T01:00:00Z"), event("2026-11-02T00:00:00Z"), {},
     ]
-    actual = run_s7_flink_local(records)
+    actual = run_s7_flink_local(records).outputs
     expected = run_s7_local(records).outputs
 
     def normalized(outputs):
@@ -198,3 +198,51 @@ def test_combined_flink_graph_matches_local_and_routes_invalid_once():
 
     assert normalized(actual) == normalized(expected)
     assert sum(out.topic == contracts.INVALID_TOPIC for out in actual) == 1
+
+
+@pytest.mark.flink
+@pytest.mark.parametrize("period", ["hourly", "daily"])
+def test_branch_uses_shared_flink_runner(period):
+    records = [event("2026-11-01T00:00:00Z", kind="malware-árvíz"),
+               event("2026-11-01T00:01:00Z", "DE")]
+    stage = ThreatFrequencyStage(period)
+    assert sorted((o.key, o.value["counts"]) for o in run_flink_local(stage, records)) == sorted(
+        (o.key, o.value["counts"]) for o in run_local(stage, records).outputs)
+
+
+def test_worker_import_root_excludes_repository_secrets_and_dependencies():
+    from s7_threat_frequency.job import _stage_import_root
+    root = _stage_import_root()
+    assert root.name == "streaming"
+    assert (root / "s7_threat_frequency" / "stage.py").is_file()
+    assert not any((root / name).exists() for name in (".env", ".venv", ".git", "dashboard"))
+
+
+@pytest.mark.parametrize("engine", ["local", "flink"])
+def test_cli_reports_actual_runner_lateness_consistently(tmp_path, monkeypatch, capsys, engine):
+    from s7_threat_frequency import __main__ as cli
+    records = [event("2026-11-01T00:00:00Z"), event("2026-11-01T01:15:00Z"),
+               event("2026-11-01T00:01:00Z")]
+    result = run_s7_local(records)
+    monkeypatch.setattr(cli, "run_s7_flink_local", lambda _: result)
+    source = tmp_path / "events.jsonl"
+    source.write_text("\n".join(json.dumps(row) for row in records))
+    cli.main(["--input", str(source), "--output-dir", str(tmp_path / "out"), "--engine", engine])
+    assert capsys.readouterr().out.splitlines()[0] == '{"late_hourly": 1, "late_daily": 0}'
+
+
+@pytest.mark.flink
+def test_late_side_outputs_are_collected_without_print_sinks():
+    from ace.stage import flink_env
+    from pyflink.common import Types
+    from s7_threat_frequency.job import _collect_fixture_streams
+    env = flink_env()
+    record = event("2026-11-01T00:00:00Z")
+    pair = Types.TUPLE([Types.STRING(), Types.STRING()])
+    late = env.from_collection([("threats.events", json.dumps(record))], type_info=pair)
+    # Production late streams carry decoded records after shared validation.
+    late = late.map(lambda item: (item[0], json.loads(item[1])))
+    output = env.from_collection([], type_info=Types.TUPLE([Types.STRING()] * 3))
+    result = list(_collect_fixture_streams(output, late, late))
+    assert sorted(row[0] for row in result) == ["daily", "hourly"]
+    assert all(json.loads(row[3]) == record for row in result)

@@ -23,6 +23,8 @@ class ThreatFrequencyStage(WindowedStage):
         self.window = timedelta(hours=1) if period == "hourly" else timedelta(days=1)
 
     def new(self):
+        # Exact replay protection costs O(distinct IDs per Country/window),
+        # including checkpoint serialization. S1 deduplicates jobs, not threats.
         # Both fields are picklable and belong to this Country/window only.
         return {"counts": Counter(), "seen": set()}
 

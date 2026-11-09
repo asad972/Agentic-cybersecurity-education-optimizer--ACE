@@ -30,10 +30,10 @@ def main(argv=None):
     records = list(read_records(args.input))
     if args.engine == "local":
         result = run_s7_local(records)
-        outputs = result.outputs
-        print(json.dumps({"late_hourly": len(result.hourly.late), "late_daily": len(result.daily.late)}))
     else:
-        outputs = run_s7_flink_local(records)
+        result = run_s7_flink_local(records)
+    outputs = result.outputs
+    print(json.dumps({"late_hourly": len(result.hourly.late), "late_daily": len(result.daily.late)}))
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for topic, filename in (
         (contracts.topic("agg.threats_hourly").name, "hourly.jsonl"),

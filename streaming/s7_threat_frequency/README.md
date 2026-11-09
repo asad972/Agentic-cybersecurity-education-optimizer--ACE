@@ -64,6 +64,8 @@ graph against the local runner: both topics, Country keys, duplicates and one
 invalid-input error. Deterministic late-arrival tests use `run_local`, because
 Flink advances its watermark periodically rather than after every record.
 The pickle test checks accumulator serialization, not a full cluster restart.
+Each S7 Flink test uses a fresh Python process (120-second timeout), so successive
+MiniCluster jobs do not reuse stale PyFlink/Beam worker threads.
 
 ```sh
 docker build --target runtime -f streaming/s7_threat_frequency/Dockerfile -t ace-s7:local .
@@ -76,22 +78,33 @@ prints row counts: **4 hourly, 3 daily, 0 invalid**. Output is ephemeral with
 `--rm`; mount a writable directory at `/output` to retain it. The image runs as
 UID 10001 and the mounted directory must allow that user to write.
 
-For quick tests without Java, create a Python 3.11 virtual environment, install
-the shared package, and select the local runner:
+For host setup, follow [the shared Python/Java instructions](../../shared/python/README.md).
+Keep the virtual environment outside the repository, using a path without
+spaces or brackets (for example `C:\venvs\ace` on Windows). Install
+`shared/python[flink,dev]` there; use `[dev]` only for tests without Flink.
+From the repository root, plain `pytest streaming -m 'not flink'` works.
+Omit the marker filter to include the real Flink tests when Java is installed.
+
+Run the CLI from `streaming/`, using the same import name as S4:
 
 ```sh
-python3.11 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e 'shared/python[dev]'
-python -m pytest -q streaming/s7_threat_frequency/tests -m 'not flink'
-python -m streaming.s7_threat_frequency \
-  --input streaming/s7_threat_frequency/fixtures/events.jsonl \
+cd streaming
+python -m s7_threat_frequency \
+  --input s7_threat_frequency/fixtures/events.jsonl \
   --output-dir /tmp/ace-s7-output
 ```
 
-For host Flink tests, follow [shared setup](../../shared/python/README.md),
-install `shared/python[flink,dev]`, and omit `-m 'not flink'`. Windows requires
-a virtual environment path without spaces/brackets, as described there.
+Add `--engine flink` to run the combined graph. Both engines print a JSON
+summary with `late_hourly` and `late_daily` followed by output row counts.
+The Flink summary counts its actual side outputs; watermark timing can differ
+from the deterministic local runner on out-of-order fixtures. Late payloads
+are collected, never printed into stdout. Only `streaming/` is shipped to
+workers; `ace` must be installed in the worker's Python environment.
+
+Per-branch integration tests use `ace.stage.run_flink_local`. The combined
+fixture harness remains small and separate because the shared runner currently
+accepts only one stage and does not return late records. Multi-window and late
+result support can replace this harness when available in the shared package.
 
 ## Deployment integration
 
@@ -104,7 +117,7 @@ integration check with the deployment owner.
 The integration entry point is:
 
 ```python
-from streaming.s7_threat_frequency.job import build_s7
+from s7_threat_frequency.job import build_s7
 
 # stream: PyFlink DataStream of (topic_name, JSON_text), only threats.events.
 outputs, late_hourly, late_daily = build_s7(stream)
@@ -122,19 +135,3 @@ accepted by the day after their hour closed.
 
 Existing topic schemas, collector code, S8, the sink, API, dashboard and shared
 deployment files are outside this release. It needs no provider API keys.
-
-## Release scope
-
-Branch: `m4/s7-frequency`, based on current `master`. Include only this folder:
-
-- `stage.py`: window algorithm and event-ID deduplication.
-- `job.py`: local runner and combined PyFlink graph.
-- `__init__.py`, `__main__.py`: imports and bounded JSONL CLI.
-- `tests/`: fake-record regressions and real-Flink comparison.
-- `fixtures/events.jsonl`: six synthetic records, including one duplicate.
-- `Dockerfile`, `Dockerfile.dockerignore`: isolated runtime/test containers.
-- This README.
-
-Open a pull request into `master`, link `Closes #36`, identify M4 as the
-contributor, record actual test results, and request a teammate's review.
-The target first PR is November 5; issue #36 is due November 9, 2026.
