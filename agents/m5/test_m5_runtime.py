@@ -1,19 +1,23 @@
 """Tests for M5 canonical input loading and schema-routed Kafka publication."""
 
 import json
+import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
-from m5_runtime import publish_normalized_records, publish_records, read_records
-from education_agent.__main__ import normalize_input as normalize_programme_input
+from m5_runtime import (
+    publish_normalized_records,
+    publish_records,
+    read_records,
+    run_agent,
+)
 from education_agent.__main__ import normalize_record as normalize_programme_record
-from platform_agent.__main__ import normalize_input as normalize_platform_input
 from platform_agent.__main__ import normalize_record as normalize_platform_record
-from workforce_agent.__main__ import normalize_input as normalize_workforce_input
 from workforce_agent.__main__ import normalize_record as normalize_workforce_record
-from datetime import datetime, timezone
 
 
 class RecordingProducer:
@@ -36,6 +40,30 @@ class FailedDelivery:
 
 
 class M5RuntimeTests(unittest.TestCase):
+    def test_run_agent_uses_the_shared_cli_pipeline(self) -> None:
+        records = [{"country": "DE"}]
+
+        def normalizer(record: dict[str, str]) -> dict[str, str]:
+            return record
+
+        with (
+            patch.object(sys, "argv", ["m5-agent", "--input", "input.json"]),
+            patch("m5_runtime.read_records", return_value=records) as read,
+            patch("m5_runtime.publish_normalized_file", return_value=1) as publish,
+        ):
+            run_agent(
+                topic="raw.workforce",
+                producer_name="m5-test",
+                normalizer_factory=lambda: normalizer,
+                input_help="input file",
+                output_label="record",
+            )
+
+        read.assert_called_once_with("input.json")
+        publish.assert_called_once_with(
+            "raw.workforce", "m5-test", records, normalizer
+        )
+
     def test_reads_jsonl_and_csv_records(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -145,39 +173,25 @@ class M5RuntimeTests(unittest.TestCase):
         self.assertIn("row 2", invalid["reason"])
 
     def test_agent_csv_inputs_are_converted_before_normalization(self) -> None:
-        programmes = normalize_programme_input(
-            [
-                {
-                    "programme_id": "cyber-001",
-                    "country": "DE",
-                    "name": "Cybersecurity",
-                    "institution": "Example University",
-                    "ecsf_roles": '["Cybersecurity Implementer"]',
-                },
-                {
-                    "programme_id": "cyber-002",
-                    "country": "FR",
-                    "name": "Security",
-                    "institution": "Example University",
-                    "ecsf_roles": None,
-                },
-            ]
+        programme = normalize_programme_record(
+            {
+                "programme_id": "cyber-001",
+                "country": "DE",
+                "name": "Cybersecurity",
+                "institution": "Example University",
+                "ecsf_roles": '["Cybersecurity Implementer"]',
+            }
         )
-        workforce = normalize_workforce_input(
-            [{"country": "DE", "year": "2024", "workforce_size": "120", "source": "isc2_2024"}]
-        )
-        platforms = normalize_platform_input(
-            [{"platform": "ENISA ECSF", "feature": "role profiles", "supported": "true"}]
+        workforce = normalize_workforce_record(
+            {"country": "DE", "year": "2024", "workforce_size": "120", "source": "isc2_2024"}
         )
 
-        self.assertEqual(programmes[0]["ecsf_roles"], ["Cybersecurity Implementer"])
-        self.assertEqual(programmes[1]["ecsf_roles"], [])
-        self.assertEqual(workforce[0]["workforce_size"], 120)
-        self.assertTrue(platforms[0]["supported"])
+        self.assertEqual(programme["ecsf_roles"], ["Cybersecurity Implementer"])
+        self.assertEqual(workforce["workforce_size"], 120)
         timestamp = datetime(2026, 11, 8, tzinfo=timezone.utc)
         platform = normalize_platform_record(
-            {"platform": "ENISA ECSF", "feature": "roles", "supported": "true"},
-            analysed_at=timestamp,
+            {"platform": "ENISA ECSF", "feature": "role profiles", "supported": "true"},
+            timestamp,
         )
         self.assertEqual(platform["analysed_at"], "2026-11-08T00:00:00+00:00")
 

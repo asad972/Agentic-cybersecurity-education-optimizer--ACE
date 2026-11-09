@@ -3,7 +3,9 @@
 import uuid
 import unittest
 
-from ace.stage import WindowedStage, run_local
+import pytest
+
+from ace.stage import WindowedStage, run_flink_local, run_local
 from ..stage import EmergingSkillsStage
 
 
@@ -72,6 +74,25 @@ class EmergingSkillsStageTests(unittest.TestCase):
             result.published("agg.emerging_skills")[0]["items"],
             [{"mention": "siem", "count": 1, "max_error": 0}],
         )
+
+    @pytest.mark.flink
+    def test_flink_gives_the_same_result_as_local(self) -> None:
+        records = [
+            demand("2026-01-30", ["SIEM", "Zero Trust"]),
+            demand("2026-01-31", ["SIEM"]),
+            demand("2026-02-01", ["Cloud security"]),
+        ]
+
+        flink = [
+            result.value
+            for result in run_flink_local(EmergingSkillsStage(epsilon=0.1), records)
+            if result.topic == "agg.emerging_skills"
+        ]
+        local = run_local(
+            EmergingSkillsStage(epsilon=0.1), records
+        ).published("agg.emerging_skills")
+
+        self.assertEqual(flink, local)
 
 
 if __name__ == "__main__":

@@ -1,32 +1,16 @@
 """CLI entry point for publishing canonical CYBERHEAD programme records."""
 
-import argparse
 from collections.abc import Mapping
 from typing import Any
 
-from education import normalize_programme, normalize_programmes
+from education import normalize_programme
 from m5_runtime import (
-    KafkaUnavailable,
     parse_json_list,
-    publish_normalized_file,
-    read_records,
+    run_agent,
 )
 
-
-def normalize_input(records: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Normalize canonical programme rows, including JSON-list CSV cells."""
-    parsed = [
-        {
-            **record,
-            "ecsf_roles": (
-                []
-                if record.get("ecsf_roles") is None
-                else parse_json_list(record["ecsf_roles"], "ecsf_roles")
-            ),
-        }
-        for record in records
-    ]
-    return normalize_programmes(parsed)
+TOPIC = "raw.programmes"
+PRODUCER = "m5-education"
 
 
 def normalize_record(record: Mapping[str, Any]) -> dict[str, Any]:
@@ -43,17 +27,14 @@ def normalize_record(record: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", required=True, help="Canonical JSON, JSONL, or CSV file")
-    args = parser.parse_args()
-    records = read_records(args.input)
-    try:
-        count = publish_normalized_file(
-            "raw.programmes", "m5-education", records, normalize_record
-        )
-    except KafkaUnavailable as error:
-        parser.exit(2, f"{parser.prog}: error: {error}\n")
-    print(f"Processed and published {count} programme rows")
+    run_agent(
+        topic=TOPIC,
+        producer_name=PRODUCER,
+        normalizer_factory=lambda: normalize_record,
+        input_help="Canonical JSON, JSONL, or CSV file",
+        output_label="programme",
+        description=__doc__,
+    )
 
 
 if __name__ == "__main__":

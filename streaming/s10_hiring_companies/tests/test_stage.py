@@ -3,7 +3,9 @@
 import uuid
 import unittest
 
-from ace.stage import WindowedStage, run_local
+import pytest
+
+from ace.stage import WindowedStage, run_flink_local, run_local
 from ..stage import HiringCompaniesStage
 
 
@@ -72,6 +74,27 @@ class HiringCompaniesStageTests(unittest.TestCase):
         stage.add(state, {"company": 123})
 
         self.assertEqual(state["missing_company"], 1)
+
+    @pytest.mark.flink
+    def test_flink_gives_the_same_result_as_local(self) -> None:
+        records = [
+            job("2026-01-30", "Example GmbH"),
+            job("2026-01-30", "example gmbh"),
+            job("2026-01-30"),
+            job("2026-01-31", "Example SAS"),
+            job("2026-02-01", "Another Ltd"),
+        ]
+
+        flink = [
+            result.value
+            for result in run_flink_local(HiringCompaniesStage(precision=8), records)
+            if result.topic == "agg.companies_daily"
+        ]
+        local = run_local(
+            HiringCompaniesStage(precision=8), records
+        ).published("agg.companies_daily")
+
+        self.assertEqual(flink, local)
 
 
 if __name__ == "__main__":
