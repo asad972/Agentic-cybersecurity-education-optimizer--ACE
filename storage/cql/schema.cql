@@ -165,6 +165,7 @@ CREATE TABLE IF NOT EXISTS companies_by_day (
   country       text,
   companies_day int,         -- HyperLogLog estimate (S10)
   companies_30d int,
+  missing_company int,       -- Job ads with no company field (S10)
   PRIMARY KEY (day, country)
 );
 

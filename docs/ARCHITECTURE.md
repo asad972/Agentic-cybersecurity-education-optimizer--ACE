@@ -146,7 +146,7 @@ Everything except the React app is Python, so the code every member needs lives 
 
 | Part | What it does | Used by | Owner |
 | --- | --- | --- | --- |
-| Stage base (`ace.stage`) | Runs a stream stage: consumes, checks message formats, applies event time and the grace period, emits once per window, publishes, and counts late and invalid records. Supports windowed stages (S3, S4, S5, S7, S9, S10) and per-record stages (S1, S2, S6, S8). Each stage supplies only its algorithm. | All 10 stages | M2 |
+| Stage base (`ace.stage`) | Runs a stream stage as a PyFlink job: consumes, checks message formats, applies event time and the grace period, emits once per window, publishes, and counts late and invalid records. Supports windowed stages (S3, S4, S5, S7, S9, S10) and per-record stages (S1, S2, S6, S8). Each stage supplies only its algorithm. | All 10 stages | M2 |
 | Contracts (`ace.contracts`) | Reads [`shared/schemas/topics.csv`](../shared/schemas/topics.csv) (topic, schema, key), validates every message before it is published, and gives every module the topic names. | All agents and stages | M2 |
 | Skill matcher (`ace.taxonomy`) | Loads the Skill Taxonomy and maps a mention to a Skill, Certification or Role by exact name or listed alias, ignoring case; anything else is Unmapped. | S2, S3, S4, S5, gap job, education agent, role explorer | M1 |
 | LLM module (`ace.llm`) | The only path to an LLM. Switches between a local open-source model (Qwen via Ollama) and a hosted model (Claude Haiku 5.5) with one setting, caches answers in the `llm_cache` table so nothing is paid for twice, retries when the provider is busy, checks that answers are valid JSON, and stops at a daily budget (`LLM_DAILY_BUDGET_EUR`). | S2, education agent, platform analysis agent | M3 |
@@ -160,7 +160,7 @@ Everything except the React app is Python, so the code every member needs lives 
 
 ## Stream processing
 
-Ten stream stages, two per member, consume from Kafka and publish their results back to Kafka. Each stage runs in its own container, built with [Quix Streams](https://quix.io/docs/quix-streams/introduction.html) and the [River](https://riverml.xyz) library for the stream-mining algorithms, with no Spark.
+Ten stream stages, two per member, consume from Kafka and publish their results back to Kafka. Each stage is its own job on one shared [Apache Flink](https://flink.apache.org) cluster, written in Python with PyFlink, and uses the [River](https://riverml.xyz) library for the stream-mining algorithms, with no Spark.
 
 | Stage | Member | Input → output | Algorithm | Purpose |
 | --- | --- | --- | --- | --- |
@@ -178,9 +178,9 @@ Ten stream stages, two per member, consume from Kafka and publish their results 
 **Rules for every stage**
 
 - **Event time:** windows use the record's own date (`posted_date`, profile date, `observed_at`), never arrival time.
-- **Grace period:** a window stays open 1 hour of event time after it ends for job ads and profiles, and 15 minutes for threats. Records arriving later are dropped and counted in a `late_records_total` metric for the pipeline-health panels.
-- **Emit once:** a window's result is published once, when it closes (`.final()` in Quix Streams). Sink writes are idempotent upserts, so a replay never creates duplicate rows.
-- **State:** stage state is kept in Kafka changelog topics, so a restarted stage continues where it stopped.
+- **Grace period:** Flink watermarks allow records to arrive up to 1 hour of event time late for job ads and profiles, and 15 minutes for threats. Later records go to a side output and are counted in a `late_records_total` metric for the pipeline-health panels.
+- **Emit once:** a window's result is published once, when the watermark passes the end of the window. Sink writes are idempotent upserts, so a replay never creates duplicate rows.
+- **State:** Flink keeps each job's state and Kafka offsets in checkpoints, so a restarted job continues where it stopped.
 
 **Stage notes**
 
@@ -277,7 +277,7 @@ Every component ships as a Docker image. Development runs on Docker Compose, and
 
 ![ACE deployment: containers, groups and ports](images/deployment.png)
 
-Every box is one Docker container. Arrows point from the container that opens a connection to the one it calls, and the numbers are the ports (Kafka 9092, Cassandra 9042, the AI model server 11434). Kafka and Cassandra run as 3-node StatefulSets, each stream stage runs as its own pod so it can scale with its topic partitions, and the browser loads the page from the web app and calls the API, both through the ingress.
+Every box is one Docker container. Arrows point from the container that opens a connection to the one it calls, and the numbers are the ports (Kafka 9092, Cassandra 9042, the AI model server 11434). Kafka and Cassandra run as 3-node StatefulSets, the ten stream stages run as Flink jobs on one Flink cluster (a JobManager and TaskManagers), each scaled by its parallelism up to the topic partition count, and the browser loads the page from the web app and calls the API, both through the ingress.
 
 | Component | Kubernetes object | Replicas |
 | --- | --- | --- |
@@ -285,7 +285,8 @@ Every box is one Docker container. Arrows point from the container that opens a 
 | Cassandra nodes | StatefulSet | 3 |
 | Agents | Deployment, one per agent | 1–2 each |
 | LLM server (Ollama with Qwen) | Deployment + Service | 1 |
-| Stream stages | Deployment, one per stage | 1–3 (up to the partition count) |
+| Flink JobManager (schedules the stage jobs, web UI on 8081) | Deployment + Service | 1 |
+| Flink TaskManagers (run the 10 stage jobs) | Deployment | 2–3 |
 | Sink | Deployment | 2 |
 | Forecast and gap jobs | CronJob | Runs on schedule |
 | API | Deployment + Service | 2 |
@@ -301,7 +302,7 @@ Every box is one Docker container. Arrows point from the container that opens a 
 | --- | --- | --- |
 | Agents | Python, LangGraph or CrewAI, Qwen via Ollama (local, open source), Claude Haiku 5.5 as hosted fallback | Separate agents per sub-task, as the brief requires |
 | Ingestion | Apache Kafka (KRaft) | Required by the brief; real-time and replayable |
-| Stream processing | Quix Streams, River | Python stream processing on Kafka without Spark; maintained, with event-time windows |
+| Stream processing | Apache Flink (PyFlink), River | Event-time windows, watermarks and checkpoints on Kafka; Python API matches the rest of the code; no Spark |
 | Storage | Apache Cassandra | Required by the brief; fast time-series writes |
 | Batch / ML | pandas, Prophet, statsmodels, LightGBM | Light forecasting stack, no Spark |
 | API | FastAPI | Async Python, auto-generated OpenAPI docs |

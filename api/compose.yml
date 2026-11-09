@@ -1,0 +1,14 @@
+# Run with: docker compose -f api/compose.yml up --build -d
+services:
+  api:
+    build: .
+    ports:
+      - "127.0.0.1:${ACE_API_PORT:-8000}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      CASSANDRA_HOSTS: ${CASSANDRA_HOSTS:-host.docker.internal}
+      CASSANDRA_PORT: ${CASSANDRA_PORT:-9042}
+      CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE:-ace}
+      CASSANDRA_LOCAL_DC: ${CASSANDRA_LOCAL_DC:-datacenter1}
+      API_CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
