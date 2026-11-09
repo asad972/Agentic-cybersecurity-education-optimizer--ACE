@@ -6,7 +6,8 @@ it reads the message again after a restart and writes the same rows again,
 which changes nothing (upserts).
 
 - A message that is not JSON, fails its schema check, or is Unstorable goes to
-  errors.invalid, and the sink moves on.
+  errors.invalid, and the sink moves on. NaN, Infinity and numbers too large
+  for a double count as not JSON: the JSON standard has no such numbers.
 - Any other error stops the sink without committing, so no message is lost:
   Cassandra being unavailable, errors.invalid not accepting the record, or a
   bug in a row function. Docker or Kubernetes restarts it.
@@ -16,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import signal
 from dataclasses import dataclass
@@ -68,10 +70,26 @@ class Settings:
         )
 
 
+def _finite(text: str) -> float:
+    number = float(text)
+    if not math.isfinite(number):
+        raise ValueError(f"number {text} is too large")
+    return number
+
+
+def _no_constant(name: str) -> float:
+    raise ValueError(f"{name} is not a JSON number")
+
+
+def _parse(value: bytes) -> Any:
+    """Python's json module accepts NaN and Infinity and turns 1e400 into inf; refuse all three."""
+    return json.loads(value, parse_float=_finite, parse_constant=_no_constant)
+
+
 def handle(topic: str, value: bytes, received_at: datetime, writer: Any) -> dict[str, Any] | None:
     """Write one Kafka message. Returns its errors.invalid record if it cannot be stored."""
     try:
-        message = json.loads(value)
+        message = _parse(value)
     except (TypeError, ValueError) as error:
         payload = value.decode("utf-8", "replace") if isinstance(value, bytes) else repr(value)
         return contracts.invalid_record(topic, PRODUCER, f"not JSON: {error}", payload)

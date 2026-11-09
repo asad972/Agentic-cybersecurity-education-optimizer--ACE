@@ -114,6 +114,22 @@ def test_message_that_is_not_json_is_invalid():
     assert not writer.rows
 
 
+@pytest.mark.parametrize("number, reason", [
+    ("NaN", "NaN is not a JSON number"),
+    ("Infinity", "Infinity is not a JSON number"),
+    ("-Infinity", "-Infinity is not a JSON number"),
+    ("1e400", "number 1e400 is too large"),
+])
+def test_number_json_has_no_place_for_is_invalid(number, reason):
+    writer = Writer()
+    value = ('{"country": "DE", "day": "2026-10-01", "created_at": "2026-10-01T10:00:00Z",'
+             f' "alert_type": "drift", "subject": "SIEM", "score": {number}}}').encode()
+    invalid = handle("alerts.drift", value, RECEIVED, writer)
+    assert invalid["reason"] == f"not JSON: {reason}"
+    assert invalid["payload"] == value.decode()
+    assert not writer.rows
+
+
 def test_message_that_fails_its_schema_is_invalid():
     invalid = handle("agg.companies_daily", json.dumps({"country": "NL"}).encode(), RECEIVED, Writer())
     assert "required property" in invalid["reason"]
