@@ -56,3 +56,17 @@ Discovery loads public `.py` modules directly inside `routers/` in alphabetical 
 Inside a route, use `request.app.state.database.session` for prepared, bounded Cassandra reads. The session is opened and closed by the service. Use synchronous `def` routes for blocking driver operations (FastAPI runs these in its worker thread pool), or explicitly offload reads in async routes. Handle connection failures with a suitable 503 response. Do not execute unrestricted scans or introduce database writes in browser-facing endpoints.
 
 Domain endpoints remain with their owners, as listed in `docs/ARCHITECTURE.md`. Map, hourly threat and WebSocket features are later releases.
+
+### M5 endpoints
+
+The M5 read-only endpoints are:
+
+- `GET /education?country=DE` — programmes and workforce baseline for a country.
+- `GET /emerging?country=DE&day=2026-11-02` — S9 snapshot for a country and day.
+- `GET /companies?country=DE&day=2026-11-02` — S10 estimates for a country and day.
+- `GET /platforms` — evidence rows for CyberSeek, ENISA ECSF and the ISC2 Workforce Study.
+
+The reads use bounded Cassandra partition queries. `/education` requires an
+uppercase ISO alpha-2 country code; `/emerging` and `/companies` also require
+an ISO date. These endpoints return database-backed data only: there is no
+sample-data fallback.
