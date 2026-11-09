@@ -35,8 +35,9 @@ def get_education(
     request: Request,
     country: str = Query(pattern=r"^[A-Z]{2}$"),
     limit: int = Query(default=100, ge=1, le=500),
+    day: date | None = Query(default=None),
 ) -> dict[str, Any]:
-    """Return programme and workforce rows for one country partition."""
+    """Return programme, workforce, and optional role-demand rows for a country."""
     programmes = _read(
         request,
         "SELECT programme_id, name, institution, level, ecsf_roles, url "
@@ -49,8 +50,37 @@ def get_education(
         "FROM workforce_baseline WHERE country = %s LIMIT %s",
         (country, limit),
     )
+    demand_by_role: dict[str, int] = {}
+    if day is not None:
+        demand = _read(
+            request,
+            "SELECT item, count FROM demand_by_day "
+            "WHERE country = %s AND day = %s AND kind = %s LIMIT 500",
+            (country, day, "role"),
+        )
+        demand_by_role = {row.item: row.count for row in demand}
+    else:
+        demand = []
+
+    programme_counts: dict[str, int] = {}
+    for row in programmes:
+        for role in set(row.ecsf_roles or []):
+            programme_counts[role] = programme_counts.get(role, 0) + 1
+
+    role_comparison = [
+        {
+            "role": role,
+            "programme_count": programme_counts.get(role, 0),
+            "demand_count": (
+                demand_by_role.get(role, 0) if demand else None
+            ),
+        }
+        for role in sorted(programme_counts.keys() | demand_by_role.keys())
+    ]
     return {
         "country": country,
+        "day": day.isoformat() if day is not None else None,
+        "demand_available": bool(demand),
         "programmes": [
             {
                 "programme_id": row.programme_id,
@@ -71,6 +101,7 @@ def get_education(
             }
             for row in workforce
         ],
+        "role_comparison": role_comparison,
     }
 
 

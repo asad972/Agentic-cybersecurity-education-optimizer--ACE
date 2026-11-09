@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -7,8 +7,9 @@ from ace_api.main import create_app
 
 
 class CassandraSession:
-    def __init__(self):
+    def __init__(self, include_demand=True):
         self.calls = []
+        self.include_demand = include_demand
 
     def execute(self, query, parameters):
         self.calls.append((query, parameters))
@@ -31,6 +32,13 @@ class CassandraSession:
                     workforce_gap=100,
                     source="isc2_2024",
                 )
+            ]
+        if "demand_by_day" in query:
+            if not self.include_demand:
+                return []
+            return [
+                SimpleNamespace(item="Cybersecurity Implementer", count=12),
+                SimpleNamespace(item="Security Architect", count=4),
             ]
         if "emerging_skills" in query:
             return [SimpleNamespace(mention="zero trust", count=4, max_error=1)]
@@ -67,8 +75,8 @@ class CassandraSession:
 
 
 class Database:
-    def __init__(self):
-        self.session = CassandraSession()
+    def __init__(self, include_demand=True):
+        self.session = CassandraSession(include_demand=include_demand)
 
     def open(self):
         pass
@@ -80,15 +88,38 @@ class Database:
         pass
 
 
-def test_education_endpoint_reads_only_requested_country_partitions():
+def test_education_endpoint_reads_country_and_day_role_demand():
     database = Database()
     with TestClient(create_app(database=database)) as client:
-        response = client.get("/education?country=DE")
+        response = client.get("/education?country=DE&day=2026-11-02")
 
     assert response.status_code == 200
     assert response.json()["programmes"][0]["name"] == "Security MSc"
     assert response.json()["workforce"][0]["workforce_gap"] == 100
+    assert response.json()["role_comparison"] == [
+        {
+            "role": "Cybersecurity Implementer",
+            "programme_count": 1,
+            "demand_count": 12,
+        },
+        {"role": "Security Architect", "programme_count": 0, "demand_count": 4},
+    ]
+    assert response.json()["demand_available"] is True
     assert all(call[1][0] == "DE" for call in database.session.calls)
+    demand_call = next(
+        call for call in database.session.calls if "demand_by_day" in call[0]
+    )
+    assert demand_call[1] == ("DE", date(2026, 11, 2), "role")
+
+
+def test_education_endpoint_without_demand_keeps_counts_unknown():
+    database = Database(include_demand=False)
+    with TestClient(create_app(database=database)) as client:
+        response = client.get("/education?country=DE&day=2026-11-02")
+
+    assert response.status_code == 200
+    assert response.json()["demand_available"] is False
+    assert response.json()["role_comparison"][0]["demand_count"] is None
 
 
 def test_emerging_companies_and_platform_endpoints_return_live_rows():
