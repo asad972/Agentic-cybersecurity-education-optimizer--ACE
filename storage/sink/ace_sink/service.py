@@ -30,6 +30,10 @@ from ace_sink.rows import Unstorable
 
 PRODUCER = "sink"
 
+# Characters kept of an invalid message's reason and payload. Even at 4 bytes a
+# character, both together stay below Kafka's default 1 MB message limit.
+MAX_INVALID_TEXT = 100_000
+
 log = logging.getLogger(__name__)
 
 
@@ -86,13 +90,26 @@ def _parse(value: bytes) -> Any:
     return json.loads(value, parse_float=_finite, parse_constant=_no_constant)
 
 
+def _cut(text: str) -> str:
+    if len(text) <= MAX_INVALID_TEXT:
+        return text
+    return f"{text[:MAX_INVALID_TEXT]}... [{len(text) - MAX_INVALID_TEXT} more characters cut by the sink]"
+
+
+def _invalid(topic: str, reason: str, payload: Any) -> dict[str, Any]:
+    """The errors.invalid record, cut down so a huge message cannot exceed Kafka's limit and stop the sink."""
+    if not isinstance(payload, str):
+        payload = json.dumps(payload, ensure_ascii=False, default=str)
+    return contracts.invalid_record(topic, PRODUCER, _cut(reason), _cut(payload))
+
+
 def handle(topic: str, value: bytes, received_at: datetime, writer: Any) -> dict[str, Any] | None:
     """Write one Kafka message. Returns its errors.invalid record if it cannot be stored."""
     try:
         message = _parse(value)
     except (TypeError, ValueError) as error:
         payload = value.decode("utf-8", "replace") if isinstance(value, bytes) else repr(value)
-        return contracts.invalid_record(topic, PRODUCER, f"not JSON: {error}", payload)
+        return _invalid(topic, f"not JSON: {error}", payload)
     reason = contracts.check(topic, message)
     if reason is None:
         try:
@@ -100,7 +117,7 @@ def handle(topic: str, value: bytes, received_at: datetime, writer: Any) -> dict
             return None
         except Unstorable as error:
             reason = f"cannot be stored: {error}"
-    return contracts.invalid_record(topic, PRODUCER, reason, message)
+    return _invalid(topic, reason, message)
 
 
 def publish_invalid(producer: Any, invalid: dict[str, Any]) -> None:

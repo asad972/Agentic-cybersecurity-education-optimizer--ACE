@@ -7,7 +7,7 @@ import pytest
 from ace import contracts
 from ace_sink import rows as sink_rows
 from ace_sink.rows import Unstorable
-from ace_sink.service import Settings, handle, run
+from ace_sink.service import MAX_INVALID_TEXT, Settings, handle, run
 
 RECEIVED = datetime(2026, 10, 2, 8, 0, tzinfo=timezone.utc)
 COMPANIES = {"country": "NL", "day": "2026-10-01", "companies_day": 31, "companies_30d": 210}
@@ -128,6 +128,22 @@ def test_number_json_has_no_place_for_is_invalid(number, reason):
     assert invalid["reason"] == f"not JSON: {reason}"
     assert invalid["payload"] == value.decode()
     assert not writer.rows
+
+
+def test_huge_message_that_is_not_json_is_cut_to_fit_kafka():
+    invalid = handle("agg.companies_daily", b"{" + b"x" * 5_000_000, RECEIVED, Writer())
+    assert invalid["payload"].startswith("{xxx")
+    assert invalid["payload"].endswith(f"... [{5_000_001 - MAX_INVALID_TEXT} more characters cut by the sink]")
+    assert len(json.dumps(invalid, ensure_ascii=False).encode()) < 1_000_000
+
+
+def test_huge_message_that_fails_its_schema_is_cut_to_fit_kafka():
+    # jsonschema repeats the whole message in its reason, so reason and payload are both huge.
+    invalid = handle("agg.companies_daily", json.dumps(["é" * 500_000]).encode(), RECEIVED, Writer())
+    assert invalid["reason"].endswith("more characters cut by the sink]")
+    assert invalid["payload"].endswith("more characters cut by the sink]")
+    assert len(json.dumps(invalid, ensure_ascii=False).encode()) < 1_000_000
+    contracts.validate(contracts.INVALID_TOPIC, invalid)
 
 
 def test_message_that_fails_its_schema_is_invalid():
