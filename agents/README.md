@@ -11,3 +11,6 @@ The job ads agent replays a job-ads history dataset and fetches live ads from jo
 | Threat | M4 |
 
 Planned layout: one subfolder per agent, each with its own `Dockerfile`.
+
+M5's source-independent message normalizers and their current integration
+limits are documented in [m5/README.md](m5/README.md).
