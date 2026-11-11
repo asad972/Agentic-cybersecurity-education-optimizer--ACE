@@ -16,7 +16,8 @@ RUN useradd --create-home --uid 10001 ace && mkdir /output && chown ace:ace /out
 USER ace
 WORKDIR /app/streaming
 ENTRYPOINT ["python", "-m", "s8_threat_bursts"]
-CMD ["--demo", "--engine", "flink", "--output-dir", "/output"]
+# No implicit synthetic traffic. A deployment must supply an explicit source.
+CMD []
 
 FROM runtime AS test
 USER root

@@ -11,14 +11,19 @@ Features are hourly threat-type counts, scaled with
 `log1p(min(count, 1000)) / log1p(1000)`, plus UTC hour-of-day divided by 23.
 The fixed type vocabulary is malware, phishing, ddos, scanning, spam,
 brute_force, abuse_report, indicator and other. Unknown types are combined into
-other for both the model and baseline, preventing new labels from growing state
-indefinitely. Alert `subject` names the type group with the largest increase.
+other for the model and baseline, preventing new labels from growing model state
+indefinitely. Alert `subject` preserves the original collector label: within the
+model group with the largest increase, the most frequent source type wins (ties
+break lexically). For example, a `botnet` spike is reported as `botnet`, not
+`other`. The details distinguish the group baseline from the source-type count;
+there is no separate historical baseline for each unknown label.
 
 The default model has 25 trees, height 8, a 48-observation window and a stable
 Country-specific random seed. It scores each observation **before learning it**.
 An alert requires all of:
 
-- At least 48 earlier observed hours for this Country.
+- At least 48 earlier UTC hours since the first observation for this Country,
+  including inferred empty hours between finalized inputs.
 - HST score at least 0.50.
 - Total observations at least 15 and greater than three times the prior EWMA
   total. The baseline uses alpha 0.05; this gate suppresses unusual decreases.
@@ -27,35 +32,63 @@ Both normal rows and spikes subsequently update the model and baseline.
 These are demonstration thresholds, not measured operational accuracy.
 `BurstConfig` exposes the model parameters; the CLI exposes `--threshold`.
 
+Alerts have a six-hour cooldown per (Country, original subject), configurable
+with `BurstConfig.cooldown_hours` (0 disables it). A six-hour sustained burst
+therefore emits at most one alert for that subject. A different subject or
+Country can still alert. Cooldown timestamps are checkpointed and expired on
+the next input, so state retains at most one entry per hour of cooldown, not
+an ever-growing history of labels. Increasing cooldown cannot recover entries
+already expired under an earlier policy.
+
 `created_at` is the **affected UTC hour start**, not processing or delivery
-time. This makes replayed alert keys deterministic and places markers on the
-correct historical hour. `details` explains the score, prior baseline and type
-group. Counts are feed observations, not confirmed attacks.
+time. The tuple `(country, alert_type, subject, created_at)` is a deterministic
+sink de-duplication key for replaying the same ordered data and configuration;
+the Kafka routing key remains Country. No new field is added to the shared
+alert schema. Cooldown and replay suppression within checkpointed state do not
+replace sink idempotency after a fresh-state replay. `details` explains the
+score, prior baseline and type group. Counts are feed observations, not confirmed attacks.
 
 ## Ordering, validation and state
 
 - The input must contain immutable, finalized hourly aggregates in increasing
   `(day, hour)` order **per Country**. Different Countries can interleave.
-  Missing hours stay missing and do not advance warmup or train zero counts.
+  Missing hours between finalized inputs are learned as zero counts, advancing
+  warmup and decaying the EWMA. This happens on the next input, not a wall-clock
+  timer; S8 cannot infer quiet hours before its first observation. It assumes an
+  absent finalized hour is zero, so collectors must report outages separately.
+  Gap filling retains no history but takes work proportional to elapsed hours.
 - Duplicate or older hours do not retrain the model or emit another alert.
   A conflicting update for an already processed hour is also ignored; correcting
   old aggregates requires a deliberate replay into fresh state.
 - Shared schema failures go to `errors.invalid`. Since the shared aggregate
   schema also covers daily rows, S8 additionally routes a missing `hour` or
   wrong input topic to `errors.invalid` without training the model.
-- The River model, fixed-size type baseline, sample count, last hour and replay
+- The River model, fixed-size type baseline, sample count, integer UTC epoch-hour,
+  bounded cooldown timestamps and replay
   counters live in the shared runtime's **per-key memory**, stored as Flink
   keyed state. There is no global model dictionary or accumulated event history.
-  Model size is proportional to `n_trees * 2**height` per Country; serializing
-  that model for each hourly update has a cost even though history does not grow.
-- State includes configuration, feature vocabulary and River version. An
-  incompatible restore fails explicitly and requires a state migration or an
-  intentional fresh-state replay. River is pinned to 0.23.0 in this stage's
-  requirements file. Only trusted Flink-managed state is deserialized.
+  Model size is proportional to `n_trees * 2**height` per Country. The default
+  25 trees of height 8 are stored for every Country; increasing height by one
+  roughly doubles tree storage and checkpoint/serialization cost. Do not raise
+  it casually; measure checkpoint size and processing latency first.
+- The checkpoint signature includes only model-shape settings (`n_trees`,
+  `height`, `window_size`, `max_feature_count`, `seed`), feature vocabulary,
+  state version and River version. Threshold, upward ratio, minimum total,
+  EWMA alpha, warmup and cooldown are read from the current configuration and
+  can change across a restart without invalidating the model.
+- Original version-1 S8 checkpoints with matching model settings/River are
+  upgraded automatically: their timestamp becomes an epoch-hour and cooldown
+  starts empty. Previously omitted quiet hours cannot be reconstructed from
+  that old state; zero filling applies to future gaps. Incompatible model or
+  River changes still require explicit migration or an intentional fresh-state
+  replay. Only trusted Flink-managed state is deserialized. River 0.23.0 is
+  pinned in the shared `stages` extra and the compatibility requirements file.
 - S8 consumes windows already closed by S7; it adds no second watermark or
-  grace window. Duplicate/out-of-order counters are in keyed memory. The
-  current shared `RecordStage` API does not expose them as Prometheus metrics
-  or return late side outputs; deployment monitoring must account for that.
+  grace window. Every dropped duplicate/out-of-order record logs a warning
+  labelled `late_records_total` with Country, reason, incoming/last epoch-hour,
+  increment (`dropped=1`) and the keyed reason counter. This is observable in
+  worker logs; it is not a newly registered Prometheus counter. The current
+  shared `RecordStage` API has no stage-level metrics callback.
 
 The tests check pickle restoration and continued scoring. They do not simulate
 a full Flink cluster failure or establish exactly-once Kafka delivery.
@@ -73,7 +106,9 @@ The test image runs all of `streaming/`, including the real Flink tests. S8's
 Flink test uses the shared `run_flink_local` runner and compares both Country
 models, replay handling and invalid routing with `run_local`. It runs in a
 fresh Python process with a 120-second timeout: reusing the same loopback
-workers after the shared-stage and S4 tests can stall. The child uses setup
+workers after the shared-stage and S4 tests can stall. On timeout the runner
+kills the child's process tree (POSIX process group / Windows `taskkill /T /F`)
+and reports captured stdout/stderr. The child uses setup
 captured during collection, without inherited PyFlink gateway/worker flags
 or temporary paths. It does not require collector credentials or an S7 checkout.
 
@@ -83,7 +118,7 @@ Run the bounded demo with Python 3.11, Java 17 and the shared pinned PyFlink:
 
 ```sh
 docker build --target runtime -f streaming/s8_threat_bursts/Dockerfile -t ace-s8:local .
-docker run --rm ace-s8:local
+docker run --rm ace-s8:local --demo --engine flink --output-dir /output
 ```
 
 The synthetic fixture spans seven days for HU and DE. It contains one injected
@@ -100,16 +135,15 @@ Windows (for example `C:\venvs\ace`, without spaces or brackets).
 From the repository root, in that activated environment:
 
 ```sh
-python -m pip install -e "shared/python[flink,dev]" -r streaming/s8_threat_bursts/requirements.txt
+python -m pip install -e "shared/python[flink,dev]"
 pytest streaming
 ```
 
 For tests without Flink/Java, install `shared/python[dev]` instead and run
 `pytest streaming -m 'not flink'`. This does not check Flink execution.
-CI jobs collecting S8 tests must also install
-`streaming/s8_threat_bursts/requirements.txt`; the shared package alone does
-not install River. Resolve the shared extras and this requirements file in
-the same pip command, as above, to honor PyFlink's dependency constraints.
+Both shared `dev` and `flink` extras include `ace[stages]`, which pins River.
+The Python/Flink install commands in CI PR #79 therefore work unchanged, with
+the pin included in its existing `shared/python/pyproject.toml` cache key.
 
 Run from `streaming/`, using the same import convention as S4 and S7:
 
@@ -125,6 +159,12 @@ The CLI starts fresh state each invocation and processes a finite fixture; it
 does not connect to Kafka or resume a deployed job's checkpoint.
 
 ## Deployment integration
+
+The Docker image has no implicit demo command. Running it without arguments
+exits with usage instructions requiring `--input` or `--demo`; it never silently
+processes synthetic records in a deployed pod. Until the shared Kafka runner
+is available, this image is a fixture runner, not a live Kafka consumer. Use
+the explicit demo command above for a smoke test.
 
 Use the current shared graph builder; there is no private Kafka runner:
 

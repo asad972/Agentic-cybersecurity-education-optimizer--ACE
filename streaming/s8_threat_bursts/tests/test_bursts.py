@@ -2,6 +2,7 @@
 
 import json
 import pickle
+from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -50,6 +51,7 @@ def test_uses_current_shared_stage_and_country_keys():
     {"max_feature_count": 0}, {"upward_ratio": 1}, {"upward_ratio": float("inf")},
     {"min_total": 0}, {"baseline_alpha": 0}, {"baseline_alpha": float("nan")},
     {"seed": 1.5}, {"height": True},
+    {"cooldown_hours": -1}, {"cooldown_hours": True},
 ])
 def test_rejects_invalid_configuration(change):
     with pytest.raises(ValueError):
@@ -123,11 +125,107 @@ def test_duplicate_and_older_hours_do_not_change_model_or_baseline():
     assert memory["duplicate_records"] == 2 and memory["out_of_order_records"] == 1
 
 
-def test_missing_hours_are_not_filled_and_midnight_orders_correctly():
+def test_missing_hours_are_zero_filled_and_midnight_orders_correctly():
     stage, memory = ThreatBurstStage(small_config()), {}
     assert advance(stage, memory, [hourly(23), hourly(24), hourly(48)]) == []
-    assert memory["samples"] == 3
-    assert memory["last_hour"] == "2026-10-14T00:00:00Z"
+    assert memory["samples"] == 26
+    assert memory["last_hour"] == int(datetime(2026, 10, 14, tzinfo=timezone.utc).timestamp() // 3600)
+
+
+def test_sparse_input_matches_explicit_zero_hours_and_warms_up_in_clock_hours():
+    stage, sparse, dense = ThreatBurstStage(small_config()), {}, {}
+    end = 24 * 14
+    spike = hourly(end, counts={"phishing": 100})
+    actual = advance(stage, sparse, [hourly(0), spike])
+    expected = advance(stage, dense, [hourly(0)] + [hourly(i, counts={}) for i in range(1, end)] + [spike])
+    assert actual == expected and len(actual) == 1
+    assert sparse["samples"] == dense["samples"] == end + 1
+    assert sparse["baseline"] == dense["baseline"]
+    assert pickle.dumps(sparse["model"]) == pickle.dumps(dense["model"])
+    assert "prior EWMA=0.00" in actual[0].value["details"]
+
+
+@pytest.mark.parametrize("change", [
+    {"threshold": 1.0}, {"upward_ratio": 100.0}, {"min_total": 1000},
+    {"baseline_alpha": 1.0}, {"warmup_hours": 10}, {"cooldown_hours": 12},
+])
+def test_alert_policy_can_change_after_checkpoint_restore(change):
+    memory = {}
+    advance(ThreatBurstStage(small_config()), memory, [hourly(i) for i in range(4)])
+    restored = pickle.loads(pickle.dumps(memory))
+    stage = ThreatBurstStage(small_config(**change))
+    outputs = advance(stage, restored, [hourly(4, counts={"phishing": 100})])
+    if any(name in change for name in ("threshold", "upward_ratio", "min_total", "warmup_hours")):
+        assert outputs == []
+    else:
+        assert len(outputs) == 1
+    if "baseline_alpha" in change:
+        assert restored["baseline"]["phishing"] == 100
+    assert restored["samples"] == 5
+
+
+@pytest.mark.parametrize("change", [
+    {"n_trees": 4}, {"height": 4}, {"window_size": 3},
+    {"max_feature_count": 500}, {"seed": 99},
+])
+def test_model_shape_changes_still_require_migration(change):
+    memory = {}
+    advance(ThreatBurstStage(small_config()), memory, [hourly(0)])
+    with pytest.raises(ValueError, match="migration"):
+        advance(ThreatBurstStage(small_config(**change)), memory, [hourly(1)])
+
+
+def test_original_checkpoint_upgrades_with_changed_alert_policy():
+    config, memory = small_config(), {}
+    advance(ThreatBurstStage(config), memory, [hourly(i) for i in range(4)])
+    memory["signature"].pop("model_config")
+    memory["signature"].update(state_version=1, config=asdict(config))
+    memory["signature"]["config"].pop("cooldown_hours")
+    memory.pop("last_alerts")
+    memory["last_hour"] = "2026-10-12T03:00:00Z"
+    restored = pickle.loads(pickle.dumps(memory))
+    assert advance(ThreatBurstStage(small_config(threshold=1)), restored,
+                   [hourly(4, counts={"phishing": 100})]) == []
+    assert restored["signature"]["state_version"] == 2
+    assert isinstance(restored["last_hour"], int)
+
+
+def test_long_burst_cooldown_survives_restore_and_expires():
+    stage, memory = ThreatBurstStage(small_config(baseline_alpha=0.001)), {}
+    advance(stage, memory, [hourly(i) for i in range(4)])
+    [first] = advance(stage, memory, [hourly(4, counts={"ddos": 100})])
+    restored = pickle.loads(pickle.dumps(memory))
+    assert advance(stage, restored, [hourly(i, counts={"ddos": 100}) for i in range(5, 10)]) == []
+    [next_alert] = advance(stage, restored, [hourly(10, counts={"ddos": 100})])
+    assert first.value["subject"] == next_alert.value["subject"] == "ddos"
+    assert next_alert.value["created_at"] == "2026-10-12T10:00:00Z"
+
+
+def test_cooldown_is_per_country_and_subject_and_can_be_disabled():
+    rows = [hourly(i, country) for i in range(4) for country in ("HU", "DE")]
+    rows += [hourly(4, country, {"ddos": 100}) for country in ("HU", "DE")]
+    rows += [hourly(5, counts={"phishing": 200}), hourly(6, counts={"phishing": 200})]
+    active = run_local(ThreatBurstStage(small_config()), rows).outputs
+    disabled = run_local(ThreatBurstStage(small_config(cooldown_hours=0)), rows).outputs
+    assert [(out.key, out.value["subject"]) for out in active] == [
+        ("HU", "ddos"), ("DE", "ddos"), ("HU", "phishing")]
+    assert len(disabled) == 4
+
+
+@pytest.mark.parametrize("label", ["c2", "botnet"])
+def test_unknown_type_keeps_source_label_in_alert(label):
+    rows = [hourly(i) for i in range(4)] + [hourly(4, counts={label: 100, "other": 2})]
+    [alert] = run_local(ThreatBurstStage(small_config()), rows).outputs
+    assert alert.value["subject"] == label
+    contracts.validate(alert.topic, alert.value)
+
+
+def test_duplicate_and_late_drops_are_visible_in_logs(caplog):
+    stage, memory = ThreatBurstStage(small_config()), {}
+    advance(stage, memory, [hourly(2), hourly(2), hourly(0)])
+    assert "late_records_total" in caplog.text
+    assert "country=HU reason=duplicate_records" in caplog.text
+    assert "country=HU reason=out_of_order_records" in caplog.text
 
 
 def test_pickle_restore_preserves_model_and_subsequent_alerts():
@@ -141,7 +239,7 @@ def test_pickle_restore_preserves_model_and_subsequent_alerts():
     assert memory["model"].score_one(stage.features(hourly(10))) == restored["model"].score_one(stage.features(hourly(10)))
 
 
-@pytest.mark.parametrize("mismatch", ["config", "river_version", "state_version", "features"])
+@pytest.mark.parametrize("mismatch", ["model_config", "river_version", "state_version", "features"])
 def test_incompatible_checkpoint_requires_explicit_migration(mismatch):
     stage, memory = ThreatBurstStage(small_config()), {}
     advance(stage, memory, [hourly(0)])
@@ -158,6 +256,14 @@ def test_state_does_not_accumulate_hour_history_or_unknown_type_names():
     assert len(pickle.dumps(memory)) < initial_size * 1.25
     assert set(memory["baseline"]) == set(TYPES)
     assert "history" not in memory
+
+
+def test_cooldown_does_not_accumulate_unknown_subjects():
+    stage, memory = ThreatBurstStage(small_config(baseline_alpha=0.001)), {}
+    advance(stage, memory, [hourly(i) for i in range(4)])
+    for i in range(4, 200):
+        advance(stage, memory, [hourly(i, counts={f"new-type-{i}": 100 * (i + 1)})])
+        assert len(memory["last_alerts"]) <= stage.config.cooldown_hours
 
 
 @pytest.mark.parametrize("bad", [
@@ -198,15 +304,30 @@ def test_cli_rejects_bad_threshold_before_running(capsys):
     assert "threshold must be between" in capsys.readouterr().err
 
 
+def test_cli_requires_explicit_source_instead_of_running_demo(capsys):
+    with pytest.raises(SystemExit) as error:
+        main([])
+    assert error.value.code == 2
+    assert "--input --demo" in capsys.readouterr().err
+
+
 @pytest.mark.flink
-def test_real_flink_matches_local_with_country_models_and_invalid_records():
+@pytest.mark.parametrize("sparse", [False, True], ids=["demo", "quiet-hours-and-cooldown"])
+def test_real_flink_matches_local_with_country_models_and_invalid_records(sparse):
     # The unchanged shared runner executes in a fresh test process. No private
     # Flink environment or repository-root shipping is needed.
-    records = list(hourly_fixture())
+    if sparse:
+        stage = ThreatBurstStage(small_config(baseline_alpha=0.001))
+        records = [hourly(0, country) for country in ("HU", "DE")]
+        records += [hourly(i, country, {"botnet": 100})
+                    for i in range(48, 55) for country in ("HU", "DE")]
+    else:
+        stage = ThreatBurstStage()
+        records = list(hourly_fixture())
     records += [records[-1], records[0], {},
                 {"country": "HU", "day": "2026-10-19", "counts": {"malware": 3}}]
-    actual = run_flink_local(ThreatBurstStage(), records)
-    expected = run_local(ThreatBurstStage(), records).outputs
+    actual = run_flink_local(stage, records)
+    expected = run_local(stage, records).outputs
 
     def normalized(outputs):
         return sorted((out.topic, out.key, json.dumps(
@@ -214,5 +335,5 @@ def test_real_flink_matches_local_with_country_models_and_invalid_records():
         )) for out in outputs)
 
     assert normalized(actual) == normalized(expected)
-    assert sum(out.topic == "alerts.threats" for out in actual) == 1
+    assert sum(out.topic == "alerts.threats" for out in actual) == (4 if sparse else 1)
     assert sum(out.topic == contracts.INVALID_TOPIC for out in actual) == 2
