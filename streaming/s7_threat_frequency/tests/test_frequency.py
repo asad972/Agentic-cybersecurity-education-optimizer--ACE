@@ -164,6 +164,28 @@ def test_daily_output_errors_are_not_hidden(monkeypatch):
     assert error["topic"] == "agg.threats_daily"
 
 
+def test_daily_output_error_with_input_topic_as_country_is_preserved(monkeypatch):
+    original = ThreatFrequencyStage.result
+    input_topic = contracts.topic("threats.events").name
+    daily_topic = contracts.topic("agg.threats_daily").name
+
+    def invalid_daily(self, *args):
+        output = original(self, *args)
+        if self.period == "daily":
+            output[0]["country"] = input_topic
+        return output
+
+    monkeypatch.setattr(ThreatFrequencyStage, "result", invalid_daily)
+    # The duplicate input error is removed, while the invalid daily aggregate
+    # survives even though its country field equals the input-topic name.
+    result = run_s7_local([{}, event("2026-11-01T00:00:00Z")])
+    errors = [out for out in result.outputs if out.topic == contracts.INVALID_TOPIC]
+    assert sorted(out.key for out in errors) == sorted([input_topic, daily_topic])
+    [daily_error] = [out for out in errors if out.key == daily_topic]
+    assert daily_error.value["topic"] == daily_topic
+    assert json.loads(daily_error.value["payload"])["country"] == input_topic
+
+
 def test_cli_writes_both_aggregates_and_invalid_json(tmp_path):
     source = tmp_path / "input.jsonl"
     source.write_text(json.dumps(event("2026-11-01T00:00:00Z")) + "\n{bad json\n\n", encoding="utf-8")

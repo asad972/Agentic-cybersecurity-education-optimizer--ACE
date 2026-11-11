@@ -59,13 +59,19 @@ docker build --target test -f streaming/s7_threat_frequency/Dockerfile -t ace-s7
 docker run --rm ace-s7:test
 ```
 
+The test image runs **all of `streaming/`, including Flink tests**, so it also
+checks S7 after other stages have used PyFlink in the parent pytest process.
+For an S7-only run, use `docker run --rm ace-s7:test -q streaming/s7_threat_frequency/tests`.
 The test suite includes a `@pytest.mark.flink` test of the combined real Flink
 graph against the local runner: both topics, Country keys, duplicates and one
 invalid-input error. Deterministic late-arrival tests use `run_local`, because
 Flink advances its watermark periodically rather than after every record.
 The pickle test checks accumulator serialization, not a full cluster restart.
 Each S7 Flink test uses a fresh Python process (120-second timeout), so successive
-MiniCluster jobs do not reuse stale PyFlink/Beam worker threads.
+MiniCluster jobs do not reuse stale PyFlink/Beam worker threads. Children use
+the environment captured during test collection, with PyFlink gateway/worker
+flags removed. This preserves configured Java/Python paths without inheriting
+the worker variables and temporary dependency paths left by earlier jobs.
 
 ```sh
 docker build --target runtime -f streaming/s7_threat_frequency/Dockerfile -t ace-s7:local .
@@ -82,8 +88,15 @@ For host setup, follow [the shared Python/Java instructions](../../shared/python
 Keep the virtual environment outside the repository, using a path without
 spaces or brackets (for example `C:\venvs\ace` on Windows). Install
 `shared/python[flink,dev]` there; use `[dev]` only for tests without Flink.
-From the repository root, plain `pytest streaming -m 'not flink'` works.
-Omit the marker filter to include the real Flink tests when Java is installed.
+From the repository root, run the full suite, including real Flink tests:
+
+```sh
+pytest streaming
+```
+
+For only the fast Python tests without Java/PyFlink, use
+`pytest streaming -m 'not flink'`; that filtered run does not check Flink
+integration or isolation between stages.
 
 Run the CLI from `streaming/`, using the same import name as S4:
 

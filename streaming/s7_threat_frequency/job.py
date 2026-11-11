@@ -11,6 +11,9 @@ from .stage import ThreatFrequencyStage
 
 
 def _input_error(topic: str, key: str) -> bool:
+    # ace routes invalid messages with the FAILED TOPIC as their Kafka key,
+    # not the payload's country. A daily output error therefore has the key
+    # agg.threats_daily, even when its bad country value is "threats.events".
     return topic == contracts.INVALID_TOPIC and key == contracts.topic("threats.events").name
 
 
@@ -78,13 +81,14 @@ def run_s7_flink_local(records: Iterable[dict]) -> FrequencyResult:
     )
     outputs, late_hourly, late_daily = build_s7(stream)
     result = FrequencyResult(RunResult(), RunResult())
+    daily_stage = ThreatFrequencyStage("daily")
     for kind, topic, key, value in _collect_fixture_streams(outputs, late_hourly, late_daily):
         record = json.loads(value)
         if kind != "output":
             getattr(result, kind).late.append(record)
         else:
-            daily = topic == contracts.topic("agg.threats_daily").name or (
-                topic == contracts.INVALID_TOPIC and record["producer"] == ThreatFrequencyStage("daily").name
+            daily = topic == daily_stage.output or (
+                topic == contracts.INVALID_TOPIC and record["producer"] == daily_stage.name
             )
             (result.daily if daily else result.hourly).outputs.append(contracts.Outgoing(topic, key, record))
     return result

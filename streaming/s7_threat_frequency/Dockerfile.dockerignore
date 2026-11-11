@@ -5,9 +5,7 @@
 !shared/schemas/
 !shared/schemas/**
 !streaming/
-!streaming/conftest.py
-!streaming/s7_threat_frequency/
-!streaming/s7_threat_frequency/**
+!streaming/**
 **/__pycache__/
 **/.pytest_cache/
 **/*.egg-info/

@@ -19,7 +19,7 @@ FROM runtime AS test
 USER root
 WORKDIR /app
 RUN pip install --no-cache-dir -e '/app/shared/python[dev]'
-COPY streaming/conftest.py /app/streaming/conftest.py
+COPY streaming /app/streaming
 USER ace
 ENTRYPOINT ["pytest", "-p", "no:cacheprovider"]
-CMD ["-q", "streaming/s7_threat_frequency/tests"]
+CMD ["-q", "streaming"]
