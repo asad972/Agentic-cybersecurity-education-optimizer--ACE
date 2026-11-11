@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import uuid
+from collections import Counter
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
 from ace import contracts
-from ace.stage import WindowedStage, run_flink_local, run_local
+from ace.stage import Window, WindowedStage, run_flink_local, run_local
 
 from ..stage import SupplyFrequency
 
@@ -39,6 +41,13 @@ def profile(
 
 def snapshots(outputs):
     return {(message["country"], message["day"]): message for message in outputs}
+
+
+def closed_window(day: str) -> Window:
+    start = datetime.combine(
+        date.fromisoformat(day), datetime.min.time(), timezone.utc
+    )
+    return Window(start=start, end=start + timedelta(days=1))
 
 
 def test_uses_shared_stage_and_emits_contract_valid_skill_counts() -> None:
@@ -118,6 +127,91 @@ def test_emits_only_event_days_without_backfilling_gaps() -> None:
         message["day"] for message in result.published("agg.supply_daily")
     ]
     assert days == ["2026-01-01", "2026-01-03"]
+
+
+def test_skips_stale_closed_window_without_changing_state(caplog) -> None:
+    stage = SupplyFrequency()
+    memory: dict = {}
+    stage.result(
+        "DE", closed_window("2026-01-02"), Counter({"SIEM": 2}), memory
+    )
+    counter = memory["supply_frequency"]
+    before = (counter.last_day, counter.active_skills, counter.bucket_count)
+
+    with caplog.at_level("WARNING", logger="streaming.s5_supply_frequency.stage"):
+        skipped = stage.result(
+            "DE",
+            closed_window("2026-01-01"),
+            Counter({"Old Skill": 4}),
+            memory,
+        )
+
+    assert skipped == []
+    assert (
+        counter.last_day,
+        counter.active_skills,
+        counter.bucket_count,
+    ) == before
+    assert "Skipping stale S5 window" in caplog.text
+    assert "country=DE" in caplog.text
+    assert "day=2026-01-01" in caplog.text
+    assert "last_day=2026-01-02" in caplog.text
+
+    [third] = stage.result(
+        "DE",
+        closed_window("2026-01-03"),
+        Counter({"Current Skill": 1}),
+        memory,
+    )
+    assert third["counts"] == [
+        {"kind": "skill", "item": "Current Skill", "count": 1},
+        {"kind": "skill", "item": "SIEM", "count": 2},
+    ]
+
+
+def test_skips_duplicate_closed_window_without_double_counting(caplog) -> None:
+    stage = SupplyFrequency()
+    memory: dict = {}
+    [first] = stage.result(
+        "DE", closed_window("2026-01-01"), Counter({"SIEM": 1}), memory
+    )
+
+    with caplog.at_level("WARNING", logger="streaming.s5_supply_frequency.stage"):
+        duplicate = stage.result(
+            "DE",
+            closed_window("2026-01-01"),
+            Counter({"Duplicate Skill": 5}),
+            memory,
+        )
+
+    assert duplicate == []
+    assert "Skipping duplicate S5 window" in caplog.text
+    [second] = stage.result(
+        "DE", closed_window("2026-01-02"), Counter({"Linux": 1}), memory
+    )
+    assert first["counts"] == [
+        {"kind": "skill", "item": "SIEM", "count": 1}
+    ]
+    assert second["counts"] == [
+        {"kind": "skill", "item": "Linux", "count": 1},
+        {"kind": "skill", "item": "SIEM", "count": 1},
+    ]
+
+
+def test_uses_gb_country_code_and_ignores_blank_skills() -> None:
+    result = run_local(
+        SupplyFrequency(),
+        [profile("GB", "2026-01-01", ["Cloud Security", "", "   "])],
+    )
+
+    [output] = result.published("agg.supply_daily")
+    assert output == {
+        "country": "GB",
+        "day": "2026-01-01",
+        "counts": [
+            {"kind": "skill", "item": "Cloud Security", "count": 1}
+        ],
+    }
 
 
 def test_each_country_day_is_published_once() -> None:

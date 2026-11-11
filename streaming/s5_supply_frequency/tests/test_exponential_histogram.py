@@ -32,16 +32,48 @@ def test_buckets_are_powers_of_two_and_respect_the_per_size_limit() -> None:
     assert any(size >= 16 for size in sizes)  # cascading merges occurred
 
 
-def test_positive_integer_add_matches_repeated_insertions() -> None:
+@pytest.mark.parametrize("value", [1, 10, 11, 12, 37, 1_000])
+def test_positive_integer_add_matches_repeated_insertions(value: int) -> None:
     batched = ExponentialHistogram(epsilon=0.2)
     repeated = ExponentialHistogram(epsilon=0.2)
 
-    batched.add("2026-01-01", 37)
-    for _ in range(37):
+    batched.add("2026-01-01", value)
+    for _ in range(value):
         repeated.add("2026-01-01")
 
     assert batched.buckets == repeated.buckets
     assert batched.estimate("2026-01-01") == repeated.estimate("2026-01-01")
+
+
+def test_batched_add_matches_repeated_insertions_with_existing_state() -> None:
+    batched = ExponentialHistogram(epsilon=0.2)
+    repeated = ExponentialHistogram(epsilon=0.2)
+
+    for day, value in [("2026-01-01", 37), ("2026-01-02", 1_000)]:
+        batched.add(day, value)
+        for _ in range(value):
+            repeated.add(day)
+
+    assert batched.buckets == repeated.buckets
+
+
+def test_large_batch_has_bounded_buckets_and_configured_error() -> None:
+    value = 1_000_000
+    histogram = ExponentialHistogram(epsilon=0.05)
+
+    histogram.add("2026-01-01", value)
+
+    sizes = [bucket.size for bucket in histogram.buckets]
+    assert sum(sizes) == value
+    assert histogram.bucket_count <= (
+        histogram.max_buckets_per_size * value.bit_length()
+    )
+    assert all(
+        count <= histogram.max_buckets_per_size
+        for count in Counter(sizes).values()
+    )
+    estimate = histogram.estimate("2026-01-01")
+    assert abs(estimate - value) <= math.ceil(value * histogram.epsilon)
 
 
 def test_window_includes_day_minus_364_and_expires_day_minus_365() -> None:
@@ -118,6 +150,7 @@ def test_histogram_and_counter_are_pickle_compatible() -> None:
     assert restored.emit("DE", "2026-01-01") == counter.emit(
         "DE", "2026-01-01"
     )
+    assert restored.last_day == date(2026, 1, 1)
 
 
 def test_supply_counter_sorts_skills_and_prunes_expired_histograms() -> None:

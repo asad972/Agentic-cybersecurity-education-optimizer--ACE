@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from typing import Any
 
 from ace.stage import Window, WindowedStage
 
 from .exponential_histogram import SupplyCounter
+
+LOGGER = logging.getLogger(__name__)
 
 
 class SupplyFrequency(WindowedStage):
@@ -50,5 +53,15 @@ class SupplyFrequency(WindowedStage):
             raise TypeError("S5 checkpoint memory has an unexpected value")
 
         day = window.start.date()
+        if counter.last_day is not None and day <= counter.last_day:
+            category = "duplicate" if day == counter.last_day else "stale"
+            LOGGER.warning(
+                "Skipping %s S5 window country=%s day=%s last_day=%s",
+                category,
+                key,
+                day.isoformat(),
+                counter.last_day.isoformat(),
+            )
+            return []
         counter.add_daily_counts(day, state)
         return [counter.emit(key, day)]

@@ -12,7 +12,6 @@ the query day and the preceding 364 calendar days.
 from __future__ import annotations
 
 import math
-from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -77,9 +76,7 @@ class ExponentialHistogram:
         if value < 1:
             raise ValueError("value must be at least 1")
         self._advance(event_day)
-
-        self._buckets.extend(Bucket(1, event_day) for _ in range(value))
-        self._compress()
+        self._add_batch(event_day, value)
 
     def estimate(self, day: date | str) -> int:
         """Estimate the active count for the inclusive window ending on day."""
@@ -111,27 +108,100 @@ class ExponentialHistogram:
         if first_retained:
             del self._buckets[:first_retained]
 
-    def _compress(self) -> None:
-        while True:
-            counts = Counter(bucket.size for bucket in self._buckets)
-            overflowing = [
-                size
-                for size, count in counts.items()
-                if count > self.max_buckets_per_size
-            ]
-            if not overflowing:
-                return
+    def _add_batch(self, event_day: date, value: int) -> None:
+        """Add same-day events with arithmetic DGIM carries.
 
-            size = min(overflowing)
-            indices = [
-                index
-                for index, bucket in enumerate(self._buckets)
-                if bucket.size == size
+        Materializing ``value`` size-one buckets makes a daily backfill both
+        slow and memory hungry. Existing historical timestamps remain explicit
+        because their order matters at the window boundary. Same-day buckets
+        are represented only by a count while pairs cascade to larger sizes.
+        The final state is the same bounded power-of-two representation that
+        repeated single-event insertion produces.
+        """
+        historical_by_size: dict[int, list[date]] = {}
+        same_day_by_size: dict[int, int] = {1: value}
+        for bucket in self._buckets:
+            if bucket.end_day == event_day:
+                same_day_by_size[bucket.size] = (
+                    same_day_by_size.get(bucket.size, 0) + 1
+                )
+            else:
+                historical_by_size.setdefault(bucket.size, []).append(
+                    bucket.end_day
+                )
+
+        retained: list[Bucket] = []
+        size = 1
+        while historical_by_size or same_day_by_size:
+            historical_days = sorted(historical_by_size.pop(size, []))
+            same_day_count = same_day_by_size.pop(size, 0)
+            total = len(historical_days) + same_day_count
+            if not total:
+                size *= 2
+                continue
+
+            # Each merge removes two buckets at this size and carries one to
+            # the next size. Merge only the oldest pairs needed to meet the
+            # configured limit, exactly as the streaming insertion does.
+            merges = max(
+                0,
+                (total - self.max_buckets_per_size + 1) // 2,
+            )
+            historical_pairs = min(merges, len(historical_days) // 2)
+            consumed_historical = historical_pairs * 2
+            carried_days = historical_days[
+                1:consumed_historical:2
             ]
-            older, newer = indices[0], indices[1]
-            merged = Bucket(size * 2, self._buckets[newer].end_day)
-            del self._buckets[newer]
-            self._buckets[older] = merged
+            remaining_merges = merges - historical_pairs
+            carried_same_day = 0
+
+            # If one historical bucket remains among the buckets being
+            # merged, its newer partner is a same-day bucket.
+            if (
+                remaining_merges
+                and consumed_historical < len(historical_days)
+            ):
+                consumed_historical += 1
+                same_day_count -= 1
+                carried_same_day += 1
+                remaining_merges -= 1
+
+            same_day_count -= remaining_merges * 2
+            carried_same_day += remaining_merges
+            if same_day_count < 0:
+                raise AssertionError("invalid DGIM batch carry")
+
+            kept_historical = historical_days[consumed_historical:]
+            if (
+                len(kept_historical) + same_day_count
+                > self.max_buckets_per_size
+            ):
+                raise AssertionError("DGIM bucket limit was not restored")
+            retained.extend(
+                Bucket(size, bucket_day) for bucket_day in kept_historical
+            )
+            retained.extend(
+                Bucket(size, event_day) for _ in range(same_day_count)
+            )
+
+            next_size = size * 2
+            if carried_days:
+                historical_by_size.setdefault(next_size, []).extend(
+                    carried_days
+                )
+            if carried_same_day:
+                same_day_by_size[next_size] = (
+                    same_day_by_size.get(next_size, 0)
+                    + carried_same_day
+                )
+            size = next_size
+
+        # Buckets are globally oldest to newest. For simultaneous events the
+        # larger bucket is the older group produced by repeated insertion.
+        self._buckets = sorted(
+            retained,
+            key=lambda bucket: (bucket.end_day, -bucket.size),
+        )
 
 
 class SupplyCounter:
@@ -148,6 +218,11 @@ class SupplyCounter:
     @property
     def active_skills(self) -> tuple[str, ...]:
         return tuple(sorted(self._histograms))
+
+    @property
+    def last_day(self) -> date | None:
+        """Most recent day added or emitted, for stage restore protection."""
+        return self._last_day
 
     @property
     def bucket_count(self) -> int:
