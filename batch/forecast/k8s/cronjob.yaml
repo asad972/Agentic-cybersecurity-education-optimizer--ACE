@@ -1,0 +1,45 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: ace-demand-forecast
+  labels:
+    app.kubernetes.io/name: ace-demand-forecast
+    app.kubernetes.io/part-of: ace
+spec:
+  schedule: "0 2 * * 1"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 3600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 3600
+      backoffLimit: 2
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: ace-demand-forecast
+        spec:
+          restartPolicy: Never
+          containers:
+            - name: forecast
+              image: ace-demand-forecast:latest
+              imagePullPolicy: IfNotPresent
+              env:
+                - name: CASSANDRA_HOSTS
+                  value: cassandra
+                - name: CASSANDRA_PORT
+                  value: "9042"
+                - name: CASSANDRA_KEYSPACE
+                  value: ace
+                - name: CASSANDRA_LOCAL_DC
+                  value: datacenter1
+              resources:
+                requests:
+                  cpu: 250m
+                  memory: 512Mi
+                limits:
+                  cpu: "2"
+                  memory: 2Gi
