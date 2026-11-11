@@ -16,12 +16,14 @@ Any programme-to-role mapping still needs to be reviewed against programme
 evidence; the framework alone does not establish that a course teaches a role
 [2].
 
-ISC2's annual workforce study provides survey-based evidence about the
-cybersecurity workforce, skills shortages and hiring needs. It complements
-programme catalogues and job-ad observations, but its results should not be
-treated as direct country-level counts unless the study publishes the relevant
-country breakdown and the figures are normalized with their methodology and
-year retained [3].
+ISC2's 2024 global workforce study surveyed 15,852 cybersecurity practitioners
+and decision-makers and reports workforce size, shortages, skills gaps, hiring
+needs and changing skills priorities [3]. The separate *2024 Cybersecurity
+Workforce Survey - Focus on the E.U.* adds EU-focused findings [4]. These
+reports complement programme catalogues and job-ad observations, but regional
+findings are not country-level counts. ACE must preserve each report's
+geography, metric definition and year, and must not allocate an EU aggregate
+among individual countries without a published breakdown.
 
 ## Streaming methods used by ACE
 
@@ -67,14 +69,17 @@ organizations, not a list of employers or an exact company count.
 2. European Union Agency for Cybersecurity (ENISA). “European cybersecurity
    skills framework (ECSF) role profiles.” 2022-09-19.
    <https://www.enisa.europa.eu/publications/european-cybersecurity-skills-framework-role-profiles>
-3. ISC2. “2024 ISC2 Cybersecurity Workforce Study: Global Cybersecurity
-   Workforce Prepares for an AI-Driven World.” 2024.
+3. ISC2. “Global Cybersecurity Workforce Prepares for an AI-Driven World:
+   2024 ISC2 Cybersecurity Workforce Study.” 2024.
    <https://www.isc2.org/Insights/2024/10/ISC2-2024-Cybersecurity-Workforce-Study>
-4. G. S. Manku and R. Motwani. “Approximate Frequency Counts over Data
+4. ISC2 and Digital Skills and Jobs Platform. “2024 Cybersecurity Workforce
+   Survey - Focus on the E.U.” 2025.
+   <https://digital-skills-jobs.europa.eu/system/files/2025-03/ISC2_2024_EU_WFS_DSJP.pdf>
+5. G. S. Manku and R. Motwani. “Approximate Frequency Counts over Data
    Streams.” Proceedings of the 28th International Conference on Very Large
    Data Bases (VLDB), 2002, pp. 346–357.
    <https://www.vldb.org/conf/2002/S10P03.pdf>
-5. P. Flajolet, É. Fusy, O. Gandouet and F. Meunier. “HyperLogLog: the
+6. P. Flajolet, É. Fusy, O. Gandouet and F. Meunier. “HyperLogLog: the
    analysis of a near-optimal cardinality estimation algorithm.” Discrete
    Mathematics & Theoretical Computer Science Proceedings, 2007.
    <https://algo.inria.fr/flajolet/Publications/FlFuGaMe07.pdf>

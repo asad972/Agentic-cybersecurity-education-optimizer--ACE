@@ -20,7 +20,7 @@ class PlatformEvidenceTests(unittest.TestCase):
 
         messages = normalize_platform_evidence(evidence, analysed_at=timestamp)
 
-        self.assertEqual(len(messages), 4)
+        self.assertEqual(len(messages), 5)
         self.assertEqual(
             {message["platform"] for message in messages},
             {"cyberseek", "enisa_ecsf", "isc2_workforce_study"},
@@ -29,6 +29,12 @@ class PlatformEvidenceTests(unittest.TestCase):
         self.assertTrue(
             all("Source:" in message.get("notes", "") for message in messages)
         )
+        eu_workforce = next(
+            message
+            for message in messages
+            if message["feature"] == "eu_workforce_survey"
+        )
+        self.assertIn("country-by-country", eu_workforce["notes"])
         self.assertEqual(
             {message["analysed_at"] for message in messages},
             {"2026-11-02T00:00:00+00:00"},

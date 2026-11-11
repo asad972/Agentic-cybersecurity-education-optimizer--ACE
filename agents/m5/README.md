@@ -13,7 +13,9 @@ estimated values as source data.
   optional. Role labels must be reviewed and use the canonical ECSF names.
 - `workforce.py` normalizes one country/year workforce record. Workforce
   figures are optional; missing figures remain absent rather than being
-  guessed as zero.
+  guessed as zero. The ISC2 2024 global study and EU-focused survey are
+  documented sources, but the available reports do not provide a complete
+  EU country-by-country workforce table.
 - `platform_analysis.py` formats reviewed platform/feature decisions. The
   caller must provide an explicit boolean decision and evidence notes where
   appropriate; the module does not invent product capabilities.
@@ -54,8 +56,13 @@ numbers must be integers, and CSV platform decisions must be `true` or
   role names. When `ecsf_roles` is absent, the record is published with an
   empty role list rather than inferring role mappings. The normalizer rejects
   duplicate role labels and the `raw.programmes` schema rejects unknown roles.
-- **Workforce:** the agent reads ready-made canonical files. ISC2 PDF/table
-  extraction is not implemented; figures must come from verified report data.
+- **Workforce:** the agent reads ready-made canonical country/year files.
+  The ISC2 2024 global study reports an international survey of 15,852
+  practitioners and decision-makers, and a separate report focuses on the
+  E.U. Neither report supplies a complete per-country table for the EU.
+  Country-level figures must therefore come from a verified country breakdown
+  or another source; regional findings must not be copied into country rows.
+  PDF/table extraction is not implemented.
 - **Platform analysis:** the agent republishes the hand-curated
   `platform_evidence.json`. This does not discover new facts or refresh source
   data.
@@ -119,8 +126,9 @@ python -m unittest discover -s streaming\s10_hiring_companies -t streaming -p "t
 ## Remaining source-specific work
 
 Remaining data-source work must be based on actual artifacts: implement a
-CYBERHEAD portal/export adapter once its export format or API is available, and
-an ISC2 PDF/table extractor once the report and country-level table are
-identified. The platform publisher uses cited, curated evidence; an automated
-comparison should wait for reviewed evidence covering the same features across
-each platform rather than infer unsupported capabilities.
+CYBERHEAD portal/export adapter once its export format or API is available,
+and an ISC2 PDF/table extractor for verified metrics while preserving their
+global or EU geography. Do not publish regional ISC2 figures as country-level
+records. The platform publisher uses cited, curated evidence; an automated
+comparison should wait for reviewed evidence covering the same features
+across each platform rather than infer unsupported capabilities.
