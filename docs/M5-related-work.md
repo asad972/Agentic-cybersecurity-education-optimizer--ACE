@@ -44,6 +44,22 @@ has different semantics from source data: S9 counts approximate mention
 frequency, while S10 estimates distinct companies. Neither metric should be
 presented as an exact count.
 
+## Relevance and limitations for ACE
+
+Together, the sources provide complementary context rather than a single
+interchangeable dataset: ECSF supplies the role vocabulary, education
+programmes indicate where learning opportunities are offered, and ISC2
+provides workforce-study evidence. CyberSeek informs the dashboard design but
+its US-specific values are not used as European observations. Programme-to-role
+labels require evidence from each programme, and workforce figures retain
+their report year, geography, and source rather than being inferred for
+countries where the report provides no breakdown.
+
+The streaming outputs also retain their approximation semantics. S9 surfaces
+frequent unmapped terms for human taxonomy review; it does not silently add
+them to the canonical taxonomy. S10 is an estimate of distinct hiring
+organizations, not a list of employers or an exact company count.
+
 ## References
 
 1. CyberSeek. “Cybersecurity Insights.” <https://www.cyberseek.org/> (accessed
@@ -62,6 +78,3 @@ presented as an exact count.
    analysis of a near-optimal cardinality estimation algorithm.” Discrete
    Mathematics & Theoretical Computer Science Proceedings, 2007.
    <https://algo.inria.fr/flajolet/Publications/FlFuGaMe07.pdf>
-
-This draft is prepared for insertion into the main project report. The
-repository does not currently contain a report source file.

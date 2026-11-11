@@ -12,28 +12,14 @@ from pathlib import Path
 
 import pytest
 
+from ace import ECSF_ROLES
+
 ROOT = Path(__file__).resolve().parents[3]
 CONTRIBUTIONS = ROOT / "shared" / "taxonomy" / "contributions"
 TESTDATA = ROOT / "shared" / "testdata"
 
 SKILL_HEADER = ["skill", "ecsf_roles", "nice_ids", "aliases"]
 CERTIFICATION_HEADER = ["certification", "issuer", "aliases"]
-
-# The 12 ENISA ECSF role profiles, spelled as published.
-ECSF_ROLES = {
-    "Chief Information Security Officer (CISO)",
-    "Cyber Incident Responder",
-    "Cyber Legal, Policy and Compliance Officer",
-    "Cyber Threat Intelligence Specialist",
-    "Cybersecurity Architect",
-    "Cybersecurity Auditor",
-    "Cybersecurity Educator",
-    "Cybersecurity Implementer",
-    "Cybersecurity Researcher",
-    "Cybersecurity Risk Manager",
-    "Digital Forensics Investigator",
-    "Penetration Tester",
-}
 
 SKILL_FILES = sorted(CONTRIBUTIONS.glob("*_skills.csv"))
 CERTIFICATION_FILES = sorted(CONTRIBUTIONS.glob("*_certifications.csv"))
@@ -74,7 +60,9 @@ def test_skill_file(path):
         assert row["skill"] and row["skill"] == row["skill"].strip(), row
         roles = items(row["ecsf_roles"])
         assert roles, f"{row['skill']}: no ECSF role"
-        assert set(roles) <= ECSF_ROLES, f"{row['skill']}: unknown role {set(roles) - ECSF_ROLES}"
+        assert set(roles) <= set(ECSF_ROLES), (
+            f"{row['skill']}: unknown role {set(roles) - set(ECSF_ROLES)}"
+        )
         for column in ("nice_ids", "aliases"):
             assert "" not in items(row[column]), f"{row['skill']}: empty value in {column}"
 

@@ -2,15 +2,16 @@
 
 These modules normalize source records and the containerized agents publish
 them to Kafka through `ace.contracts`. The agents accept canonical JSON,
-JSONL, or CSV inputs. Source-specific extraction is intentionally separate:
-CYBERHEAD export layouts and the exact ISC2 report tables are not part of this
-repository. Do not treat sample or manually estimated values as source data.
+JSONL, or CSV inputs. Portal-specific CYBERHEAD extraction and ISC2 report
+parsing require verified source layouts; do not treat sample or manually
+estimated values as source data.
 
 ## Modules
 
 - `education.py` normalizes one programme record. Supply `programme_id`,
   `country`, `name`, and `institution`; `ecsf_roles`, `level`, and `url` are
-  optional. ECSF role mapping must be done from reviewed source evidence.
+  optional. Missing `ecsf_roles` are mapped from programme evidence using the
+  shared `ace.llm` client.
 - `workforce.py` normalizes one country/year workforce record. Workforce
   figures are optional; missing figures remain absent rather than being
   guessed as zero.
@@ -18,9 +19,9 @@ repository. Do not treat sample or manually estimated values as source data.
   caller must provide an explicit boolean decision and evidence notes where
   appropriate; the module does not invent product capabilities.
 - `platform_evidence.json` contains a small, cited comparison of facts verified
-  from CyberSeek, ENISA and ISC2 first-party pages. The platform agent publishes
-  these reviewed rows to `analysis.platforms`; this is evidence input, not a
-  live feed.
+  from CyberSeek, ENISA and ISC2 first-party pages. The platform agent adds an
+  LLM summary of each cited row but retains the reviewed support
+  decision and source note; this is evidence input, not a live feed.
 
 ## Publishing agents
 
@@ -37,26 +38,36 @@ agent containers and mount the canonical input read-only:
 
 ```powershell
 $network = docker inspect ace-kafka --format '{{range $name, $network := .NetworkSettings.Networks}}{{$name}}{{end}}'
-docker run --rm --network $network -v "${PWD}\data\m5:/data:ro" ace-m5-education --input /data/programmes.jsonl
+docker run --rm --env-file .env --network $network -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 -e CASSANDRA_HOSTS=cassandra -v "${PWD}\data\m5:/data:ro" ace-m5-education --input /data/programmes.jsonl
 docker run --rm --network $network -v "${PWD}\data\m5:/data:ro" ace-m5-workforce --input /data/workforce.csv
-docker run --rm --network $network ace-m5-platform
+docker run --rm --env-file .env --network $network -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 -e CASSANDRA_HOSTS=cassandra ace-m5-platform
 ```
 
 Set `KAFKA_BOOTSTRAP_SERVERS` when the broker is not reachable as
 `kafka:29092`. CSV `ecsf_roles` cells must contain a JSON array, CSV workforce
 numbers must be integers, and CSV platform decisions must be `true` or
-`false`. Invalid messages are routed by `ace.contracts` to `errors.invalid`.
+`false`. For local Ollama on the host, set `LLM_LOCAL_URL` in `.env` to
+`http://host.docker.internal:11434`. Invalid messages are routed by
+`ace.contracts` to `errors.invalid`.
 
 ## Current scope and placeholders
 
-- **Education:** the agent reads ready-made canonical files. CYBERHEAD
-  collection/extraction is not implemented. Input `ecsf_roles` must already be
-  reviewed; LLM role mapping is not implemented because `ace.llm` is not
-  available in this checkout.
+- **Education:** the agent reads ready-made CYBERHEAD JSON/JSONL/CSV exports.
+  Portal collection/export download is not implemented. If supplied,
+  `ecsf_roles` must already be reviewed and use one of the 12 canonical ECSF
+  role names. When `ecsf_roles` is absent, the agent maps roles from a
+  programme's `description`,
+  `overview`, `learning_outcomes`, or `curriculum` via `ace.llm`; it refuses to
+  guess from a title alone. The normalizer and `raw.programmes` schema reject
+  unknown or duplicate role labels. LLM budget exhaustion routes the affected
+  source row to `errors.invalid` rather than publishing an unmapped success.
 - **Workforce:** the agent reads ready-made canonical files. ISC2 PDF/table
   extraction is not implemented; figures must come from verified report data.
 - **Platform analysis:** the agent republishes the hand-curated
-  `platform_evidence.json`; it does not run an automated or LLM comparison.
+  `platform_evidence.json` and adds a source-grounded LLM summary to each row.
+  The model cannot change the reviewed `supported` decision; if the daily LLM
+  budget is exceeded, the agent publishes the cited curated row without a
+  generated summary. This does not discover new facts or refresh source data.
   `analysed_at` records the publication run time, not the date the source fact
   was independently verified.
 
@@ -89,7 +100,7 @@ message = normalize_programme(
 Run the local tests from the repository root:
 
 ```powershell
-python -m pip install -e shared/python
+python -m pip install -e "shared/python[llm,dev]"
 python -m unittest discover -s agents\m5 -p test_*.py -v
 ```
 
@@ -116,9 +127,10 @@ python -m unittest discover -s streaming\s10_hiring_companies -t streaming -p "t
 
 ## Remaining source-specific work
 
-The publishers deliberately do not guess source layouts or values. Production
-collection still needs a CYBERHEAD export adapter and an ISC2 PDF/table
-extractor that are verified against the actual source artifacts. Education
-role mapping also needs the reviewed mapping workflow and the shared `ace.llm`
-interface; this checkout does not contain that module. The platform publisher
-uses cited, curated evidence and does not run an LLM or refresh itself.
+The LLM-based education role mapper and its shared client are implemented.
+Remaining data-source work must be based on actual artifacts: implement a
+CYBERHEAD portal/export adapter once its export format or API is available, and
+an ISC2 PDF/table extractor once the report and country-level table are
+identified. The platform publisher uses cited, curated evidence; an automated
+comparison should wait for reviewed evidence covering the same features across
+each platform rather than infer unsupported capabilities.

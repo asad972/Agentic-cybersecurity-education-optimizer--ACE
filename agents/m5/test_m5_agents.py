@@ -72,6 +72,28 @@ class EducationAgentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             normalize_programmes([{"programme_id": "bad"}])
 
+    def test_rejects_roles_outside_the_canonical_ecsf_taxonomy(self) -> None:
+        record = {
+            "programme_id": "invalid-role",
+            "country": "DE",
+            "name": "Course",
+            "institution": "Example University",
+            "ecsf_roles": ["Cybersecurity Operations"],
+        }
+        with self.assertRaisesRegex(ValueError, "unknown ECSF role"):
+            normalize_programme(record)
+
+    def test_rejects_duplicate_ecsf_roles(self) -> None:
+        record = {
+            "programme_id": "duplicate-role",
+            "country": "DE",
+            "name": "Course",
+            "institution": "Example University",
+            "ecsf_roles": ["Cybersecurity Educator", "Cybersecurity Educator"],
+        }
+        with self.assertRaisesRegex(ValueError, "duplicate roles"):
+            normalize_programme(record)
+
 
 class WorkforceAgentTests(unittest.TestCase):
     """Check extracted ISC2 workforce figures without filling missing values."""
