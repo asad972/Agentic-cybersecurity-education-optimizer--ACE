@@ -1,0 +1,281 @@
+# Runs on every pull request and every push to master: all tests, the
+# dashboard build, every Docker image that has a Dockerfile, and the Compose
+# files. Jobs for parts not yet on the branch are skipped with a notice.
+# What each job checks and how to run the same checks locally: docs/ci.md
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a pull request cancels the run still going for its older commit.
+# Every other run (master pushes, manual runs) gets its own group, so runs never
+# wait for or replace each other and every merged commit gets a result.
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  python:
+    name: Shared package and stream stages
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Same import path the stage tests use locally (absolute, so Flink's Python
+    # workers find the stage modules too). Only Windows breaks on it, not Linux.
+    env:
+      PYTHONPATH: ${{ github.workspace }}/shared/python:${{ github.workspace }}/streaming
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # No pip cache here: the two packages install in seconds, and the cache
+      # would share its key with the Flink job and stop that one being saved.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Install the shared package
+        run: python -m pip install -e "shared/python[dev]"
+      - name: Run the tests (without Flink)
+        run: python -m pytest shared/python/tests streaming -m "not flink"
+
+  flink:
+    name: Stream stages on Flink
+    runs-on: ubuntu-latest
+    # Installing PyFlink takes a few minutes; each stage's Flink test about 30-90 s.
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: ${{ github.workspace }}/shared/python:${{ github.workspace }}/streaming
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: shared/python/pyproject.toml
+      - name: Install the shared package with PyFlink
+        run: python -m pip install -e "shared/python[flink,dev]"
+      - name: Run the Flink tests
+        run: python -m pytest shared/python/tests streaming -m flink
+
+  sink:
+    name: Sink
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # The sink is added by its own pull request; until it is on master the
+      # steps below are skipped. The ifs can go once storage/sink is merged.
+      - name: Note when the sink is missing
+        if: hashFiles('storage/sink/pyproject.toml') == ''
+        run: echo "::notice::storage/sink is not on this branch, so the sink tests are skipped."
+      - uses: actions/setup-python@v7
+        if: hashFiles('storage/sink/pyproject.toml') != ''
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            shared/python/pyproject.toml
+            storage/sink/pyproject.toml
+      - name: Install the shared package and the sink
+        if: hashFiles('storage/sink/pyproject.toml') != ''
+        run: |
+          python -m pip install -e "shared/python[dev]"
+          python -m pip install -e "storage/sink[dev]"
+      - name: Run the sink tests
+        if: hashFiles('storage/sink/pyproject.toml') != ''
+        run: python -m pytest storage/sink/tests
+
+  # Monitoring comes with its own pull request; until then these steps are
+  # skipped. The ifs can go once deploy/monitoring is on master.
+  exporter:
+    name: Monitoring exporter
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Note when the exporter is missing
+        if: hashFiles('deploy/monitoring/exporter/pyproject.toml') == ''
+        run: echo "::notice::deploy/monitoring/exporter is not on this branch, so its tests are skipped."
+      - uses: actions/setup-python@v7
+        if: hashFiles('deploy/monitoring/exporter/pyproject.toml') != ''
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            shared/python/pyproject.toml
+            deploy/monitoring/exporter/pyproject.toml
+      - name: Install the shared package and the exporter
+        if: hashFiles('deploy/monitoring/exporter/pyproject.toml') != ''
+        run: |
+          python -m pip install -e "shared/python[dev]"
+          python -m pip install -e "deploy/monitoring/exporter[dev]"
+      - name: Run the exporter tests
+        if: hashFiles('deploy/monitoring/exporter/pyproject.toml') != ''
+        run: python -m pytest deploy/monitoring/exporter/tests
+
+  prometheus:
+    name: Prometheus config and rules
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PROMETHEUS_IMAGE: prom/prometheus:v3.15.1  # same as deploy/monitoring/compose.yml
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Note when the Prometheus config is missing
+        if: hashFiles('deploy/monitoring/prometheus/prometheus.yml') == ''
+        run: echo "::notice::deploy/monitoring/prometheus is not on this branch, so its checks are skipped."
+      # Mounted where the container expects it, because prometheus.yml loads
+      # its rules from /etc/prometheus/rules/.
+      - name: Check prometheus.yml and the rules it loads
+        if: hashFiles('deploy/monitoring/prometheus/prometheus.yml') != ''
+        run: >-
+          docker run --rm -v "$PWD/deploy/monitoring/prometheus:/etc/prometheus:ro"
+          --entrypoint promtool "$PROMETHEUS_IMAGE"
+          check config /etc/prometheus/prometheus.yml
+      - name: Run the rule tests
+        if: hashFiles('deploy/monitoring/prometheus/prometheus.yml') != ''
+        run: >-
+          docker run --rm -v "$PWD/deploy/monitoring/prometheus:/p:ro" -w /p
+          --entrypoint promtool "$PROMETHEUS_IMAGE"
+          test rules tests/pipeline-health-test.yml
+
+  api:
+    name: API
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Same Python as api/Dockerfile (python:3.12-slim) and requires-python in
+      # api/pyproject.toml. Change all three together.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: api/pyproject.toml
+      - name: Install the API
+        run: python -m pip install -e "api[dev]"
+      - name: Run the API tests
+        run: python -m pytest -q -c api/pyproject.toml api/tests
+
+  dashboard:
+    name: Dashboard build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      # Corepack installs the pnpm version named in package.json (packageManager).
+      - name: Set up pnpm
+        run: |
+          corepack enable
+          corepack install
+          pnpm --version
+      - name: Find the pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v6
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ hashFiles('dashboard/pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-
+      - name: Install packages
+        run: pnpm install --frozen-lockfile
+      - name: Type-check and build
+        run: pnpm build
+
+  docker:
+    name: Docker images and Compose files
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check the Compose files
+        run: |
+          docker compose config -q
+          docker compose -f api/compose.yml config -q
+          docker compose -f dashboard/compose.yml config -q
+      # Images are built only, never pushed.
+      - name: Build the API image
+        run: docker build -f api/Dockerfile api
+      - name: Build the dashboard image
+        run: docker build -f dashboard/Dockerfile dashboard
+      - name: Build the sink image
+        if: hashFiles('storage/sink/Dockerfile') != ''
+        run: docker build -f storage/sink/Dockerfile .
+      - name: Build the monitoring exporter image
+        if: hashFiles('deploy/monitoring/exporter/Dockerfile') != ''
+        run: docker build -f deploy/monitoring/exporter/Dockerfile .
+
+  # The setup scripts come with their own pull request; until then the checks
+  # are skipped. The ifs can go once setup.sh and setup.ps1 are on master.
+  setup-sh:
+    name: Setup script (bash)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Note when setup.sh is missing
+        if: hashFiles('setup.sh') == ''
+        run: echo "::notice::setup.sh is not on this branch, so its checks are skipped."
+      - name: Check setup.sh
+        if: hashFiles('setup.sh') != ''
+        run: |
+          bash -n setup.sh
+          shellcheck setup.sh
+
+  setup-ps1:
+    name: Setup script (Windows PowerShell 5.1)
+    # Windows PowerShell 5.1 itself, because PowerShell 7 also accepts syntax
+    # that 5.1 rejects (&&, ternary, ...).
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Note when setup.ps1 is missing
+        if: hashFiles('setup.ps1') == ''
+        run: echo "::notice::setup.ps1 is not on this branch, so its checks are skipped."
+      - name: Check setup.ps1
+        if: hashFiles('setup.ps1') != ''
+        shell: powershell
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile("$PWD\setup.ps1", [ref]$null, [ref]$errors) | Out-Null
+          foreach ($e in $errors) { Write-Output "::error file=setup.ps1,line=$($e.Extent.StartLineNumber)::$($e.Message)" }
+          # PowerShell 5.1 reads a file without a byte order mark as ANSI, so the script stays ASCII.
+          $bytes = [System.IO.File]::ReadAllBytes("$PWD\setup.ps1")
+          $nonAscii = @($bytes | Where-Object { $_ -gt 127 }).Count
+          if ($nonAscii) { Write-Output "::error file=setup.ps1::$nonAscii non-ASCII bytes; keep setup.ps1 ASCII-only" }
+          if ($errors -or $nonAscii) { exit 1 }
+          Write-Output "setup.ps1 parses in PowerShell $($PSVersionTable.PSVersion) and is ASCII-only."
