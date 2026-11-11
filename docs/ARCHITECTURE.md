@@ -252,9 +252,10 @@ A FastAPI service is the only reader of Cassandra for the web app. M4 sets up th
 | `GET /gap?country=&month=` | Demand vs Supply per Skill | Gap dashboard |
 | `GET /threats/hourly?country=&from=&to=` | Hourly threat counts with burst alerts | Threat landscape dashboard |
 | `GET /roles` and `GET /roles/{role}?country=` | ECSF roles; for one role its top Skills and Certifications, Demand per country, programmes and related roles | Role explorer |
-| `GET /platforms` | Platform feature comparison | Education and workforce dashboard |
-| `GET /education?country=` | Programmes per ECSF role and workforce figures for a country | Education and workforce dashboard |
-| `GET /emerging?country=&date=` | Most frequent Unmapped Skills over the last 30 days | Education and workforce dashboard |
+| `GET /platforms` | Platform feature comparison: one row per platform and feature | Education and workforce dashboard |
+| `GET /education?country=` | Education programmes in a country, each with its ECSF roles, and the workforce figures per year | Education and workforce dashboard |
+| `GET /emerging?country=&day=` | S9 snapshot for that day: the most frequent Unmapped Skills over the 30 days up to it | Education and workforce dashboard |
+| `GET /companies?country=&day=` | S10 estimates for that day: distinct hiring companies that day and over the last 30 days, and job ads with no company | Education and workforce dashboard |
 | `WS /live` | New drift and burst alerts as they arrive | Live feed |
 
 **Europe map (home page, M4):** CyberSeek's main screen for Europe. A choropleth with a metric switch (job ads, Demand, Supply, Skills Gap, education programmes, hiring companies) and an optional Skill filter. Clicking a country opens a panel with its Top 10 Skills and Certifications, workforce figures and alerts.
