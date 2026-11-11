@@ -1,0 +1,2 @@
+# Pin model behavior and checkpoint compatibility independently of shared ace.
+river==0.23.0
