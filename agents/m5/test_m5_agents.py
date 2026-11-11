@@ -3,6 +3,7 @@
 import unittest
 from datetime import datetime, timezone
 
+from ace import contracts
 from education import normalize_programme, normalize_programmes
 from platform_analysis import normalize_feature_evidence, normalize_platform_evidence
 from workforce import normalize_workforce_record, normalize_workforce_records
@@ -80,8 +81,8 @@ class EducationAgentTests(unittest.TestCase):
             "institution": "Example University",
             "ecsf_roles": ["Cybersecurity Operations"],
         }
-        with self.assertRaisesRegex(ValueError, "unknown ECSF role"):
-            normalize_programme(record)
+        message = normalize_programme(record)
+        self.assertIsNotNone(contracts.check("raw.programmes", message))
 
     def test_rejects_duplicate_ecsf_roles(self) -> None:
         record = {

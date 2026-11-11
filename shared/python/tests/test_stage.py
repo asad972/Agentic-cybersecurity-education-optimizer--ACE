@@ -131,9 +131,6 @@ def test_record_stage_keeps_memory_per_key_and_rejects_invalid_input():
 
 @pytest.mark.flink
 def test_record_stage_on_flink_matches_local():
-    pytest.importorskip(
-        "pyflink", reason="install the optional flink extra to run this test"
-    )
     flink = run_flink_local(FirstSeen(), JOBS)
     local = run_local(FirstSeen(), JOBS)
     assert sorted((o.topic, o.key) for o in flink) == sorted((o.topic, o.key) for o in local.outputs)
