@@ -471,16 +471,18 @@ class InMemoryLLMStore:
         if current is None:
             current = BudgetSnapshot(limit, Decimal(0), Decimal(0))
             self._budgets[day] = current
-        elif current.budget_eur != limit:
-            raise LLMConfigurationError(
-                "all workers must use the same daily LLM budget"
+        elif current.budget_eur < limit:
+            current = BudgetSnapshot(
+                limit, current.spent_eur, current.reserved_eur
             )
+            self._budgets[day] = current
         return current
 
     def reserve_budget(self, day: date, limit: Decimal, amount: Decimal) -> bool:
         with self._lock:
             current = self._budget(day, limit)
-            if current.spent_eur + current.reserved_eur + amount > current.budget_eur:
+            effective_limit = min(limit, current.budget_eur)
+            if current.spent_eur + current.reserved_eur + amount > effective_limit:
                 return False
             self._budgets[day] = BudgetSnapshot(
                 current.budget_eur, current.spent_eur, current.reserved_eur + amount
@@ -730,19 +732,28 @@ class CassandraLLMStore:
             "VALUES (%s, %s, %s, %s, %s) IF NOT EXISTS",
             (day, limit, Decimal(0), Decimal(0), datetime.now(UTC)),
         )
-        current = self._budget_row(day)
-        if current is None:
-            raise CacheBusyError("daily budget row could not be initialized")
-        if current.budget_eur != limit:
-            raise LLMConfigurationError(
-                "all workers must use the same daily LLM budget"
+        for _ in range(self.MAX_CAS_ATTEMPTS):
+            current = self._budget_row(day)
+            if current is None:
+                raise CacheBusyError("daily budget row could not be initialized")
+            if current.budget_eur >= limit:
+                return current
+            result = self.session.execute(
+                "UPDATE llm_daily_budget SET budget_eur = %s, updated_at = %s "
+                "WHERE day = %s IF budget_eur = %s",
+                (limit, datetime.now(UTC), day, current.budget_eur),
             )
-        return current
+            if _applied(result)[0]:
+                return BudgetSnapshot(
+                    limit, current.spent_eur, current.reserved_eur
+                )
+        raise CacheBusyError("daily budget was too contended to update safely")
 
     def reserve_budget(self, day: date, limit: Decimal, amount: Decimal) -> bool:
         for _ in range(self.MAX_CAS_ATTEMPTS):
             current = self._ensure_budget(day, limit)
-            if current.spent_eur + current.reserved_eur + amount > current.budget_eur:
+            effective_limit = min(limit, current.budget_eur)
+            if current.spent_eur + current.reserved_eur + amount > effective_limit:
                 return False
             result = self.session.execute(
                 "UPDATE llm_daily_budget SET reserved_eur = %s, updated_at = %s WHERE day = %s "

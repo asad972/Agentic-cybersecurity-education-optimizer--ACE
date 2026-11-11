@@ -22,7 +22,7 @@ Stream stages run on Apache Flink with its Python API (PyFlink 2.3), which needs
 ```powershell
 py -3.11 -m venv C:\venvs\ace          # outside the repo: see the Windows note
 C:\venvs\ace\Scripts\Activate.ps1
-pip install -e "shared/python[flink,dev]"
+pip install -e "shared/python[flink,llm,dev]"
 python -m pytest shared/python/tests streaming
 ```
 
@@ -82,9 +82,17 @@ and reuse it. They handle `BudgetExceededError` explicitly; the module never
 silently changes provider. Cache hits remain available after the hosted budget
 is exhausted.
 
-Configuration is documented in `.env.example`. Hosted mode requires the API
-key and current input/output prices expressed in EUR per million tokens. Model
-defaults are `qwen3:4b` and `claude-haiku-5-5`, and both are configurable.
+Configuration is documented in `.env.example`. Hosted mode requires
+`LLM_API_KEY`, `LLM_HOSTED_INPUT_EUR_PER_MTOK`, and
+`LLM_HOSTED_OUTPUT_EUR_PER_MTOK`; client construction fails if any is missing.
+Set the two prices to the provider's current rates converted to EUR per million
+tokens. Model defaults are `qwen3:4b` and `claude-haiku-5-5`, and both are
+configurable.
+
+The UTC budget row can increase when a worker starts with a higher
+`LLM_DAILY_BUDGET_EUR`. It never decreases during that UTC day; a lower limit
+takes effect with the next day's row, while a worker still respects its own
+lower configured cap.
 
 Tests inject `InMemoryLLMStore` and `RecordedProvider`; production configuration
 accepts only `local` or `hosted`. A missing recording fails immediately instead
@@ -104,7 +112,8 @@ The ordinary test suite uses recorded or injected providers and requires no
 Kafka, Cassandra, Ollama, Anthropic, or network access. The real Cassandra
 contention and budget checks are optional integration tests:
 
-```bash
-ACE_CASSANDRA_INTEGRATION=1 \
+```powershell
+$env:ACE_CASSANDRA_INTEGRATION = "1"
 python -m pytest shared/python/tests/test_llm_cassandra.py -q
+$env:ACE_CASSANDRA_INTEGRATION = $null
 ```

@@ -345,6 +345,56 @@ def test_concurrent_budget_reservations_never_exceed_limit():
     assert store.budget_snapshot(NOW.date()).reserved_eur == Decimal("0.6")
 
 
+def test_daily_budget_can_increase_without_stopping_workers():
+    store = InMemoryLLMStore()
+    day = NOW.date()
+
+    assert store.reserve_budget(day, Decimal(1), Decimal("0.75"))
+    assert store.reserve_budget(day, Decimal(2), Decimal("0.75"))
+
+    snapshot = store.budget_snapshot(day)
+    assert snapshot.budget_eur == Decimal(2)
+    assert snapshot.reserved_eur == Decimal("1.50")
+
+
+def test_lower_worker_limit_does_not_lower_or_conflict_with_daily_row():
+    store = InMemoryLLMStore()
+    day = NOW.date()
+
+    assert store.reserve_budget(day, Decimal(2), Decimal("1.25"))
+    assert not store.reserve_budget(day, Decimal(1), Decimal("0.01"))
+
+    snapshot = store.budget_snapshot(day)
+    assert snapshot.budget_eur == Decimal(2)
+    assert snapshot.reserved_eur == Decimal("1.25")
+
+
+def test_concurrent_budget_increase_never_exceeds_raised_limit():
+    store = InMemoryLLMStore()
+    day = NOW.date()
+    barrier = threading.Barrier(3)
+    results = []
+
+    def reserve(limit):
+        barrier.wait()
+        results.append(store.reserve_budget(day, limit, Decimal("0.75")))
+
+    threads = [
+        threading.Thread(target=reserve, args=(Decimal(1),)),
+        threading.Thread(target=reserve, args=(Decimal(2),)),
+    ]
+    for thread in threads:
+        thread.start()
+    barrier.wait()
+    for thread in threads:
+        thread.join()
+
+    snapshot = store.budget_snapshot(day)
+    assert any(results)
+    assert snapshot.budget_eur == Decimal(2)
+    assert snapshot.reserved_eur <= snapshot.budget_eur
+
+
 def test_retryable_error_retries_and_permanent_error_stops():
     sleeps = []
     retrying = ScriptedProvider([ProviderAttemptError("busy", retryable=True), good()])

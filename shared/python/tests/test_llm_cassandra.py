@@ -52,6 +52,34 @@ def test_cassandra_lwt_budget_contention():
             store.close()
 
 
+def test_cassandra_daily_budget_can_increase_without_limit_conflict():
+    stores = [CassandraLLMStore.from_env(), CassandraLLMStore.from_env()]
+    test_day = date(2099, 1, 2)
+    for store in stores:
+        store.session.execute(
+            "DELETE FROM llm_daily_budget WHERE day = %s", (test_day,)
+        )
+    try:
+        assert stores[0].reserve_budget(
+            test_day, Decimal(1), Decimal("0.75")
+        )
+        assert stores[1].reserve_budget(
+            test_day, Decimal(2), Decimal("0.75")
+        )
+        snapshot = stores[0].budget_snapshot(test_day)
+        assert snapshot.budget_eur == Decimal(2)
+        assert snapshot.reserved_eur == Decimal("1.50")
+        assert not stores[0].reserve_budget(
+            test_day, Decimal(1), Decimal("0.01")
+        )
+    finally:
+        stores[0].session.execute(
+            "DELETE FROM llm_daily_budget WHERE day = %s", (test_day,)
+        )
+        for store in stores:
+            store.close()
+
+
 def test_cassandra_lwt_claim_contention_and_expired_takeover():
     stores = [CassandraLLMStore.from_env(), CassandraLLMStore.from_env()]
     task = "integration_claim"

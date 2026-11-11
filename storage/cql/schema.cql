@@ -254,7 +254,8 @@ CREATE TABLE IF NOT EXISTS llm_cache_claims (
 );
 
 -- One LWT-coordinated row per UTC day enforces the hosted-model budget across
--- every agent process. All pods must use the same budget_eur configuration.
+-- every agent process. A higher configured limit raises budget_eur atomically;
+-- it is never lowered until the next UTC day's row is created.
 CREATE TABLE IF NOT EXISTS llm_daily_budget (
   day          date PRIMARY KEY,
   budget_eur   decimal,

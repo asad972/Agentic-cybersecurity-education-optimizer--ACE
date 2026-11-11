@@ -15,10 +15,10 @@ dependencies = [
 # Stream stages run on Apache Flink (PyFlink). Agents and the sink only need the contracts.
 flink = ["apache-flink==2.3.0"]
 llm = [
-    "pydantic>=2.10,<3",
-    "httpx>=0.28,<1",
-    "anthropic>=1.17,<2",
-    "cassandra-driver>=3.29,<4",
+    "pydantic==2.14.1",
+    "httpx==0.28.1",
+    "anthropic==1.17.0",
+    "cassandra-driver==3.30.1",
 ]
 dev = ["pytest==9.1.1"]
 
