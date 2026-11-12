@@ -1,4 +1,4 @@
-"""Kafka for stream stages: the Flink Kafka connector JAR, downloaded once.
+"""Kafka for stream stages: the Flink Kafka connector JAR and the Kafka source.
 
 PyFlink's Kafka source and sink run in Flink's Java side, so every job needs the
 connector JAR. It is not on PyPI; this module downloads the pinned version from
@@ -19,7 +19,9 @@ import hashlib
 import os
 import urllib.request
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable, Iterable
+
+from ace import contracts
 
 CONNECTOR_VERSION = "5.0.0-2.2"
 CONNECTOR_JAR = f"flink-sql-connector-kafka-{CONNECTOR_VERSION}.jar"
@@ -72,3 +74,51 @@ def connector_jar(download: Callable[[str, Path], None] = _download) -> Path:
         )
     partial.replace(jar)
     return jar
+
+
+def add_connector(env: Any) -> None:
+    """Make the Kafka connector JAR available to a Flink job."""
+    env.add_jars(connector_jar().as_uri())
+
+
+def read_topics(env: Any, topics: Iterable[str], bootstrap_servers: str, group_id: str,
+                bounded: bool = False) -> Any:
+    """Kafka records of the given topics as (topic, JSON text) pairs, as ace.stage.build_flink takes them.
+
+    Each topic gets its own Kafka source, so every record keeps the name of the
+    topic it came from; stages with several inputs need it. An unknown topic
+    name fails here, before the job starts.
+
+    Unbounded (the default) starts from the group's committed offsets, or from
+    the earliest record for a new group, and runs until the job is stopped.
+    Bounded stops at the offsets that are the latest when the job starts, which
+    tests and one-off backfills use.
+    """
+    from pyflink.common import Types, WatermarkStrategy
+    from pyflink.common.serialization import SimpleStringSchema
+    from pyflink.datastream.connectors.kafka import (
+        KafkaOffsetResetStrategy,
+        KafkaOffsetsInitializer,
+        KafkaSource,
+    )
+
+    pair = Types.TUPLE([Types.STRING(), Types.STRING()])
+    streams = []
+    for name in topics:
+        topic = contracts.topic(name).name
+        builder = (KafkaSource.builder()
+                   .set_bootstrap_servers(bootstrap_servers)
+                   .set_topics(topic)
+                   .set_group_id(group_id)
+                   .set_starting_offsets(
+                       KafkaOffsetsInitializer.committed_offsets(KafkaOffsetResetStrategy.EARLIEST))
+                   .set_value_only_deserializer(SimpleStringSchema()))
+        if bounded:
+            builder.set_bounded(KafkaOffsetsInitializer.latest())
+        # Event time and watermarks are assigned later, by build_flink.
+        records = env.from_source(builder.build(), WatermarkStrategy.no_watermarks(), f"Kafka {topic}")
+        streams.append(records.map(lambda text, topic=topic: (topic, text), output_type=pair))
+    if not streams:
+        raise ValueError("read_topics needs at least one topic")
+    first, *rest = streams
+    return first.union(*rest) if rest else first
