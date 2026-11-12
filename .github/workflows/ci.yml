@@ -49,8 +49,13 @@ jobs:
           for file in streaming/*/requirements.txt; do
             python -m pip install -r "$file"
           done
+      # Two runs, not one: with both folders in one command pytest takes
+      # shared/python (its pyproject.toml) as the root, and test ids no longer
+      # match the paths a stage's own test helper expects.
       - name: Run the tests (without Flink)
-        run: python -m pytest shared/python/tests streaming -m "not flink"
+        run: |
+          python -m pytest shared/python/tests -m "not flink"
+          python -m pytest streaming -m "not flink"
 
   flink:
     name: Stream stages on Flink
@@ -84,8 +89,12 @@ jobs:
           for file in streaming/*/requirements.txt; do
             python -m pip install -r "$file"
           done
+      # Separate runs for the same reason as in the job above (S7 starts its
+      # Flink tests in a child pytest by test id).
       - name: Run the Flink tests
-        run: python -m pytest shared/python/tests streaming -m flink
+        run: |
+          python -m pytest shared/python/tests -m flink
+          python -m pytest streaming -m flink
 
   sink:
     name: Sink

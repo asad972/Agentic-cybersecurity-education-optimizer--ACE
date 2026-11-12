@@ -52,9 +52,13 @@ Shared package, stream stages and Flink tests (Java 11 or 17 for the Flink part)
 C:\venvs\ace\Scripts\Activate.ps1
 pip install -e "shared/python[flink,llm,dev]"
 Get-ChildItem streaming\*\requirements.txt | ForEach-Object { pip install -r $_.FullName }
-python -m pytest shared/python/tests streaming -m "not flink"
-python -m pytest shared/python/tests streaming -m flink
+python -m pytest shared/python/tests -m "not flink"
+python -m pytest streaming -m "not flink"
+python -m pytest shared/python/tests -m flink
+python -m pytest streaming -m flink
 ```
+
+Run `shared/python/tests` and `streaming` as separate commands, as CI does. In one command pytest uses `shared/python` as its root, and S7's Flink tests, which start a child pytest by test id, then fail with "file or directory not found".
 
 Sink and monitoring exporter, in the same environment:
 
