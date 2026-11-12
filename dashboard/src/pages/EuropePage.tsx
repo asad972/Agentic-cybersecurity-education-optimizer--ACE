@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { CalendarDays, Layers, MapPin, Search } from 'lucide-react';
 import type { CountryData, MapData, MapMeta } from '../services/api';
 import { useQuery } from '../hooks/useQuery';
@@ -6,8 +6,6 @@ import { countLabel, formatDate, isDay, yesterday } from '../services/dates';
 import { CountryMap } from '../components/CountryMap';
 import { CountryPanel } from '../components/CountryPanel';
 import { ErrorState, Loading } from '../components/Status';
-
-const SKILL_METRICS = new Set(['demand', 'supply', 'gap']);
 
 export function EuropePage() {
   const meta = useQuery<MapMeta>('/map/meta');
@@ -30,9 +28,11 @@ function EuropeMap({ meta }: { meta: MapMeta }) {
   const [date, setDate] = useState(() => { const day = yesterday(); return isDay(day, meta.date_min, meta.date_max) ? day : meta.date_max; });
   const [country, setCountry] = useState(() => meta.countries.some(item => item.code === 'HU') ? 'HU' : meta.countries[0]?.code ?? '');
 
-  const needsSkill = SKILL_METRICS.has(metric);
-  const label = meta.metrics.find(item => item.id === metric)?.label ?? metric;
-  const map = useQuery<MapData>(needsSkill && !skill ? null : '/map', { metric, date, ...(needsSkill ? { item: skill } : {}) });
+  // Which metrics are stored per skill comes from /map/meta, so the API keeps the only list.
+  const selected = meta.metrics.find(item => item.id === metric);
+  const needsSkill = selected?.needs_item ?? false;
+  const label = selected?.label ?? metric;
+  const query = useQuery<MapData>(needsSkill && !skill ? null : '/map', { metric, date, ...(needsSkill ? { item: skill } : {}) });
   const panel = useQuery<CountryData>(country ? '/map/country' : null, { country, date });
 
   // Demand, supply and gap are stored per exact taxonomy name, so the country's Top 10 is offered as suggestions.
@@ -40,8 +40,16 @@ function EuropeMap({ meta }: { meta: MapMeta }) {
   const showSkill = useCallback((name: string) => {
     setDraft(name);
     setSkill(name);
-    setMetric(current => SKILL_METRICS.has(current) ? current : 'demand');
-  }, []);
+    setMetric(current => meta.metrics.find(item => item.id === current)?.needs_item ? current : meta.metrics.find(item => item.needs_item)?.id ?? current);
+  }, [meta.metrics]);
+
+  // Threat observations also come back for the rest of the world (for the world threat map); this page shows Europe only.
+  const europe = useMemo(() => {
+    if (!query.data) return undefined;
+    const codes = new Set(meta.countries.map(item => item.code));
+    return { ...query.data, data: query.data.data.filter(row => codes.has(row.country)) };
+  }, [query.data, meta.countries]);
+  const map = { ...query, data: europe };
 
   const reported = map.data?.data.filter(row => row.value != null) ?? [];
   const total = reported.reduce((sum, row) => sum + (row.value ?? 0), 0);

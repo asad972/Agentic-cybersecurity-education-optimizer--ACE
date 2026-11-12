@@ -64,6 +64,9 @@ def test_meta_lists_the_map_countries_and_every_metric():
     assert {"code": "HU", "name": "Hungary"} in body["countries"]
     assert [metric["id"] for metric in body["metrics"]] == [
         "job_ads", "demand", "supply", "gap", "programmes", "companies", "threats"]
+    # The dashboard takes the per-Skill metrics from here instead of keeping its own list.
+    assert [metric["id"] for metric in body["metrics"] if metric["needs_item"]] == ["demand", "supply", "gap"]
+    assert all(set(metric) == {"id", "label", "needs_item"} for metric in body["metrics"])
     assert body["date_max"] == datetime.now(timezone.utc).date().isoformat()
     assert session.calls == []  # reference labels only, no storage read
 
@@ -139,6 +142,31 @@ def test_threats_are_summed_over_threat_types():
         Row(country="ES", threat_type="ddos", count=1)]})
     values = by_country(response)
     assert (values["FR"], values["ES"], values["IT"]) == (10, 1, None)
+    assert list(values) == list(COUNTRIES)  # nothing stored outside Europe, nothing added
+
+
+def test_threats_also_cover_countries_outside_europe_for_the_world_map():
+    response, _ = get(f"/map?metric=threats&date={DAY}", {"threats_by_day": [
+        Row(country="US", threat_type="scanning", count=70),
+        Row(country="DE", threat_type="phishing", count=3),
+        Row(country="BR", threat_type="malware", count=5),
+        Row(country="US", threat_type="malware", count=30)]})
+    codes = [row["country"] for row in response.json()["data"]]
+    values = by_country(response)
+    assert response.status_code == 200
+    assert codes[:len(COUNTRIES)] == list(COUNTRIES)  # the Europe map's countries first, null included
+    assert codes[len(COUNTRIES):] == ["BR", "US"]     # then only countries with stored observations
+    assert (values["DE"], values["BR"], values["US"], values["FR"]) == (3, 5, 100, None)
+
+
+@pytest.mark.parametrize("metric,table,row", [
+    ("job_ads", "job_ads_by_day", Row(country="US", count=9)),
+    ("companies", "companies_by_day", Row(country="US", companies_30d=9)),
+    ("demand", "demand_map", Row(country="US", count=9)),
+])
+def test_other_metrics_stay_within_the_europe_map_countries(metric, table, row):
+    response, _ = get(f"/map?metric={metric}&date={DAY}&item=SIEM", {table: [row]})
+    assert [entry["country"] for entry in response.json()["data"]] == list(COUNTRIES)
 
 
 @pytest.mark.parametrize("query", [

@@ -1,6 +1,6 @@
 // Types and requests for the M4 Europe map endpoints (GET /map, /map/meta, /map/country).
 export type Country = { code: string; name: string };
-export type MapMeta = { countries: Country[]; metrics: { id: string; label: string }[]; date_min: string; date_max: string };
+export type MapMeta = { countries: Country[]; metrics: { id: string; label: string; needs_item: boolean }[]; date_min: string; date_max: string };
 export type MapData = { metric: string; date: string; item: string | null; unit: string; period: string; note: string; data: { country: string; value: number | null }[] };
 export type Ranked = { rank: number; item: string; count: number };
 export type CountryAlert = { created_at: string; alert_type: string; subject: string; score: number; details: string };

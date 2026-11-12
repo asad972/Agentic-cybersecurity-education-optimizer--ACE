@@ -14,6 +14,10 @@ from pydantic import BaseModel, FiniteFloat
 
 log = logging.getLogger(__name__)
 Metric = Literal["job_ads", "demand", "supply", "gap", "programmes", "companies", "threats"]
+# The one list of metrics stored per Skill: they need `item`. Served by /map/meta.
+ITEM_METRICS = frozenset({"demand", "supply", "gap"})
+# Metrics that also report countries outside the Europe map (world threat map, #40).
+WORLD_METRICS = frozenset({"threats"})
 COUNTRIES = dict(sorted({
     "AT": "Austria", "BE": "Belgium", "BG": "Bulgaria", "HR": "Croatia",
     "CY": "Cyprus", "CZ": "Czechia", "DK": "Denmark", "EE": "Estonia",
@@ -78,6 +82,7 @@ class MapReader:
     def values(self, metric: Metric, day: date, item: str | None):
         if metric in {"demand", "supply"}:
             # Table comes from the validated enum, never from untrusted SQL.
+            # Only Skills are mapped for now; Certifications (kind = certification) are not.
             rows = self.read(f"SELECT country, count FROM {metric}_map "
                              "WHERE kind = %s AND item = %s AND day = %s", ("skill", item, day))
             return {row.country: row.count for row in rows}

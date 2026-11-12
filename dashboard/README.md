@@ -43,7 +43,11 @@ A choropleth of the EU27, the EEA, the United Kingdom and Switzerland with a
 metric switch: job advertisements, skill demand, skill supply, skills gap,
 education programmes, hiring companies and threat observations. Demand, supply
 and gap are stored per skill, so they need an exact skill name: type it and
-press Enter, or click a skill in the country panel. Clicking a country (or
+press Enter, or click a skill in the country panel. Only Skills can be mapped
+this way for now, not Certifications. Which metrics need a skill comes from
+`/map/meta`. For threat observations the API also returns countries outside
+Europe (for the world threat map, #40); this page shows the Europe-map
+countries only. Clicking a country (or
 choosing it in the selector or the data table) opens its panel with the Top 10
 skills and certifications, the latest workforce baseline and that day's drift
 and threat-burst alerts. Countries with no stored value stay grey; a missing
