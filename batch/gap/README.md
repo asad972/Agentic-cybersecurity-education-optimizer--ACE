@@ -22,7 +22,8 @@ tables; it does not change shared schemas or stream contracts.
 The fixed scope is EU27, Iceland, Liechtenstein, Norway, `GB`, and Switzerland.
 Canonical Skills and ECSF mappings come from `shared/taxonomy/skills.csv` and
 `ecsf_roles.csv`. Contribution files are used until that canonical pair lands.
-Unknown historical Skills fail the job so contract drift is not hidden.
+Unknown historical Skills are skipped. One structured warning reports their
+aggregate Demand and Supply row counts without logging names or payloads.
 
 ## ECSF role relations
 
@@ -53,7 +54,17 @@ Configuration:
 
 Logs are structured JSON and contain only coverage, snapshot dates, row counts,
 and summary decisions. Empty input is a successful no-op. Cassandra failures,
-invalid configuration, and taxonomy drift fail the job.
+invalid configuration, and invalid known-Skill counts fail the job.
+
+The CronJob reads optional Cassandra credentials from Secret
+`ace-cassandra-credentials`, keys `username` and `password`. When authentication
+is enabled, the Secret must contain both keys; when the Secret is absent, both
+environment variables remain unset.
+
+Late input can be repaired safely by rerunning the completed month, for example
+`python -m ace_gap --month 2026-10`. Writes are row-by-row, so a crash can leave
+a month partially written, but prepared upserts are idempotent and the same
+rerun repairs it.
 
 The optional live smoke test is:
 

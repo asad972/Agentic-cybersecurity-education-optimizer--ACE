@@ -78,6 +78,7 @@ def test_country_rows_monthly_aggregation_supply_and_role_relations():
     assert summary.supply_snapshots == 1
     assert summary.gap_rows == 4
     assert summary.role_rows == 2
+    assert summary.unknown_skill_rows == 0
     rows = {(row.country, row.skill): row for row in repository.gaps}
     assert rows[("DE", "Cloud Security")].demand == 10
     assert rows[("DE", "Cloud Security")].gap_ratio == 0.5
@@ -108,10 +109,52 @@ def test_empty_input_is_noop_and_logs_warnings(caplog):
     assert "role_relations_skipped" in caplog.text
 
 
-def test_unknown_skill_and_negative_count_fail_the_job():
-    unknown = MemoryRepository({("DE", date(2026, 10, 1)): (StoredCount("skill", "Unknown", 1),)})
-    with pytest.raises(ValueError, match="unknown canonical"):
-        run_gap_job(unknown, TAXONOMY, TargetMonth(2026, 10), GapConfig())
+def test_unknown_skills_are_skipped_counted_and_warned_once(caplog):
+    caplog.set_level("WARNING", logger="ace_gap")
+    repository = MemoryRepository(
+        demand={
+            ("DE", date(2026, 10, 1)): (
+                StoredCount("skill", "Unknown Demand", 99),
+                StoredCount("skill", "Linux", 3),
+            )
+        },
+        supply={
+            "DE": SupplySnapshot(
+                date(2026, 10, 31),
+                (
+                    StoredCount("skill", "Unknown Supply", 40),
+                    StoredCount("skill", "Linux", 20),
+                ),
+            )
+        },
+    )
+
+    summary = run_gap_job(repository, TAXONOMY, TargetMonth(2026, 10), GapConfig())
+
+    assert summary.unknown_skill_rows == 2
+    linux = next(row for row in repository.gaps if row.country == "DE" and row.skill == "Linux")
+    assert (linux.demand, linux.supply, linux.gap_ratio) == (3, 20, 0.15)
+    warnings = [record.message for record in caplog.records if "gap_unknown_skills_skipped" in record.message]
+    assert len(warnings) == 1
+    assert '"demand_rows": 1' in warnings[0]
+    assert '"supply_rows": 1' in warnings[0]
+    assert '"total_rows": 2' in warnings[0]
+    assert "Unknown Demand" not in caplog.text
+    assert "Unknown Supply" not in caplog.text
+
+
+def test_unknown_only_demand_does_not_create_country_output(caplog):
+    caplog.set_level("WARNING", logger="ace_gap")
+    repository = MemoryRepository(
+        {("DE", date(2026, 10, 1)): (StoredCount("skill", "Unknown", 1),)}
+    )
+    summary = run_gap_job(repository, TAXONOMY, TargetMonth(2026, 10), GapConfig())
+    assert summary.countries_with_input == 0
+    assert summary.unknown_skill_rows == 1
+    assert repository.gaps == []
+
+
+def test_negative_known_count_fails_the_job():
     negative = MemoryRepository({("DE", date(2026, 10, 1)): (StoredCount("skill", "Linux", -1),)})
     with pytest.raises(ValueError, match="nonnegative"):
         run_gap_job(negative, TAXONOMY, TargetMonth(2026, 10), GapConfig())

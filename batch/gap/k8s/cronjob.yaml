@@ -50,6 +50,18 @@ spec:
                   value: ace
                 - name: CASSANDRA_LOCAL_DC
                   value: datacenter1
+                - name: CASSANDRA_USERNAME
+                  valueFrom:
+                    secretKeyRef:
+                      name: ace-cassandra-credentials
+                      key: username
+                      optional: true
+                - name: CASSANDRA_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: ace-cassandra-credentials
+                      key: password
+                      optional: true
               resources:
                 requests:
                   cpu: 250m

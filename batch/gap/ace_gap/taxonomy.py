@@ -29,6 +29,7 @@ class Taxonomy:
 
 
 def load_taxonomy(taxonomy_dir: Path) -> Taxonomy:
+    # TODO(issue #89): replace this temporary loader with shared ace.taxonomy.
     canonical_skills = taxonomy_dir / "skills.csv"
     canonical_roles = taxonomy_dir / "ecsf_roles.csv"
     if canonical_skills.exists() or canonical_roles.exists():

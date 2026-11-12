@@ -29,5 +29,9 @@ def test_manifest_contains_config_and_bounded_monthly_cronjob():
         "memory: 256Mi",
         'cpu: "1"',
         "memory: 512Mi",
+        "name: ace-cassandra-credentials",
+        "key: username",
+        "key: password",
+        "optional: true",
     ):
         assert expected in content

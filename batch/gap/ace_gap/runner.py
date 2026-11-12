@@ -26,6 +26,7 @@ class RunSummary:
     supply_snapshots: int
     gap_rows: int
     role_rows: int
+    unknown_skill_rows: int
 
 
 def run_gap_job(
@@ -40,12 +41,17 @@ def run_gap_job(
     demand_partitions = 0
     supply_snapshots = 0
     demand_input = False
+    unknown_demand_rows = 0
+    unknown_supply_rows = 0
 
     for country in SKILLS_SCOPE:
         demand: Counter[str] = Counter()
         country_demand_partitions = 0
         for day in target.days():
-            skill_rows = _skill_counts(repository.read_demand_day(country, day), taxonomy)
+            skill_rows, unknown_rows = _skill_counts(
+                repository.read_demand_day(country, day), taxonomy
+            )
+            unknown_demand_rows += unknown_rows
             if skill_rows:
                 country_demand_partitions += 1
                 demand_input = True
@@ -55,7 +61,9 @@ def run_gap_job(
         snapshot = repository.latest_supply(country, target.last_day, config.supply_lookback_days)
         supply = Counter()
         if snapshot is not None:
-            supply.update(_skill_counts(snapshot.counts, taxonomy))
+            supply_counts, unknown_rows = _skill_counts(snapshot.counts, taxonomy)
+            supply.update(supply_counts)
+            unknown_supply_rows += unknown_rows
             supply_snapshots += 1
 
         if not demand and snapshot is None:
@@ -91,6 +99,21 @@ def run_gap_job(
     if not gap_rows:
         LOGGER.warning(json.dumps({"event": "gap_no_input", "month": target.key}, sort_keys=True))
 
+    unknown_skill_rows = unknown_demand_rows + unknown_supply_rows
+    if unknown_skill_rows:
+        LOGGER.warning(
+            json.dumps(
+                {
+                    "event": "gap_unknown_skills_skipped",
+                    "month": target.key,
+                    "demand_rows": unknown_demand_rows,
+                    "supply_rows": unknown_supply_rows,
+                    "total_rows": unknown_skill_rows,
+                },
+                sort_keys=True,
+            )
+        )
+
     summary = RunSummary(
         target.key,
         countries,
@@ -98,6 +121,7 @@ def run_gap_job(
         supply_snapshots,
         len(gap_rows),
         len(role_rows),
+        unknown_skill_rows,
     )
     _metric(
         "gap_summary",
@@ -107,23 +131,28 @@ def run_gap_job(
         supply_snapshots=summary.supply_snapshots,
         gap_rows=summary.gap_rows,
         role_rows=summary.role_rows,
+        unknown_skill_rows=summary.unknown_skill_rows,
     )
     return summary
 
 
-def _skill_counts(rows: tuple[StoredCount, ...], taxonomy: Taxonomy) -> Counter[str]:
+def _skill_counts(
+    rows: tuple[StoredCount, ...], taxonomy: Taxonomy
+) -> tuple[Counter[str], int]:
     canonical = taxonomy.skill_lookup
     result: Counter[str] = Counter()
+    unknown_rows = 0
     for row in rows:
         if row.kind != "skill":
             continue
         skill = canonical.get(row.item.casefold())
         if skill is None:
-            raise ValueError(f"Input contains unknown canonical Skill: {row.item!r}")
+            unknown_rows += 1
+            continue
         if isinstance(row.count, bool) or not isinstance(row.count, int) or row.count < 0:
             raise ValueError(f"Input count must be a nonnegative integer for {row.item!r}")
         result[skill] += row.count
-    return result
+    return result, unknown_rows
 
 
 def _metric(event: str, **values) -> None:
