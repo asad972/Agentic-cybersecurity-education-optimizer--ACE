@@ -175,6 +175,46 @@ jobs:
           --entrypoint promtool "$PROMETHEUS_IMAGE"
           test rules tests/pipeline-health-test.yml
 
+  m5-agents:
+    name: M5 agents
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Same Python as the M5 agent images (python:3.11-slim). The tests import
+      # the agent modules from agents/m5, which pytest puts on the path.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - name: Install the shared package
+        run: python -m pip install -e "shared/python[dev]"
+      - name: Run the M5 agent tests
+        run: python -m pytest agents/m5
+
+  threat-agent:
+    name: Threat agent
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Same Python as agents/threat/Dockerfile (python:3.12-slim).
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: agents/threat/requirements*.txt
+      - name: Install the shared package and the agent's requirements
+        run: |
+          python -m pip install -e "shared/python[dev]"
+          python -m pip install -r agents/threat/requirements-dev.txt
+      # From the repository root, because the tests import agents.threat.
+      - name: Run the threat agent tests
+        run: python -m pytest agents/threat/tests
+
   api:
     name: API
     runs-on: ubuntu-latest
