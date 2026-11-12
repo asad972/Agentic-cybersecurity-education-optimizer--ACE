@@ -14,6 +14,7 @@ from ace.stage import RecordStage
 
 INPUT_TOPIC = contracts.topic("raw.jobs").name
 OUTPUT_TOPIC = contracts.topic("jobs.clean").name
+DUPLICATES_METRIC = "duplicates_removed_total"
 
 
 def clean_and_shingle(text: str, k: int = 2) -> list[str]:
@@ -74,6 +75,21 @@ class S1DedupStage(RecordStage):
         self.threshold = threshold
         self.window_days = window_days
         self.num_perm = num_perm
+        self.duplicates_removed = 0
+        self._flink_counter: Any = None
+
+    def open(self, runtime_context: Any) -> None:
+        """Register the Flink counter exposed to Prometheus / Grafana."""
+        self._flink_counter = runtime_context.get_metrics_group().counter(
+            DUPLICATES_METRIC
+        )
+
+    def _record_duplicate(self, memory: dict[str, Any]) -> None:
+        """Increment checkpointed per-country and runtime duplicate counters."""
+        memory["duplicates_removed"] = int(memory.get("duplicates_removed", 0)) + 1
+        self.duplicates_removed += 1
+        if self._flink_counter is not None:
+            self._flink_counter.inc()
 
     def _extract_text(self, record: dict[str, Any]) -> str:
         """Extract normalized text fields defined in raw_job.schema.json."""
@@ -82,14 +98,33 @@ class S1DedupStage(RecordStage):
         description = record.get("description", "")
         return f"{title} {company} {description}".strip()
 
+    def _evict_expired(
+        self,
+        memory: dict[str, Any],
+        seen_ids: set[str],
+        history: list[tuple[str, datetime.date, MinHash]],
+        lsh: MinHashLSH,
+    ) -> None:
+        """Evict entries older than window_days from seen_ids, history, and LSH."""
+        latest_date: datetime.date = memory.get("latest_date", datetime.date.min)
+        if latest_date == datetime.date.min:
+            return
+
+        cutoff = latest_date - datetime.timedelta(days=self.window_days)
+        kept: list[tuple[str, datetime.date, MinHash]] = []
+        for item_id, item_date, item_mh in history:
+            if item_date >= cutoff:
+                kept.append((item_id, item_date, item_mh))
+            else:
+                seen_ids.discard(item_id)
+                lsh.remove(item_id)
+        memory["history"] = kept
+
     def process(
         self, topic: str, record: dict[str, Any], memory: dict[str, Any]
     ) -> Iterator[tuple[str, dict[str, Any]]]:
         """Drop exact ID repeats and near-duplicate job ads within the active window."""
-        event_id = record.get("event_id") or record.get("job_id")
-        if not event_id:
-            yield (OUTPUT_TOPIC, record)
-            return
+        event_id: str = record["event_id"]
 
         seen_ids: set[str] = memory.setdefault("seen_ids", set())
         history: list[tuple[str, datetime.date, MinHash]] = memory.setdefault(
@@ -100,12 +135,21 @@ class S1DedupStage(RecordStage):
             MinHashLSH(threshold=self.threshold, num_perm=self.num_perm),
         )
 
-        # 1. Exact ID repetition: drop immediately
+        # Update latest event date seen for this country and evict expired entries
+        post_date = parse_iso_date(record.get("posted_date"))
+        if post_date != datetime.date.min:
+            latest_seen: datetime.date = memory.get("latest_date", datetime.date.min)
+            if post_date > latest_seen:
+                memory["latest_date"] = post_date
+        self._evict_expired(memory, seen_ids, history, lsh)
+        history = memory["history"]
+
+        # 1. Exact ID repetition: drop and count as duplicate
         if event_id in seen_ids:
+            self._record_duplicate(memory)
             return
 
         text = self._extract_text(record)
-        post_date = parse_iso_date(record.get("posted_date"))
 
         # 2. Ads with empty text are never treated as duplicates
         if not text:
@@ -113,24 +157,7 @@ class S1DedupStage(RecordStage):
             yield (OUTPUT_TOPIC, record)
             return
 
-        # 3. Evict records older than window_days relative to latest seen event date
-        if post_date != datetime.date.min:
-            latest_seen = memory.get("latest_date", datetime.date.min)
-            if post_date > latest_seen:
-                memory["latest_date"] = post_date
-                latest_seen = post_date
-
-            cutoff = latest_seen - datetime.timedelta(days=self.window_days)
-            kept: list[tuple[str, datetime.date, MinHash]] = []
-            for item_id, item_date, item_mh in history:
-                if item_date >= cutoff or item_date == datetime.date.min:
-                    kept.append((item_id, item_date, item_mh))
-                else:
-                    lsh.remove(item_id)
-            memory["history"] = kept
-            history = kept
-
-        # 4. Query LSH index for candidate matches and verify Jaccard similarity
+        # 3. Query LSH index for candidate matches and verify Jaccard similarity
         tokens = clean_and_shingle(text)
         current_m = compute_minhash(tokens, num_perm=self.num_perm, seed=42)
 
@@ -141,10 +168,19 @@ class S1DedupStage(RecordStage):
                     prev_id in candidate_ids
                     and current_m.jaccard(prev_m) >= self.threshold
                 ):
+                    self._record_duplicate(memory)
                     return
 
-        # 5. Unique posting: index in LSH/history and emit to jobs.clean
+        # 4. Unique posting: index in LSH/history (if within window) and emit
         seen_ids.add(event_id)
-        history.append((event_id, post_date, current_m))
-        lsh.insert(event_id, current_m)
+        latest_seen = memory.get("latest_date", datetime.date.min)
+        cutoff = (
+            latest_seen - datetime.timedelta(days=self.window_days)
+            if latest_seen != datetime.date.min
+            else datetime.date.min
+        )
+        if post_date == datetime.date.min or post_date >= cutoff:
+            history.append((event_id, post_date, current_m))
+            lsh.insert(event_id, current_m)
+
         yield (OUTPUT_TOPIC, record)
