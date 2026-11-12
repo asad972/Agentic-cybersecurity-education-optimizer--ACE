@@ -1,12 +1,23 @@
+"""S1: near-duplicate job posting filter per country using MinHash + LSH."""
+
+from __future__ import annotations
+
 import datetime
 import re
-from typing import Any, Iterator
-from datasketch import MinHash
+from collections.abc import Iterator
+from typing import Any
+
+from datasketch import MinHash, MinHashLSH
+
+from ace import contracts
 from ace.stage import RecordStage
+
+INPUT_TOPIC = contracts.topic("raw.jobs").name
+OUTPUT_TOPIC = contracts.topic("jobs.clean").name
 
 
 def clean_and_shingle(text: str, k: int = 2) -> list[str]:
-    """Tokenizes normalized text and generates unigrams and bigrams."""
+    """Tokenize normalized text and generate unigrams and k-shingles."""
     cleaned = re.sub(r"[^\w\s]", " ", text.lower())
     tokens = [w for w in cleaned.split() if len(w) > 1]
     if not tokens:
@@ -22,15 +33,15 @@ def clean_and_shingle(text: str, k: int = 2) -> list[str]:
 def compute_minhash(
     tokens: list[str], num_perm: int = 128, seed: int = 42
 ) -> MinHash:
-    """Generates a deterministic MinHash signature with a fixed seed."""
-    m = MinHash(num_perm=num_perm, seed=seed)
+    """Generate a deterministic MinHash signature with a fixed seed."""
+    signature = MinHash(num_perm=num_perm, seed=seed)
     for token in tokens:
-        m.update(token.encode("utf-8"))
-    return m
+        signature.update(token.encode("utf-8"))
+    return signature
 
 
 def parse_iso_date(date_str: str | None) -> datetime.date:
-    """Parses ISO date string YYYY-MM-DD safely."""
+    """Parse an ISO date string (YYYY-MM-DD) safely."""
     if not date_str:
         return datetime.date.min
     try:
@@ -40,27 +51,32 @@ def parse_iso_date(date_str: str | None) -> datetime.date:
 
 
 class S1DedupStage(RecordStage):
-    """Filters near-duplicate job postings within a country using MinHash
-
-    signatures and a sliding window of recent postings.
+    """Filter near-duplicate job postings within a country using MinHash + LSH
+    over a sliding event-time window.
     """
 
-    name = "s1_dedup"
-    inputs = ("raw.jobs",)
+    name = "s1-dedup"
+    inputs = (INPUT_TOPIC,)
 
     def __init__(
         self,
         threshold: float = 0.75,
         window_days: int = 30,
         num_perm: int = 128,
-    ):
-        super().__init__()
+    ) -> None:
+        if not (0.0 < threshold <= 1.0):
+            raise ValueError("threshold must be in (0.0, 1.0]")
+        if window_days <= 0:
+            raise ValueError("window_days must be positive")
+        if num_perm <= 0:
+            raise ValueError("num_perm must be positive")
+
         self.threshold = threshold
         self.window_days = window_days
         self.num_perm = num_perm
 
     def _extract_text(self, record: dict[str, Any]) -> str:
-        """Extracts text strictly adhering to shared/schemas/raw_job.schema.json."""
+        """Extract normalized text fields defined in raw_job.schema.json."""
         title = record.get("job_title", "")
         company = record.get("company", "")
         description = record.get("description", "")
@@ -69,19 +85,20 @@ class S1DedupStage(RecordStage):
     def process(
         self, topic: str, record: dict[str, Any], memory: dict[str, Any]
     ) -> Iterator[tuple[str, dict[str, Any]]]:
-        """Processes each job posting, discarding exact ID repeats and near-duplicates."""
+        """Drop exact ID repeats and near-duplicate job ads within the active window."""
         event_id = record.get("event_id") or record.get("job_id")
         if not event_id:
-            yield ("jobs.clean", record)
+            yield (OUTPUT_TOPIC, record)
             return
 
-        if "seen_ids" not in memory:
-            memory["seen_ids"] = set()
-        if "history" not in memory:
-            memory["history"] = []
-
-        seen_ids: set[str] = memory["seen_ids"]
-        history: list[tuple[str, datetime.date, MinHash]] = memory["history"]
+        seen_ids: set[str] = memory.setdefault("seen_ids", set())
+        history: list[tuple[str, datetime.date, MinHash]] = memory.setdefault(
+            "history", []
+        )
+        lsh: MinHashLSH = memory.setdefault(
+            "lsh",
+            MinHashLSH(threshold=self.threshold, num_perm=self.num_perm),
+        )
 
         # 1. Exact ID repetition: drop immediately
         if event_id in seen_ids:
@@ -93,29 +110,41 @@ class S1DedupStage(RecordStage):
         # 2. Ads with empty text are never treated as duplicates
         if not text:
             seen_ids.add(event_id)
-            yield ("jobs.clean", record)
+            yield (OUTPUT_TOPIC, record)
             return
 
-        # 3. Clean up records older than window_days relative to current ad's post_date
+        # 3. Evict records older than window_days relative to latest seen event date
         if post_date != datetime.date.min:
-            cutoff = post_date - datetime.timedelta(days=self.window_days)
-            memory["history"] = [
-                item
-                for item in history
-                if item[1] >= cutoff or item[1] == datetime.date.min
-            ]
-            history = memory["history"]
+            latest_seen = memory.get("latest_date", datetime.date.min)
+            if post_date > latest_seen:
+                memory["latest_date"] = post_date
+                latest_seen = post_date
 
-        # 4. Check similarity against remaining active window
+            cutoff = latest_seen - datetime.timedelta(days=self.window_days)
+            kept: list[tuple[str, datetime.date, MinHash]] = []
+            for item_id, item_date, item_mh in history:
+                if item_date >= cutoff or item_date == datetime.date.min:
+                    kept.append((item_id, item_date, item_mh))
+                else:
+                    lsh.remove(item_id)
+            memory["history"] = kept
+            history = kept
+
+        # 4. Query LSH index for candidate matches and verify Jaccard similarity
         tokens = clean_and_shingle(text)
         current_m = compute_minhash(tokens, num_perm=self.num_perm, seed=42)
 
-        for prev_id, _, prev_m in history:
-            if current_m.jaccard(prev_m) >= self.threshold:
-                # Near-duplicate detected
-                return
+        candidate_ids = set(lsh.query(current_m))
+        if candidate_ids:
+            for prev_id, _, prev_m in history:
+                if (
+                    prev_id in candidate_ids
+                    and current_m.jaccard(prev_m) >= self.threshold
+                ):
+                    return
 
-        # 5. Ad is original: store signature and emit to jobs.clean
+        # 5. Unique posting: index in LSH/history and emit to jobs.clean
         seen_ids.add(event_id)
         history.append((event_id, post_date, current_m))
-        yield ("jobs.clean", record)
+        lsh.insert(event_id, current_m)
+        yield (OUTPUT_TOPIC, record)
