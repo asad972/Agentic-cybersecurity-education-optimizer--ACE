@@ -265,9 +265,10 @@ CREATE TABLE IF NOT EXISTS llm_daily_budget (
 );
 
 CREATE TABLE IF NOT EXISTS replay_position (
-  dataset     text,          -- e.g. 'de_job_postings', 'stackoverflow_survey', 'testdata_profiles'
-  row_number  bigint,        -- last row published
-  event_date  date,          -- event time of that row
-  updated_at  timestamp,
+  dataset       text,          -- e.g. 'de_job_postings', 'stackoverflow_survey', 'testdata_profiles'
+  row_number    bigint,        -- last row published
+  event_date    date,          -- event time of that row
+  last_event_id text,          -- stable ID of the last row published for safe resume
+  updated_at    timestamp,
   PRIMARY KEY (dataset)
 );

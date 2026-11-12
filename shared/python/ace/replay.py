@@ -3,7 +3,7 @@
 Reads one or more JSON Lines files, sorts valid records globally by event date,
 paces delivery according to simulated event time, validates and routes every
 message through ``ace.contracts``, and persists checkpoints to Cassandra's
-``replay_position`` table after ``producer.flush()`` confirms delivery.
+``replay_position`` table only after delivery is confirmed.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from ace import contracts
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SECONDS_PER_DAY = 1.0
+DEFAULT_SECONDS_PER_DAY = 5.0
 
 
 def resolve_seconds_per_day(seconds_per_day: float | None = None) -> float:
@@ -57,6 +57,13 @@ def _stable_record_id(record: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
+def _row_get(row: Any, field: str) -> Any:
+    """Read a column value from either a mapping or a Cassandra row object."""
+    if isinstance(row, dict):
+        return row.get(field)
+    return getattr(row, field, None)
+
+
 @dataclass(frozen=True)
 class ReplayCheckpoint:
     """Saved progress state for resuming a dataset replay after a restart."""
@@ -75,7 +82,7 @@ class ReplayPositionStore(Protocol):
         """Load the last persisted checkpoint for ``dataset``, if any."""
 
     def save(self, checkpoint: ReplayCheckpoint) -> None:
-        """Persist ``checkpoint`` after Kafka delivery has been flushed."""
+        """Persist ``checkpoint`` after Kafka delivery has been confirmed."""
 
 
 class InMemoryPositionStore:
@@ -100,48 +107,54 @@ class CassandraPositionStore:
 
     def load(self, dataset: str) -> ReplayCheckpoint | None:
         query = (
-            f"SELECT row_number, event_date, updated_at "
+            f"SELECT row_number, event_date, last_event_id, updated_at "
             f"FROM {self._table} WHERE dataset = %s"
         )
         rows = list(self._session.execute(query, (dataset,)))
         if not rows:
             return None
+
         row = rows[0]
-        raw_date = getattr(row, "event_date", None)
-        if raw_date is None and isinstance(row, dict):
-            raw_date = row.get("event_date")
-        if raw_date is None:
-            return None
+        raw_date = _row_get(row, "event_date")
+        if raw_date is None or str(raw_date).strip() == "":
+            raise ValueError(
+                f"Corrupt checkpoint in replay_position for dataset {dataset!r}: missing event_date"
+            )
 
         if isinstance(raw_date, datetime):
             parsed_date = raw_date.date()
         elif isinstance(raw_date, date):
             parsed_date = raw_date
         else:
-            parsed_date = date.fromisoformat(str(raw_date)[:10])
+            try:
+                parsed_date = date.fromisoformat(str(raw_date)[:10])
+            except ValueError as exc:
+                raise ValueError(
+                    f"Corrupt checkpoint in replay_position for dataset {dataset!r}: invalid event_date {raw_date!r}"
+                ) from exc
 
-        row_number = (
-            row.get("row_number", 0)
-            if isinstance(row, dict)
-            else getattr(row, "row_number", 0)
+        row_number = _row_get(row, "row_number")
+        raw_event_id = _row_get(row, "last_event_id")
+        last_event_id = (
+            str(raw_event_id).strip()
+            if raw_event_id is not None and str(raw_event_id).strip()
+            else None
         )
-        updated_at = (
-            row.get("updated_at")
-            if isinstance(row, dict)
-            else getattr(row, "updated_at", None)
-        )
+        updated_at = _row_get(row, "updated_at")
+
         return ReplayCheckpoint(
             dataset=dataset,
-            row_number=int(row_number),
+            row_number=int(row_number or 0),
             event_date=parsed_date,
+            last_event_id=last_event_id,
             updated_at=updated_at,
         )
 
     def save(self, checkpoint: ReplayCheckpoint) -> None:
         query = (
             f"INSERT INTO {self._table} "
-            f"(dataset, row_number, event_date, updated_at) "
-            f"VALUES (%s, %s, %s, %s)"
+            f"(dataset, row_number, event_date, last_event_id, updated_at) "
+            f"VALUES (%s, %s, %s, %s, %s)"
         )
         updated_at = checkpoint.updated_at or datetime.now(timezone.utc)
         self._session.execute(
@@ -150,6 +163,7 @@ class CassandraPositionStore:
                 checkpoint.dataset,
                 int(checkpoint.row_number),
                 checkpoint.event_date,
+                checkpoint.last_event_id,
                 updated_at,
             ),
         )
@@ -164,20 +178,49 @@ class _PreparedRecord:
     message: dict[str, Any]
 
 
-def _publish_outgoing(producer: Any, outgoing: contracts.Outgoing) -> None:
-    """Send an Outgoing contract envelope via a Kafka or test producer."""
+def _publish_outgoing(producer: Any, outgoing: contracts.Outgoing) -> Any:
+    """Send an Outgoing contract envelope and return any delivery future."""
     if hasattr(producer, "send"):
-        producer.send(outgoing.topic, key=outgoing.key, value=outgoing.value)
-    elif callable(producer):
-        producer(outgoing)
-    else:
-        raise TypeError("producer must expose .send(topic, key=..., value=...) or be callable")
+        return producer.send(outgoing.topic, key=outgoing.key, value=outgoing.value)
+    if callable(producer):
+        return producer(outgoing)
+    raise TypeError(
+        "producer must expose .send(topic, key=..., value=...) or be callable"
+    )
 
 
-def _flush_producer(producer: Any) -> None:
-    """Flush buffered messages on the producer if supported."""
+def _confirm_delivery(producer: Any, pending_futures: list[Any]) -> None:
+    """Flush buffered messages and verify every send future succeeded."""
     if hasattr(producer, "flush"):
-        producer.flush()
+        flush_result = producer.flush()
+        if (
+            isinstance(flush_result, int)
+            and not isinstance(flush_result, bool)
+            and flush_result > 0
+        ):
+            raise RuntimeError(
+                f"Kafka flush incomplete: {flush_result} message(s) remaining undelivered"
+            )
+
+    for fut in pending_futures:
+        if fut is None:
+            continue
+        if hasattr(fut, "get") and callable(fut.get):
+            fut.get(timeout=10)
+        elif hasattr(fut, "result") and callable(fut.result):
+            fut.result(timeout=10)
+        else:
+            failed_attr = getattr(fut, "failed", False)
+            is_failed = failed_attr() if callable(failed_attr) else bool(failed_attr)
+            if is_failed:
+                raise RuntimeError("Kafka message delivery failed")
+
+            exc_attr = getattr(fut, "exception", None)
+            exc = exc_attr() if callable(exc_attr) else exc_attr
+            if exc is not None:
+                raise exc if isinstance(exc, BaseException) else RuntimeError(str(exc))
+
+    pending_futures.clear()
 
 
 class EventReplayer:
@@ -239,7 +282,7 @@ class EventReplayer:
         reason: str,
         payload: Any,
         producer: Any,
-    ) -> None:
+    ) -> Any:
         """Build and publish an errors.invalid record for rejected input rows."""
         invalid_msg = contracts.invalid_record(
             topic, self.producer_name, reason, payload
@@ -249,17 +292,21 @@ class EventReplayer:
             key=topic,
             value=invalid_msg,
         )
-        _publish_outgoing(producer, outgoing)
+        return _publish_outgoing(producer, outgoing)
 
     def load_and_sort(
         self,
         file_paths: str | Path | Sequence[str | Path],
-        topic: str = "raw.jobs",
+        topic: str,
         producer: Any = None,
         row_to_message: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None,
+        checkpoint: ReplayCheckpoint | None = None,
     ) -> list[_PreparedRecord]:
-        """Load one or more JSONL files, route malformed/bad-date rows to errors.invalid,
-        and return all valid records sorted globally in event-time order.
+        """Load one or more JSONL files and return valid records sorted by event time.
+
+        Malformed JSON lines, mapping failures, and missing/unparseable dates are
+        routed to ``errors.invalid`` on a fresh run (``checkpoint is None``), but
+        are not re-published on a restart so invalid rows are never duplicated.
         """
         if isinstance(file_paths, (str, Path)):
             paths = [Path(file_paths)]
@@ -267,6 +314,8 @@ class EventReplayer:
             paths = [Path(p) for p in file_paths]
 
         prepared: list[_PreparedRecord] = []
+        invalid_futures: list[Any] = []
+        emit_invalid = producer is not None and checkpoint is None
 
         for path in paths:
             if not path.is_file():
@@ -282,14 +331,18 @@ class EventReplayer:
                     except json.JSONDecodeError as exc:
                         reason = f"invalid JSON in {path.name}:{line_num}: {exc}"
                         logger.warning(reason)
-                        if producer is not None:
-                            self._route_invalid(topic, reason, stripped, producer)
+                        if emit_invalid:
+                            invalid_futures.append(
+                                self._route_invalid(topic, reason, stripped, producer)
+                            )
                         continue
 
                     if not isinstance(raw_row, dict):
                         reason = f"expected JSON object in {path.name}:{line_num}"
-                        if producer is not None:
-                            self._route_invalid(topic, reason, raw_row, producer)
+                        if emit_invalid:
+                            invalid_futures.append(
+                                self._route_invalid(topic, reason, raw_row, producer)
+                            )
                         continue
 
                     if row_to_message is not None:
@@ -297,8 +350,10 @@ class EventReplayer:
                             mapped = row_to_message(raw_row)
                         except Exception as exc:
                             reason = f"row mapping failed: {exc}"
-                            if producer is not None:
-                                self._route_invalid(topic, reason, raw_row, producer)
+                            if emit_invalid:
+                                invalid_futures.append(
+                                    self._route_invalid(topic, reason, raw_row, producer)
+                                )
                             continue
                         if mapped is None:
                             continue
@@ -307,12 +362,14 @@ class EventReplayer:
 
                     event_date, date_error = self._parse_event_date(mapped, raw_row)
                     if date_error is not None or event_date is None:
-                        if producer is not None:
-                            self._route_invalid(
-                                topic,
-                                date_error or "invalid event date",
-                                raw_row,
-                                producer,
+                        if emit_invalid:
+                            invalid_futures.append(
+                                self._route_invalid(
+                                    topic,
+                                    date_error or "invalid event date",
+                                    raw_row,
+                                    producer,
+                                )
                             )
                         continue
 
@@ -324,6 +381,9 @@ class EventReplayer:
                             message=mapped,
                         )
                     )
+
+        if invalid_futures and producer is not None:
+            _confirm_delivery(producer, invalid_futures)
 
         prepared.sort(key=lambda item: (item.event_date, item.record_id))
         return prepared
@@ -373,10 +433,14 @@ class EventReplayer:
             topic=topic,
             producer=producer,
             row_to_message=row_to_message,
+            checkpoint=checkpoint,
         )
 
-        prev_date: date | None = checkpoint.event_date if checkpoint else None
+        # Start pacing from the first record emitted in this session (avoid sleeping
+        # across the gap between a saved checkpoint date and the resumed record).
+        prev_date: date | None = None
         published_since_save = 0
+        pending_futures: list[Any] = []
         latest_checkpoint: ReplayCheckpoint | None = checkpoint
         self.current_position = checkpoint.row_number if checkpoint else 0
 
@@ -394,7 +458,7 @@ class EventReplayer:
             outgoing = contracts.route(
                 topic, item.message, producer=self.producer_name
             )
-            _publish_outgoing(producer, outgoing)
+            pending_futures.append(_publish_outgoing(producer, outgoing))
 
             self.current_position = index_1based
             published_since_save += 1
@@ -407,15 +471,15 @@ class EventReplayer:
             )
 
             if published_since_save >= self.checkpoint_interval:
-                _flush_producer(producer)
+                _confirm_delivery(producer, pending_futures)
                 if self.position_store is not None:
                     self.position_store.save(latest_checkpoint)
                 if on_progress is not None:
                     on_progress(latest_checkpoint)
                 published_since_save = 0
 
-        # Always flush and persist the final position at the end of the dataset
-        _flush_producer(producer)
+        # Confirm delivery and persist the final position at the end of the dataset
+        _confirm_delivery(producer, pending_futures)
         if published_since_save > 0 and latest_checkpoint is not None:
             if self.position_store is not None:
                 self.position_store.save(latest_checkpoint)
@@ -430,29 +494,18 @@ def replay_file_to_kafka(
     date_field: str,
     producer: Any,
     topic: str,
-    dataset: str | None = None,
-    seconds_per_day: float | None = None,
-    position_store: ReplayPositionStore | None = None,
-    cassandra_session: Any = None,
-    keyspace: str | None = None,
-    row_to_message: Callable[[dict[str, Any]], dict[str, Any] | None] | None = None,
-    checkpoint_interval: int = 25,
-    sleep_fn: Callable[[float], None] = time.sleep,
+    **kwargs: Any,
 ) -> int:
-    """Convenience helper to replay dataset file(s) into Kafka via ``ace.contracts``."""
-    replayer = EventReplayer(
-        date_field=date_field,
-        seconds_per_day=seconds_per_day,
-        position_store=position_store,
-        cassandra_session=cassandra_session,
-        keyspace=keyspace,
-        checkpoint_interval=checkpoint_interval,
-        sleep_fn=sleep_fn,
-    )
+    """Convenience helper forwarding to ``EventReplayer.replay``."""
+    dataset = kwargs.pop("dataset", None)
+    row_to_message = kwargs.pop("row_to_message", None)
+    on_progress = kwargs.pop("on_progress", None)
+    replayer = EventReplayer(date_field=date_field, **kwargs)
     return replayer.replay(
         file_paths=file_paths,
         topic=topic,
         producer=producer,
         dataset=dataset,
         row_to_message=row_to_message,
+        on_progress=on_progress,
     )
