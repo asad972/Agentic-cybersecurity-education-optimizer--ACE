@@ -1,0 +1,6 @@
+{"event_id":"00000000-0000-4000-8000-000000000001","source":"fixture","country":"HU","observed_at":"2026-11-01T00:00:00Z","threat_type":"malware"}
+{"event_id":"00000000-0000-4000-8000-000000000001","source":"fixture","country":"HU","observed_at":"2026-11-01T00:00:00Z","threat_type":"malware"}
+{"event_id":"00000000-0000-4000-8000-000000000002","source":"fixture","country":"HU","observed_at":"2026-11-01T00:10:00Z","threat_type":"phishing"}
+{"event_id":"00000000-0000-4000-8000-000000000003","source":"fixture","country":"DE","observed_at":"2026-11-01T00:20:00Z","threat_type":"scanning"}
+{"event_id":"00000000-0000-4000-8000-000000000004","source":"fixture","country":"HU","observed_at":"2026-11-01T01:00:00Z","threat_type":"malware"}
+{"event_id":"00000000-0000-4000-8000-000000000005","source":"fixture","country":"HU","observed_at":"2026-11-02T00:00:00Z","threat_type":"ddos"}

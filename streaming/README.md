@@ -16,3 +16,14 @@ Every stage uses event time, a grace period (1 h for job ads and profiles, 15 mi
 | `s8_threat_bursts` | S8 Threat burst detection | M4 | agg.threats_hourly → alerts.threats | Half-Space Trees, one per Country |
 | `s9_emerging_skills` | S9 Emerging skills | M5 | skills.demand → agg.emerging_skills | Lossy Counting over Unmapped Skills |
 | `s10_hiring_companies` | S10 Hiring companies | M5 | jobs.clean → agg.companies_daily | HyperLogLog, 30-day merge |
+
+S9 and S10 subclass the shared `ace.stage.WindowedStage`. They use event-time
+windows, the shared input/output schema checks, the configured grace period,
+and picklable per-country checkpoint memory. Their fake-record tests run
+through `ace.stage.run_local`; the Flink runner uses the same stage classes.
+
+S5 publishes a country snapshot only on profile event days; it does not
+backfill quiet calendar days. Expired and zero-count Skills are omitted, so a
+consumer rendering a quiet day uses the latest snapshot at or before that day.
+S5 preserves nonblank canonical Skill spelling from S2, ignores blank strings,
+and uses ISO alpha-2 country codes (`GB`, not `UK`).
