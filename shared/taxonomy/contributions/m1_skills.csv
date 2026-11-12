@@ -1,0 +1,17 @@
+skill,ecsf_roles,nice_ids,aliases
+Credential Dumping,Penetration Tester,AN-EXP-001,Credential Harvesting|Pass-the-Hash
+Intrusion Detection,Cyber Incident Responder,PR-CDA-001,Intrusion Detection Systems|Snort|Suricata
+Intrusion Prevention,Cyber Incident Responder,PR-CDA-001,Intrusion Prevention Systems
+Lateral Movement,Penetration Tester,AN-EXP-001,Internal Pivoting|Network Pivoting
+Log Analysis,Cyber Incident Responder,PR-CDA-001,Log Review|Event Log Analysis
+Malware Triage,Digital Forensics Investigator,PR-CIR-001,Security Triage|Incident Triage|Artifact Analysis
+Memory Forensics,Digital Forensics Investigator,PR-CIR-001,Volatile Memory Analysis|RAM Analysis|Volatility
+Network Penetration Testing,Penetration Tester,PR-VAM-001,Network Pentest|Infrastructure Testing
+Network Security Monitoring,Cyber Incident Responder,PR-CDA-001,Zeek
+Packet Inspection,Cyber Incident Responder,PR-CDA-001,Deep Packet Inspection
+Post-Exploitation,Penetration Tester,AN-EXP-001,Post Exploitation|Command and Control Triage
+Privilege Escalation,Penetration Tester,AN-EXP-001,PrivEsc|Local Privilege Escalation
+Root Cause Analysis,Cyber Incident Responder,PR-CIR-001,Root Cause Investigation
+Security Automation,Cyber Incident Responder,PR-CIR-001,SOAR|Security Orchestration|Playbook Automation
+SOC Analysis,Cyber Incident Responder,PR-CDA-001,SOC Analyst|SOC Monitoring
+Social Engineering,Penetration Tester,AN-EXP-001,Social Engineering Testing|Pretexting
