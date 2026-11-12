@@ -23,6 +23,23 @@ def test_daily_counts_become_zero_filled_complete_months():
     assert result.values == (5.0, 0.0, 7.0)
 
 
+def test_trailing_missing_months_are_zero_filled_to_last_complete_month():
+    result = monthly_series(
+        "DE",
+        "Linux",
+        [DemandPoint(date(2026, 1, 10), 4)],
+        date(2026, 5, 17),
+    )
+    assert result is not None
+    assert result.months == (
+        date(2026, 1, 1),
+        date(2026, 2, 1),
+        date(2026, 3, 1),
+        date(2026, 4, 1),
+    )
+    assert result.values == (4.0, 0.0, 0.0, 0.0)
+
+
 def test_current_month_only_is_empty_and_negative_counts_fail():
     assert monthly_series("DE", "Linux", [DemandPoint(date(2026, 4, 1), 2)], date(2026, 4, 3)) is None
     with pytest.raises(ValueError):
@@ -37,6 +54,20 @@ def test_eu_sums_fixed_countries_and_zero_fills_absent_history():
     assert result is not None
     assert result.region == "EU"
     assert result.values == (3.0, 9.0, 6.0)
+
+
+def test_eu_inherits_country_alignment_through_last_complete_month():
+    de = monthly_series(
+        "DE", "Linux", [DemandPoint(date(2025, 1, 2), 3)], date(2026, 4, 1)
+    )
+    fr = monthly_series(
+        "FR", "Linux", [DemandPoint(date(2025, 3, 2), 5)], date(2026, 4, 1)
+    )
+    assert de is not None and fr is not None
+    result = eu_series("Linux", ("DE", "FR"), {"DE": de, "FR": fr})
+    assert result is not None
+    assert result.months[-1] == date(2026, 3, 1)
+    assert result.values[-1] == 0.0
 
 
 def test_month_addition_crosses_years():

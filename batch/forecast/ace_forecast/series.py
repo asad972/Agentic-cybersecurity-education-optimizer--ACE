@@ -38,7 +38,8 @@ def monthly_series(
             totals[month_start(point.day)] += point.count
     if not totals:
         return None
-    first, last = min(totals), max(totals)
+    first = min(totals)
+    last = add_months(cutoff, -1)
     months: list[date] = []
     values: list[float] = []
     current = first

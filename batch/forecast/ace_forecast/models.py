@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 import math
 from typing import Protocol, Sequence
@@ -21,6 +21,15 @@ class Forecaster(Protocol):
     name: str
 
     def forecast(self, months: Sequence[date], values: Sequence[float], horizon: int) -> ModelForecast: ...
+
+
+def _tail_quantiles(interval: float) -> tuple[float, float]:
+    if isinstance(interval, bool) or not isinstance(interval, (int, float)):
+        raise ValueError("Forecast interval must be a number between zero and one")
+    if not math.isfinite(interval) or not 0.0 < interval < 1.0:
+        raise ValueError("Forecast interval must be between zero and one")
+    lower = (1.0 - float(interval)) / 2.0
+    return lower, 1.0 - lower
 
 
 def _coherent(
@@ -48,7 +57,11 @@ def _coherent(
 
 @dataclass(frozen=True, slots=True)
 class SeasonalNaiveForecaster:
-    name: str = "seasonal_naive"
+    interval: float = 0.95
+    name: str = field(default="seasonal_naive", init=False)
+
+    def __post_init__(self) -> None:
+        _tail_quantiles(self.interval)
 
     def forecast(self, months: Sequence[date], values: Sequence[float], horizon: int) -> ModelForecast:
         if len(values) < 12 or horizon < 1:
@@ -59,7 +72,8 @@ class SeasonalNaiveForecaster:
             dtype=float,
         )
         if residuals.size:
-            low_residual, high_residual = np.quantile(residuals, [0.025, 0.975])
+            low, high = _tail_quantiles(self.interval)
+            low_residual, high_residual = np.quantile(residuals, [low, high])
         else:
             low_residual = high_residual = 0.0
         lower = [value + float(low_residual) for value in predicted]
@@ -69,7 +83,11 @@ class SeasonalNaiveForecaster:
 
 @dataclass(frozen=True, slots=True)
 class SarimaForecaster:
-    name: str = "sarima"
+    interval: float = 0.95
+    name: str = field(default="sarima", init=False)
+
+    def __post_init__(self) -> None:
+        _tail_quantiles(self.interval)
 
     def forecast(self, months: Sequence[date], values: Sequence[float], horizon: int) -> ModelForecast:
         try:
@@ -84,7 +102,7 @@ class SarimaForecaster:
             ).fit(disp=False)
             result = fitted.get_forecast(steps=horizon)
             predicted = np.asarray(result.predicted_mean, dtype=float)
-            interval = np.asarray(result.conf_int(alpha=0.05), dtype=float)
+            interval = np.asarray(result.conf_int(alpha=1.0 - self.interval), dtype=float)
             return _coherent(self.name, predicted, interval[:, 0], interval[:, 1])
         except ModelFitError:
             raise
@@ -120,8 +138,12 @@ def _training_data(months: Sequence[date], values: Sequence[float]) -> tuple[np.
 
 @dataclass(frozen=True, slots=True)
 class LightGBMForecaster:
-    name: str = "lightgbm"
+    interval: float = 0.95
     random_state: int = 1729
+    name: str = field(default="lightgbm", init=False)
+
+    def __post_init__(self) -> None:
+        _tail_quantiles(self.interval)
 
     def _model(self, objective: str = "regression", alpha: float | None = None):
         try:
@@ -147,9 +169,10 @@ class LightGBMForecaster:
     def forecast(self, months: Sequence[date], values: Sequence[float], horizon: int) -> ModelForecast:
         try:
             features, targets = _training_data(months, values)
+            lower_quantile, upper_quantile = _tail_quantiles(self.interval)
             point_model = self._model()
-            lower_model = self._model("quantile", 0.025)
-            upper_model = self._model("quantile", 0.975)
+            lower_model = self._model("quantile", lower_quantile)
+            upper_model = self._model("quantile", upper_quantile)
             for model in (point_model, lower_model, upper_model):
                 model.fit(features, targets)
 

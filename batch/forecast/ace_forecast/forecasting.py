@@ -53,7 +53,7 @@ def forecast_series(
     if history < config.seasonal_naive_min_months:
         return SkippedSeries(series.region, series.skill, history, "fewer_than_15_months")
 
-    fallback = SeasonalNaiveForecaster()
+    fallback = SeasonalNaiveForecaster(interval=config.interval)
     if history < config.advanced_min_months:
         fitted = fallback.forecast(series.months, series.values, config.horizon_months)
         return ForecastResult(
@@ -66,8 +66,8 @@ def forecast_series(
         )
 
     models: dict[str, Forecaster] = dict(candidates or {
-        "sarima": SarimaForecaster(),
-        "lightgbm": LightGBMForecaster(),
+        "sarima": SarimaForecaster(interval=config.interval),
+        "lightgbm": LightGBMForecaster(interval=config.interval),
     })
     train_months, holdout_months = series.months[:-3], series.months[-3:]
     train_values, actual = series.values[:-3], series.values[-3:]

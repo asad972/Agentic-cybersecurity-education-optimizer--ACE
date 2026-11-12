@@ -4,8 +4,8 @@ import pytest
 
 from ace_forecast.forecasting import evaluate, forecast_series
 from ace_forecast.models import ModelFitError
-from ace_forecast.series import add_months
-from ace_forecast.types import ModelForecast, MonthlySeries, SkippedSeries
+from ace_forecast.series import add_months, monthly_series
+from ace_forecast.types import DemandPoint, ModelForecast, MonthlySeries, SkippedSeries
 
 
 class FixedModel:
@@ -103,3 +103,15 @@ def test_mape_ignores_zero_actuals_and_is_null_when_all_are_zero():
 def test_final_forecasts_are_nonnegative_and_bands_coherent():
     result = forecast_series(make_series(15, 0.0))
     assert all(0 <= point.lower <= point.predicted <= point.upper for point in result.points)
+
+
+def test_first_target_is_current_month_after_trailing_zero_fill():
+    series = monthly_series(
+        "DE",
+        "Linux",
+        [DemandPoint(date(2024, 1, 3), 10)],
+        date(2025, 4, 20),
+    )
+    assert series is not None and len(series.months) == 15
+    result = forecast_series(series)
+    assert result.points[0].target_month == "2025-04"

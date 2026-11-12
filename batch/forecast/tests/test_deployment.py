@@ -25,5 +25,9 @@ def test_cronjob_has_bounded_weekly_execution_and_resources():
         "memory: 512Mi",
         'cpu: "2"',
         "memory: 2Gi",
+        "name: ace-cassandra-credentials",
+        "key: username",
+        "key: password",
+        "optional: true",
     ):
         assert expected in content
