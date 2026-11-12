@@ -41,6 +41,14 @@ jobs:
       # The llm extra is needed by ace.llm and its tests in shared/python/tests.
       - name: Install the shared package
         run: python -m pip install -e "shared/python[llm,dev]"
+      # A stage that needs more than the shared package (river for S6 and S8,
+      # datasketch for S1) lists it in its own requirements.txt.
+      - name: Install the stages' own requirements
+        run: |
+          shopt -s nullglob
+          for file in streaming/*/requirements.txt; do
+            python -m pip install -r "$file"
+          done
       - name: Run the tests (without Flink)
         run: python -m pytest shared/python/tests streaming -m "not flink"
 
@@ -63,11 +71,19 @@ jobs:
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: shared/python/pyproject.toml
+          cache-dependency-path: |
+            shared/python/pyproject.toml
+            streaming/*/requirements.txt
       # llm as well: pytest collects shared/python/tests/test_llm.py before it
       # selects the Flink tests, and that file imports ace.llm.
       - name: Install the shared package with PyFlink
         run: python -m pip install -e "shared/python[flink,llm,dev]"
+      - name: Install the stages' own requirements
+        run: |
+          shopt -s nullglob
+          for file in streaming/*/requirements.txt; do
+            python -m pip install -r "$file"
+          done
       - name: Run the Flink tests
         run: python -m pytest shared/python/tests streaming -m flink
 
