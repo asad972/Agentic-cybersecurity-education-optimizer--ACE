@@ -19,6 +19,8 @@ Stop the API with `docker compose -f api/compose.yml stop`. Stop the root databa
 
 ## Local development
 
+**Windows:** run the API using Docker Desktop with Linux containers and the commands above. The Cassandra driver's native connection backend can fail to load on Windows with Python 3.12+. Local unit tests use fake connections and do not load that backend, but running the API against Cassandra should use Docker. The virtual-environment commands below use a macOS/Linux shell.
+
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
@@ -32,14 +34,39 @@ Build the API alone with `docker build -t ace-api -f api/Dockerfile api` (the bu
 
 ## Add a teammate router
 
-Put a module in `ace_api/routers/` and export an `APIRouter`. At the bottom of `main.py`, import the router and pass it to the existing factory:
+Create a module such as `api/ace_api/routers/demand.py` and export an `APIRouter` named `router`:
 
 ```python
-from .routers.demand import router as demand_router
+from fastapi import APIRouter
 
-app = create_app(extra_routers=[demand_router])
+router = APIRouter(prefix="/demand", tags=["Demand"])
+
+
+@router.get("/status")
+def status():
+    return {"status": "ok"}
 ```
+
+The application automatically discovers these modules when `create_app()` runs. Restart the API (or use `--reload` locally), then check `/demand/status` and `/docs`. You do not need to edit `main.py` or `routers/__init__.py`.
+
+Discovery loads public `.py` modules directly inside `routers/` in alphabetical order. Modules starting with `_`, subpackages, and modules without a `router` export are not registered. An invalid `router` export or module import error is logged with its module name and traceback, and that module is skipped. Other routers and the service probes stay available; check startup logs and `/docs` for missing endpoints. Keep module imports free of database connections; access the managed session inside requests. Use distinct URL prefixes for each member's endpoints. The optional `extra_routers` factory argument remains available for tests or explicit extensions; the same router object is registered only once, including re-exports and routers also passed explicitly. Routers that clash with built-in paths such as `/health` or `/ready` are rejected and logged without disabling the service.
+
+**Windows-safe imports:** import driver classes such as `NoHostAvailable` from `cassandra.cluster` only inside the route function that uses them, never at module scope. Importing that module can load an unsupported native reactor on Windows before any request runs. A module that makes this mistake will be logged and skipped; its endpoints will be unavailable, while service probes and other modules continue to work. Keep unit-testable routes independent of driver imports wherever possible.
 
 Inside a route, use `request.app.state.database.session` for prepared, bounded Cassandra reads. The session is opened and closed by the service. Use synchronous `def` routes for blocking driver operations (FastAPI runs these in its worker thread pool), or explicitly offload reads in async routes. Handle connection failures with a suitable 503 response. Do not execute unrestricted scans or introduce database writes in browser-facing endpoints.
 
 Domain endpoints remain with their owners, as listed in `docs/ARCHITECTURE.md`. Map, hourly threat and WebSocket features are later releases.
+
+### M5 endpoints
+
+The M5 read-only endpoints are:
+
+- `GET /education?country=DE` — programmes and workforce baseline for a country.
+- `GET /emerging?country=DE&day=2026-11-02` — S9 snapshot for a country and day.
+- `GET /companies?country=DE&day=2026-11-02` — S10 estimates for a country and day.
+- `GET /platforms` — evidence rows for CyberSeek, ENISA ECSF and the ISC2 Workforce Study.
+
+The reads use bounded Cassandra partition queries. `/education` requires an
+uppercase ISO alpha-2 country code; `/emerging` and `/companies` also require
+an ISO date. These endpoints return database-backed data only: there is no
+sample-data fallback.

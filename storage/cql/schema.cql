@@ -165,6 +165,7 @@ CREATE TABLE IF NOT EXISTS companies_by_day (
   country       text,
   companies_day int,         -- HyperLogLog estimate (S10)
   companies_30d int,
+  missing_company int,       -- Job ads with no company field (S10)
   PRIMARY KEY (day, country)
 );
 
@@ -224,13 +225,43 @@ CREATE TABLE IF NOT EXISTS orchestrator_decisions (
 
 CREATE TABLE IF NOT EXISTS llm_cache (
   task        text,          -- e.g. 'skill_extraction', 'programme_roles'
-  input_hash  text,          -- hash of prompt version + input text
+  input_hash  text,          -- hash of provider, model, prompt version, prompts and JSON schema
   provider    text,
   model       text,
   answer      text,          -- validated JSON answer
   cost_eur    double,
+  input_tokens int,
+  output_tokens int,
   created_at  timestamp,
   PRIMARY KEY ((task, input_hash))
+);
+
+-- Upgrade existing installations created before token usage was recorded.
+ALTER TABLE llm_cache ADD IF NOT EXISTS input_tokens int;
+ALTER TABLE llm_cache ADD IF NOT EXISTS output_tokens int;
+
+-- Distributed single-flight lease: only one agent calls an LLM for a cache miss.
+-- An expired claim may be taken over. Any attached reservation is charged
+-- pessimistically before the replacement worker starts a new hosted attempt.
+CREATE TABLE IF NOT EXISTS llm_cache_claims (
+  task         text,
+  input_hash   text,
+  claim_token  uuid,
+  claim_until  timestamp,
+  budget_day   date,
+  reserved_eur decimal,
+  PRIMARY KEY ((task, input_hash))
+);
+
+-- One LWT-coordinated row per UTC day enforces the hosted-model budget across
+-- every agent process. A higher configured limit raises budget_eur atomically;
+-- it is never lowered until the next UTC day's row is created.
+CREATE TABLE IF NOT EXISTS llm_daily_budget (
+  day          date PRIMARY KEY,
+  budget_eur   decimal,
+  spent_eur    decimal,
+  reserved_eur decimal,
+  updated_at   timestamp
 );
 
 CREATE TABLE IF NOT EXISTS replay_position (
