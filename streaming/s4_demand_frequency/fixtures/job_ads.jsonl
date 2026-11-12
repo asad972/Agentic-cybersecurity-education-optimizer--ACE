@@ -1,0 +1,6 @@
+{"event_id": "4f1c2b8e-1d2a-4c5b-9e3f-0a1b2c3d4e01", "source": "fixture", "country": "DE", "posted_date": "2026-10-01", "skills": ["SIEM", "Incident response"], "certifications": ["CISSP"], "ecsf_role": "Cyber Incident Responder"}
+{"event_id": "4f1c2b8e-1d2a-4c5b-9e3f-0a1b2c3d4e02", "source": "fixture", "country": "DE", "posted_date": "2026-10-01", "skills": ["SIEM"]}
+{"event_id": "4f1c2b8e-1d2a-4c5b-9e3f-0a1b2c3d4e03", "source": "fixture", "country": "FR", "posted_date": "2026-10-01", "skills": ["Penetration testing"], "certifications": ["OSCP"]}
+{"event_id": "4f1c2b8e-1d2a-4c5b-9e3f-0a1b2c3d4e04", "source": "fixture", "country": "DE", "posted_date": "2026-10-02", "skills": ["Cloud security"]}
+{"event_id": "4f1c2b8e-1d2a-4c5b-9e3f-0a1b2c3d4e05", "source": "fixture", "country": "DE", "posted_date": "2026-10-03", "skills": ["SIEM"]}
+{"event_id": "4f1c2b8e-1d2a-4c5b-9e3f-0a1b2c3d4e06", "source": "fixture", "country": "Germany", "posted_date": "2026-10-01", "skills": ["SIEM"]}
