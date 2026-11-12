@@ -220,7 +220,9 @@ Counts use `kind` (`skill`, `certification` or `role`) and `item` (the taxonomy 
 | `forecasts` | Forecast job | (region, skill) | target_month | Forecast values and confidence band |
 | `skills_gap` | Gap job | (country, month) | skill | Demand vs Supply per Skill |
 | `role_relations` | Gap job | role | related_role | Related ECSF roles for the role explorer |
-| `llm_cache` | LLM module | (task, input_hash) | – | Cached LLM answers, so nothing is paid for twice |
+| `llm_cache` | LLM module | (task, input_hash) | – | Validated LLM answers with token usage and cost, so nothing is paid for twice |
+| `llm_cache_claims` | LLM module | (task, input_hash) | – | Leased single-flight ownership and any hosted-cost reservation for a cache miss |
+| `llm_daily_budget` | LLM module | day | – | Global UTC hosted-model spend and reservations under a monotonic daily limit |
 | `replay_position` | Replay module | dataset | – | Where each dataset replay stopped, so a restart resumes |
 | `orchestrator_decisions` | `tasks.collect` | day | created_at, task_id | What the orchestrator decided and why |
 
