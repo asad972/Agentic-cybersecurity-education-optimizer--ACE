@@ -1,2 +1,0 @@
-# Keep aligned with shared/python/pyproject.toml's stages extra.
-river==0.23.0

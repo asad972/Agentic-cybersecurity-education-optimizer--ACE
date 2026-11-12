@@ -6,10 +6,8 @@ COPY shared/python /app/shared/python
 # ARM64 needs to compile PyFlink's extensions; remove the compiler afterwards.
 RUN apt-get update && apt-get install -y --no-install-recommends default-jre-headless g++ \
     && pip install --no-cache-dir -e '/app/shared/python[flink]' \
+    && pip check \
     && apt-get purge -y --auto-remove g++ && rm -rf /var/lib/apt/lists/*
-COPY streaming/s8_threat_bursts/requirements.txt /app/s8-requirements.txt
-RUN pip install --no-cache-dir -e '/app/shared/python[flink]' -r /app/s8-requirements.txt \
-    && pip check
 COPY shared/schemas /app/shared/schemas
 COPY streaming/s8_threat_bursts /app/streaming/s8_threat_bursts
 RUN useradd --create-home --uid 10001 ace && mkdir /output && chown ace:ace /output
