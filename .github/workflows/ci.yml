@@ -38,8 +38,9 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+      # The llm extra is needed by ace.llm and its tests in shared/python/tests.
       - name: Install the shared package
-        run: python -m pip install -e "shared/python[dev]"
+        run: python -m pip install -e "shared/python[llm,dev]"
       - name: Run the tests (without Flink)
         run: python -m pytest shared/python/tests streaming -m "not flink"
 
@@ -63,8 +64,10 @@ jobs:
           python-version: "3.11"
           cache: pip
           cache-dependency-path: shared/python/pyproject.toml
+      # llm as well: pytest collects shared/python/tests/test_llm.py before it
+      # selects the Flink tests, and that file imports ace.llm.
       - name: Install the shared package with PyFlink
-        run: python -m pip install -e "shared/python[flink,dev]"
+        run: python -m pip install -e "shared/python[flink,llm,dev]"
       - name: Run the Flink tests
         run: python -m pytest shared/python/tests streaming -m flink
 
