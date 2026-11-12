@@ -28,6 +28,20 @@ An alert requires all of:
 - Total observations at least 15 and greater than three times the prior EWMA
   total. The baseline uses alpha 0.05; this gate suppresses unusual decreases.
 
+Issue #38 asks only for the HST score; the extra gates are there because that
+score alone is direction-blind, so the EWMA ratio keeps increases only,
+`min_total` stops a near-zero baseline from turning a handful of observations
+into a burst, and the cooldown (below) reports a sustained burst once, not hourly.
+
+Known limitation: warmup counts hours, not records. Zero-filled hours count
+towards the 48, so a Country with very few records passes warmup mostly on
+empty hours. Its model and baseline have then learned almost only zeros, and
+the first hour with at least `min_total` (15) observations can alert: two
+records 72 hours apart, the second with 15 observations, produce one. Read such
+an alert as activity where there was almost none, not as a spike over an
+established level. `min_total` is the only guard; there is no minimum number of
+non-empty hours.
+
 Both normal rows and spikes subsequently update the model and baseline.
 These are demonstration thresholds, not measured operational accuracy.
 `BurstConfig` exposes the model parameters; the CLI exposes `--threshold`.
@@ -82,7 +96,7 @@ score, prior baseline and type group. Counts are feed observations, not confirme
   that old state; zero filling applies to future gaps. Incompatible model or
   River changes still require explicit migration or an intentional fresh-state
   replay. Only trusted Flink-managed state is deserialized. River 0.23.0 is
-  pinned in the shared `stages` extra and the compatibility requirements file.
+  pinned once, in the shared `stages` extra.
 - S8 consumes windows already closed by S7; it adds no second watermark or
   grace window. Every dropped duplicate/out-of-order record logs a warning
   labelled `late_records_total` with Country, reason, incoming/last epoch-hour,
