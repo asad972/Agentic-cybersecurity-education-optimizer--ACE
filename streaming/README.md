@@ -21,3 +21,9 @@ S9 and S10 subclass the shared `ace.stage.WindowedStage`. They use event-time
 windows, the shared input/output schema checks, the configured grace period,
 and picklable per-country checkpoint memory. Their fake-record tests run
 through `ace.stage.run_local`; the Flink runner uses the same stage classes.
+
+S5 publishes a country snapshot only on profile event days; it does not
+backfill quiet calendar days. Expired and zero-count Skills are omitted, so a
+consumer rendering a quiet day uses the latest snapshot at or before that day.
+S5 preserves nonblank canonical Skill spelling from S2, ignores blank strings,
+and uses ISO alpha-2 country codes (`GB`, not `UK`).
