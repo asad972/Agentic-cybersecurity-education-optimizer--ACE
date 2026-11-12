@@ -271,7 +271,8 @@ jobs:
   docker:
     name: Docker images and Compose files
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The S7 image installs Java and PyFlink, which takes a few minutes.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
@@ -292,6 +293,19 @@ jobs:
       - name: Build the monitoring exporter image
         if: hashFiles('deploy/monitoring/exporter/Dockerfile') != ''
         run: docker build -f deploy/monitoring/exporter/Dockerfile .
+      # The agent and stage images are built from the repository root, because
+      # they copy shared/python and shared/schemas next to their own code.
+      - name: Build the M5 agent images
+        run: |
+          for agent in education workforce platform; do
+            docker build -f "agents/m5/${agent}_agent/Dockerfile" .
+          done
+      - name: Build the threat agent image
+        run: docker build -f agents/threat/Dockerfile .
+      # Only the runtime stage: the test stage would rerun all stage tests,
+      # which the two stage jobs above already do.
+      - name: Build the S7 image
+        run: docker build --target runtime -f streaming/s7_threat_frequency/Dockerfile .
 
   # The setup scripts come with their own pull request; until then the checks
   # are skipped. The ifs can go once setup.sh and setup.ps1 are on master.
