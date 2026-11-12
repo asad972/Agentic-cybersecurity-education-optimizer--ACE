@@ -253,7 +253,7 @@ export function EducationPage() {
               ECSF role counts for {country} on {education?.day ?? day}. Demand is
               based on the selected daily snapshot.
             </p>
-            {!education?.demand_available && (
+            {education && !education.demand_available && (
               <p className="m5-empty">
                 Demand data has not been stored for this date yet.
               </p>

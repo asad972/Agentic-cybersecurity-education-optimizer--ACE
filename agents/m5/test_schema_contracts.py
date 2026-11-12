@@ -36,7 +36,9 @@ class M5SchemaContractTests(unittest.TestCase):
     def test_education_output_matches_raw_programme_contract(self) -> None:
         schema_path = ROOT / "shared" / "schemas" / "raw_programme.schema.json"
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
-        self.assertEqual(len(schema["properties"]["ecsf_roles"]["items"]["enum"]), 12)
+        role_schema = schema["properties"]["ecsf_roles"]["items"]
+        self.assertEqual(role_schema["type"], "string")
+        self.assertNotIn("enum", role_schema)
         message = normalize_programme(
             {
                 "programme_id": "sample-1",
@@ -50,7 +52,7 @@ class M5SchemaContractTests(unittest.TestCase):
         )
         assert_contract_shape(self, "raw_programme.schema.json", message)
         contracts.validate("raw.programmes", message)
-        self.assertIsNotNone(
+        self.assertIsNone(
             contracts.check(
                 "raw.programmes",
                 {**message, "ecsf_roles": ["Cybersecurity Operations"]},

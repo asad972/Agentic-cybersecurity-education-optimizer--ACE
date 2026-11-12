@@ -38,9 +38,9 @@ agent containers and mount the canonical input read-only:
 
 ```powershell
 $network = docker inspect ace-kafka --format '{{range $name, $network := .NetworkSettings.Networks}}{{$name}}{{end}}'
-docker run --rm --env-file .env --network $network -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 -e CASSANDRA_HOSTS=cassandra -v "${PWD}\data\m5:/data:ro" ace-m5-education --input /data/programmes.jsonl
-docker run --rm --network $network -v "${PWD}\data\m5:/data:ro" ace-m5-workforce --input /data/workforce.csv
-docker run --rm --env-file .env --network $network -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 -e CASSANDRA_HOSTS=cassandra ace-m5-platform
+docker run --rm --env-file .env --network $network -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 -v "${PWD}\data\m5:/data:ro" ace-m5-education --input /data/programmes.jsonl
+docker run --rm --env-file .env --network $network -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 -v "${PWD}\data\m5:/data:ro" ace-m5-workforce --input /data/workforce.csv
+docker run --rm --env-file .env --network $network -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 ace-m5-platform
 ```
 
 Set `KAFKA_BOOTSTRAP_SERVERS` when the broker is not reachable as
@@ -55,7 +55,8 @@ numbers must be integers, and CSV platform decisions must be `true` or
   `ecsf_roles` must already be reviewed and use one of the 12 canonical ECSF
   role names. When `ecsf_roles` is absent, the record is published with an
   empty role list rather than inferring role mappings. The normalizer rejects
-  duplicate role labels and the `raw.programmes` schema rejects unknown roles.
+  duplicate role labels. The shared schema currently accepts any role string
+  pending team agreement on enforcing the canonical ECSF list.
 - **Workforce:** the agent reads ready-made canonical country/year files.
   The ISC2 2024 global study reports an international survey of 15,852
   practitioners and decision-makers, and a separate report focuses on the

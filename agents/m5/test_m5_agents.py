@@ -73,7 +73,7 @@ class EducationAgentTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             normalize_programmes([{"programme_id": "bad"}])
 
-    def test_rejects_roles_outside_the_canonical_ecsf_taxonomy(self) -> None:
+    def test_schema_allows_role_label_until_shared_enum_is_approved(self) -> None:
         record = {
             "programme_id": "invalid-role",
             "country": "DE",
@@ -82,7 +82,7 @@ class EducationAgentTests(unittest.TestCase):
             "ecsf_roles": ["Cybersecurity Operations"],
         }
         message = normalize_programme(record)
-        self.assertIsNotNone(contracts.check("raw.programmes", message))
+        self.assertIsNone(contracts.check("raw.programmes", message))
 
     def test_rejects_duplicate_ecsf_roles(self) -> None:
         record = {

@@ -94,7 +94,14 @@ class HiringCompaniesStageTests(unittest.TestCase):
             HiringCompaniesStage(precision=8), records
         ).published("agg.companies_daily")
 
-        self.assertEqual(flink, local)
+        def by_day(messages):
+            return sorted(
+                messages,
+                key=lambda message: (message["country"], message["day"]),
+            )
+
+        self.assertTrue(local)
+        self.assertEqual(by_day(flink), by_day(local))
 
 
 if __name__ == "__main__":

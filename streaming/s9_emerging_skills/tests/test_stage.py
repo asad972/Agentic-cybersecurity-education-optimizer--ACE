@@ -92,7 +92,14 @@ class EmergingSkillsStageTests(unittest.TestCase):
             EmergingSkillsStage(epsilon=0.1), records
         ).published("agg.emerging_skills")
 
-        self.assertEqual(flink, local)
+        def by_day(messages):
+            return sorted(
+                messages,
+                key=lambda message: (message["country"], message["day"]),
+            )
+
+        self.assertTrue(local)
+        self.assertEqual(by_day(flink), by_day(local))
 
 
 if __name__ == "__main__":

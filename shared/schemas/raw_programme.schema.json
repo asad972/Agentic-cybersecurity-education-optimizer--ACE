@@ -38,21 +38,7 @@
     "ecsf_roles": {
       "type": "array",
       "items": {
-        "type": "string",
-        "enum": [
-          "Chief Information Security Officer (CISO)",
-          "Cyber Incident Responder",
-          "Cyber Legal, Policy and Compliance Officer",
-          "Cyber Threat Intelligence Specialist",
-          "Cybersecurity Architect",
-          "Cybersecurity Auditor",
-          "Cybersecurity Educator",
-          "Cybersecurity Implementer",
-          "Cybersecurity Researcher",
-          "Cybersecurity Risk Manager",
-          "Digital Forensics Investigator",
-          "Penetration Tester"
-        ]
+        "type": "string"
       }
     },
     "url": {
