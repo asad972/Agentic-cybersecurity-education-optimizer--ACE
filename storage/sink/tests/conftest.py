@@ -27,21 +27,42 @@ CQL_TYPES = {
 }
 
 
-def _tables():
-    """table -> (column -> CQL type, primary-key columns), read from schema.cql."""
+def parse_tables(text):
+    """table -> (column -> CQL type, primary-key columns) for every CREATE TABLE in text.
+
+    The key is either a table-level PRIMARY KEY (...) line or one column
+    declared inline as `name type PRIMARY KEY`.
+    """
     tables = {}
-    text = SCHEMA_CQL.read_text(encoding="utf-8")
     for name, body in re.findall(r"CREATE TABLE IF NOT EXISTS (\w+) \((.*?)\n\)", text, re.S):
         columns = dict(re.findall(r"^\s+(\w+)\s+([\w<>]+)", body, re.M))
-        key = re.search(r"PRIMARY KEY \((.*)\)", body).group(1)
         columns.pop("PRIMARY", None)
-        tables[name] = columns, re.findall(r"\w+", key)
+        table_key = re.search(r"PRIMARY KEY \((.*)\)", body)
+        if table_key:
+            key = re.findall(r"\w+", table_key.group(1))
+        else:
+            key = re.findall(r"^\s+(\w+)\s+[\w<>]+\s+PRIMARY KEY", body, re.M)
+        if not key:
+            raise ValueError(f"{name}: no primary key in schema.cql")
+        tables[name] = columns, key
     return tables
 
 
-TABLES = _tables()
+TABLES = parse_tables(SCHEMA_CQL.read_text(encoding="utf-8"))
 
 INT_RANGES = {"int": 2**31, "bigint": 2**63}
+
+
+@pytest.fixture
+def parse_cql():
+    """The schema.cql reader, so its own tests can feed it small tables."""
+    return parse_tables
+
+
+@pytest.fixture
+def schema_tables():
+    """Every table in schema.cql, as the row checks see them."""
+    return TABLES
 
 
 @pytest.fixture
