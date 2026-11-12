@@ -75,6 +75,7 @@ def state_view(memory: dict) -> dict:
             key: (model.width, model.mean)
             for key, model in memory["eu_detectors"].items()
         },
+        "eu_values": memory["eu_country_values"],
         "counters": memory["replay_counters"],
     }
 
@@ -160,7 +161,8 @@ def test_missing_skill_is_zero_but_missing_country_is_not_an_observation() -> No
     eu = memory["eu_detectors"]["Cloud Security"]
     assert (de.width, de.mean) == (2, 2.5)  # 5, then an explicit zero
     assert (fr.width, fr.mean) == (1, 2)  # no FR snapshot on the second day
-    assert (eu.width, eu.mean) == (2, 3.5)  # EU values are 7, then 0
+    assert (eu.width, eu.mean) == (2, 4.5)  # EU values are 7, then DE=0 + carried FR=2
+    assert memory["eu_country_values"] == {"Cloud Security": {"DE": 0, "FR": 2}}
 
 
 def test_late_top10_begins_on_next_unfinalized_day() -> None:
@@ -222,10 +224,12 @@ def test_upward_and_downward_shifts_emit_country_and_eu_contract_alerts() -> Non
         assert contracts.check(ALERTS, alert) is None
         if alert["country"] == "EU":
             assert "scope=EU" in alert["details"]
+            assert "observed_countries=1" in alert["details"]
+            assert "carried_countries=0" in alert["details"]
             assert "contributing_countries=1" in alert["details"]
 
 
-def test_eu_sums_countries_and_reports_observed_country_coverage() -> None:
+def test_eu_carries_missing_country_without_an_artificial_drop() -> None:
     class AlwaysChange:
         def __init__(self, config):
             self.width = 0
@@ -255,15 +259,51 @@ def test_eu_sums_countries_and_reports_observed_country_coverage() -> None:
         key: AlwaysChange(stage.config) for key in memory["country_detectors"]
     }
     memory["eu_detectors"]["Cloud Security"] = AlwaysChange(stage.config)
-    alerts = apply(
+    first_alerts = apply(
         stage,
         memory,
-        [(DEMAND, demand("2026-01-02", {"Cloud Security": 1}, country="DE"))],
+        [(DEMAND, demand("2026-01-02", {"Cloud Security": 5}, country="DE"))],
     )
 
-    [eu] = [alert for alert in alerts if alert["country"] == "EU"]
+    [eu] = [alert for alert in first_alerts if alert["country"] == "EU"]
     assert "observation=12" in eu["details"]
+    assert "observed_countries=2" in eu["details"]
+    assert "carried_countries=0" in eu["details"]
     assert "contributing_countries=2" in eu["details"]
+
+    second_alerts = apply(
+        stage,
+        memory,
+        [(DEMAND, demand("2026-01-03", {"Cloud Security": 5}, country="DE"))],
+    )
+    [eu] = [alert for alert in second_alerts if alert["country"] == "EU"]
+    assert "observation=12" in eu["details"]
+    assert "observed_countries=1" in eu["details"]
+    assert "carried_countries=1" in eu["details"]
+    assert "contributing_countries=2" in eu["details"]
+    assert memory["country_detectors"]["FR", "Cloud Security"].width == 1
+
+
+def test_explicit_zero_replaces_carried_value_and_unseen_country_is_excluded() -> None:
+    stage = DemandDrift()
+    memory: dict = {}
+    apply(
+        stage,
+        memory,
+        [
+            (TOP10, top10("2026-01-01", country="DE")),
+            (TOP10, top10("2026-01-01", country="FR")),
+            (TOP10, top10("2026-01-01", country="IT")),
+            (DEMAND, demand("2026-01-01", {"Cloud Security": 5}, country="DE")),
+            (DEMAND, demand("2026-01-01", {"Cloud Security": 7}, country="FR")),
+            (DEMAND, demand("2026-01-02", {"Cloud Security": 5}, country="DE")),
+            (DEMAND, demand("2026-01-03", {}, country="FR")),
+            (DEMAND, demand("2026-01-04", {"Cloud Security": 5}, country="DE")),
+        ],
+    )
+
+    assert memory["eu_country_values"] == {"Cloud Security": {"DE": 5, "FR": 0}}
+    assert "IT" not in memory["eu_country_values"]["Cloud Security"]
 
 
 def test_replayed_and_conflicting_aggregates_do_not_retrain() -> None:
@@ -331,7 +371,7 @@ def test_checkpoint_restores_models_buffer_and_signature() -> None:
     )
 
     restored = pickle.loads(pickle.dumps(memory))
-    assert restored["state_version"] == 1
+    assert restored["state_version"] == 2
     assert restored["river_version"] == "0.23.0"
     assert restored["config_signature"] == stage._config_signature
     assert state_view(restored) == state_view(memory)
@@ -344,6 +384,10 @@ def test_checkpoint_restores_models_buffer_and_signature() -> None:
 
     with pytest.raises(RuntimeError, match="config_signature"):
         list(DemandDrift(DriftConfig(delta=0.01)).process(TOP10, top10("2026-01-04"), restored))
+
+    restored["state_version"] = 1
+    with pytest.raises(RuntimeError, match="state_version"):
+        list(stage.process(TOP10, top10("2026-01-04"), restored))
 
 
 def test_state_is_bounded_by_eligibility_and_one_pending_day() -> None:
@@ -373,6 +417,8 @@ def test_state_is_bounded_by_eligibility_and_one_pending_day() -> None:
 
     assert len(memory["country_detectors"]) == 2
     assert len(memory["eu_detectors"]) == 2
+    assert len(memory["eu_country_values"]) == 2
+    assert all(len(values) == 1 for values in memory["eu_country_values"].values())
     assert memory["last_finalized_day"] == "2026-01-29"
     assert list(memory["pending_demand"]) == ["2026-01-30"]
 

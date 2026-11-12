@@ -13,7 +13,7 @@ from ace.stage import RecordStage
 
 from .detector import ADWINSeries, DriftChange, DriftConfig
 
-_STATE_VERSION = 1
+_STATE_VERSION = 2
 _GLOBAL_KEY = "s6-global"
 _COUNTERS = ("duplicate", "conflicting", "already_finalized", "late_top10")
 
@@ -76,6 +76,7 @@ class DemandDrift(RecordStage):
                 pending_demand={},
                 country_detectors={},
                 eu_detectors={},
+                eu_country_values={},
                 last_finalized_day=None,
                 latest_demand_day=None,
                 replay_counters={name: 0 for name in _COUNTERS},
@@ -95,6 +96,7 @@ class DemandDrift(RecordStage):
             "pending_demand",
             "country_detectors",
             "eu_detectors",
+            "eu_country_values",
             "last_finalized_day",
             "latest_demand_day",
             "replay_counters",
@@ -198,13 +200,21 @@ class DemandDrift(RecordStage):
                         self._alert(country, day, skill, change, scope="country")
                     )
 
-        coverage = len(observations)
         eu_detectors = memory["eu_detectors"]
+        eu_country_values = memory["eu_country_values"]
+        observed_countries = set(observations)
         for skill in sorted(memory["eu_eligibility_dates"]):
             eligible_day = date.fromisoformat(memory["eu_eligibility_dates"][skill])
             if eligible_day > day:
                 continue
-            value = sum(counts.get(skill, 0) for counts in observations.values())
+            country_values = eu_country_values.setdefault(skill, {})
+            for country, counts in observations.items():
+                country_values[country] = counts.get(skill, 0)
+            if not country_values:
+                continue
+            observed = len(observed_countries)
+            carried = len(set(country_values).difference(observed_countries))
+            value = sum(country_values.values())
             detector = eu_detectors.setdefault(skill, ADWINSeries(self.config))
             change = detector.update(value)
             if change is not None:
@@ -215,7 +225,9 @@ class DemandDrift(RecordStage):
                         skill,
                         change,
                         scope="EU",
-                        coverage=coverage,
+                        observed=observed,
+                        carried=carried,
+                        contributing=len(country_values),
                     )
                 )
         return alerts
@@ -228,7 +240,9 @@ class DemandDrift(RecordStage):
         change: DriftChange,
         *,
         scope: str,
-        coverage: int | None = None,
+        observed: int | None = None,
+        carried: int | None = None,
+        contributing: int | None = None,
     ) -> dict[str, Any]:
         details = (
             f"direction={change.direction}; "
@@ -238,8 +252,12 @@ class DemandDrift(RecordStage):
             f"width={change.width}; delta={_number(self.config.delta)}; "
             f"scope={scope}"
         )
-        if coverage is not None:
-            details += f"; contributing_countries={coverage}"
+        if contributing is not None:
+            details += (
+                f"; observed_countries={observed}; "
+                f"carried_countries={carried}; "
+                f"contributing_countries={contributing}"
+            )
         return {
             "country": country,
             "day": day.isoformat(),
