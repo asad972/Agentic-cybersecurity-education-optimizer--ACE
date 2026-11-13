@@ -55,7 +55,22 @@ Discovery loads public `.py` modules directly inside `routers/` in alphabetical 
 
 Inside a route, use `request.app.state.database.session` for prepared, bounded Cassandra reads. The session is opened and closed by the service. Use synchronous `def` routes for blocking driver operations (FastAPI runs these in its worker thread pool), or explicitly offload reads in async routes. Handle connection failures with a suitable 503 response. Do not execute unrestricted scans or introduce database writes in browser-facing endpoints.
 
-Domain endpoints remain with their owners, as listed in `docs/ARCHITECTURE.md`. Map, hourly threat and WebSocket features are later releases.
+Domain endpoints remain with their owners, as listed in `docs/ARCHITECTURE.md`. Hourly threat and WebSocket features are later releases.
+
+### M4 Europe map endpoints (#37)
+
+- `GET /map?metric=job_ads&date=2026-11-02` — one value per country for a metric: `job_ads`, `demand`, `supply`, `gap`, `programmes`, `companies` or `threats`. `demand`, `supply` and `gap` also need `item`, the exact skill name (`&item=SIEM`). Every Europe-map country is listed; a country with nothing stored has `value: null`, never 0. For `threats` only, every other country with stored observations follows, ordered by code, so the world threat map (#40) reads the same endpoint; the other metrics never go beyond the Europe-map countries. The response also carries the metric's `unit`, `period` and a `note` on how to read it.
+- `GET /map/country?country=HU&date=2026-11-02` — the country panel: Top 10 skills and certifications for that day, the latest workforce baseline, and up to 50 of that day's alerts (`alerts_truncated` says when there were more).
+- `GET /map/meta` — the countries (EU27, EEA, UK, Switzerland), the metrics with their labels and `needs_item` (true for the metrics stored per Skill), and the accepted date range. Reference labels only; it reads no data. The dashboard takes the per-Skill metrics from here, so the list lives only in `map_data.py` (`ITEM_METRICS`).
+
+`demand` and `supply` read `kind = skill` only: `item` is a Skill name, and
+Certifications cannot be mapped yet.
+
+Dates are UTC, from 2020-01-01 through today. Each read names a complete
+partition key and a row limit; a partition larger than the limit is answered
+with 503 rather than a truncated count. Storage problems are also 503, and
+there is no sample-data fallback. The module is `routers/europe_map.py`, with
+the queries in `map_data.py`.
 
 ### M5 endpoints
 

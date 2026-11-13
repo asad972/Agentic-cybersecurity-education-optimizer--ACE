@@ -32,6 +32,8 @@ The additions distinguish specific tools/standards and competencies from those
 broader skills. For example, YARA is a tool skill, while Malware analysis is a
 broader competency. Aliases express equivalent names, not related concepts;
 bare words such as `attack`, `malware`, `phishing`, and `IOC` are not skill aliases.
+The same holds for `Sigma`: alone it also matches Six Sigma and Sigma-Aldrich in
+job ads, so the entry is named `Sigma rules` and has no bare `Sigma` alias (#91).
 
 The threat collector's threat categories and S7/S8 event keys are a different
 vocabulary from workforce skills. These CSVs do not change collectors, event
@@ -51,7 +53,7 @@ project proposals informed by these primary sources.
 | STIX | [OASIS STIX introduction](https://oasis-open.github.io/cti-documentation/stix/intro.html): structured CTI representation. |
 | TAXII | [OASIS TAXII introduction](https://oasis-open.github.io/cti-documentation/taxii/intro.html): CTI exchange protocol. |
 | MISP | [MISP project](https://www.misp-project.org/): indicator storage, correlation and sharing. |
-| Sigma; Detection engineering | [Sigma documentation](https://sigmahq.io/docs/): writing and sharing security detections. Detection engineering is our broader competency label, not a synonym for Sigma. |
+| Sigma rules; Detection engineering | [Sigma documentation](https://sigmahq.io/docs/): writing and sharing security detections. Detection engineering is our broader competency label, not a synonym for Sigma rules. |
 | YARA | [YARA project](https://virustotal.github.io/yara/): pattern-based rules for malware identification. |
 | Indicator of compromise analysis; Intelligence requirements management; Threat intelligence feed management; Threat intelligence reporting | [EC-Council CTIA curriculum](https://www.eccouncil.org/train-certify/certified-threat-intelligence-analyst-ctia/): requirements, collection, indicator evaluation and reporting. |
 | Threat actor profiling | [GIAC GCTI objectives](https://www.giac.org/certifications/cyber-threat-intelligence-gcti/): campaign analysis and attribution. |
