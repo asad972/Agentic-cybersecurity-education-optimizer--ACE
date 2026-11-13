@@ -11,6 +11,9 @@ Switzerland); it is a Region, not a country code.
 - The current incomplete UTC month is excluded. Every nonempty series is
   zero-filled through the last complete month, so forecast month one is always
   the current month rather than an already elapsed gap in the source data.
+- A Skill with only a few old advertisements therefore has a recent history
+  containing mostly zeros; the model does not treat its last observed month as
+  current Demand.
 - Countries without a Skill's history contribute zero to that Skill's EU sum.
 - Fewer than 15 months are skipped. From 15 through 26 months the job uses a
   seasonal-naive model. At 27 months it begins comparing SARIMA and LightGBM.
