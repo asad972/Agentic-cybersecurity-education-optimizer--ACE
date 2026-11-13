@@ -272,3 +272,6 @@ CREATE TABLE IF NOT EXISTS replay_position (
   updated_at    timestamp,
   PRIMARY KEY (dataset)
 );
+
+-- Upgrade existing installations created before last_event_id was recorded.
+ALTER TABLE replay_position ADD IF NOT EXISTS last_event_id text;

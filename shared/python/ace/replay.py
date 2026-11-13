@@ -4,6 +4,11 @@ Reads one or more JSON Lines files, sorts valid records globally by event date,
 paces delivery according to simulated event time, validates and routes every
 message through ``ace.contracts``, and persists checkpoints to Cassandra's
 ``replay_position`` table only after delivery is confirmed.
+
+Delivery semantics are at-least-once: after a crash, up to
+``checkpoint_interval`` valid rows may be published again on restart, and
+invalid rows routed to ``errors.invalid`` are also at-least-once (re-sent if a
+crash occurs before the first checkpoint is saved).
 """
 
 from __future__ import annotations
