@@ -39,7 +39,7 @@ The system has six layers. Each layer is a separate containerized service, and t
 | Dataset from online sources (e.g. LinkedIn job ads and professional user profiles, CYBERHEAD database, ISC2 annual reports) | European job APIs and a job-ads dataset for Demand, the Stack Overflow Developer Survey for Supply, CYBERHEAD for education, ISC2 reports for workforce figures, plus public threat-intelligence feeds for the threat map. Public LinkedIn data is almost all from the US, so it is not used (see Risks) |
 | Skills needed vs skills offered | Demand (job ads) vs Supply (profiles), compared through one shared Skill Taxonomy |
 | Kafka, Cassandra, Docker Swarm/Kubernetes, no Spark | Kafka (KRaft), Cassandra, Kubernetes with Swarm fallback, Python stream processing |
-| Batch 1: per-country and European skills-need forecasting | Forecasting job on Demand history (Prophet / ARIMA, LightGBM challenger) |
+| Batch 1: per-country and European skills-need forecasting | Forecasting job on Demand history (SARIMA primary, LightGBM challenger) |
 | Pipeline 1: Top 10 skills per country | S3 (Space-Saving) |
 | Pipeline 2: skills-need frequency on a choropleth | S4 (Count-Min Sketch) |
 | Pipeline 3: skills-offered frequency on a choropleth | S5 (exponential histograms) |
@@ -230,12 +230,12 @@ Raw tables use a time-to-live (TTL) of 2 years. Aggregate tables are kept with n
 
 ## Batch processing
 
-Batch jobs run as scheduled containers (Kubernetes CronJobs), read from Cassandra, and write their results back to Cassandra. They use pandas and scikit-learn, not Spark.
+Batch jobs run as scheduled containers (Kubernetes CronJobs), read from Cassandra, and write their results back to Cassandra. They use pandas, statsmodels/SARIMA and LightGBM, not Spark.
 
 **Batch 1: Skill Demand forecasting**
 
 - Input: `demand_trend` for `kind = skill`, summed to monthly counts per Country. The `EU` Region forecast is trained on the sum across EU countries.
-- Models: Prophet or ARIMA/ETS (statsmodels) per Country and Skill, with LightGBM over lag features as a challenger.
+- Models: SARIMA `(1,1,1) × (1,0,0,12)` is primary and deterministic LightGBM over lag features is the challenger. Series with 15–26 months use seasonal-naive, which is also the final fallback if both advanced candidates fail.
 - Evaluation: a time-based train/test split (last 3 months held out), scored by MAE and MAPE.
 - Output: `forecasts` with a 6–12 month horizon and confidence bands.
 - Schedule: retrained weekly, and early when S6 flags EU-level drift.
@@ -309,7 +309,7 @@ Every box is one Docker container. Arrows point from the container that opens a 
 | Ingestion | Apache Kafka (KRaft) | Required by the brief; real-time and replayable |
 | Stream processing | Apache Flink (PyFlink), River | Event-time windows, watermarks and checkpoints on Kafka; Python API matches the rest of the code; no Spark |
 | Storage | Apache Cassandra | Required by the brief; fast time-series writes |
-| Batch / ML | pandas, Prophet, statsmodels, LightGBM | Light forecasting stack, no Spark |
+| Batch / ML | pandas, statsmodels/SARIMA, LightGBM | Light forecasting stack, no Spark |
 | API | FastAPI | Async Python, auto-generated OpenAPI docs |
 | Frontend | React, Leaflet or ECharts | Choropleth maps and dashboards |
 | Deployment | Docker, Kubernetes or Docker Swarm | Required by the brief |
