@@ -62,17 +62,21 @@ class S1DedupStage(RecordStage):
     def __init__(
         self,
         threshold: float = 0.75,
+        lsh_threshold: float = 0.6,
         window_days: int = 30,
         num_perm: int = 128,
     ) -> None:
         if not (0.0 < threshold <= 1.0):
             raise ValueError("threshold must be in (0.0, 1.0]")
+        if not (0.0 < lsh_threshold <= threshold):
+            raise ValueError("lsh_threshold must be in (0.0, threshold]")
         if window_days <= 0:
             raise ValueError("window_days must be positive")
         if num_perm <= 0:
             raise ValueError("num_perm must be positive")
 
         self.threshold = threshold
+        self.lsh_threshold = lsh_threshold
         self.window_days = window_days
         self.num_perm = num_perm
         self.duplicates_removed = 0
@@ -102,22 +106,24 @@ class S1DedupStage(RecordStage):
         self,
         memory: dict[str, Any],
         seen_ids: set[str],
-        history: list[tuple[str, datetime.date, MinHash]],
+        history: list[tuple[str, datetime.date]],
+        signatures: dict[str, MinHash],
         lsh: MinHashLSH,
     ) -> None:
-        """Evict entries older than window_days from seen_ids, history, and LSH."""
+        """Evict entries older than window_days from seen_ids, history, signatures, and LSH."""
         latest_date: datetime.date = memory.get("latest_date", datetime.date.min)
         if latest_date == datetime.date.min:
             return
 
         cutoff = latest_date - datetime.timedelta(days=self.window_days)
-        kept: list[tuple[str, datetime.date, MinHash]] = []
-        for item_id, item_date, item_mh in history:
-            if item_date >= cutoff:
-                kept.append((item_id, item_date, item_mh))
+        kept: list[tuple[str, datetime.date]] = []
+        for item_id, item_date in history:
+            if item_date >= cutoff or item_date == datetime.date.min:
+                kept.append((item_id, item_date))
             else:
                 seen_ids.discard(item_id)
-                lsh.remove(item_id)
+                if signatures.pop(item_id, None) is not None:
+                    lsh.remove(item_id)
         memory["history"] = kept
 
     def process(
@@ -127,21 +133,28 @@ class S1DedupStage(RecordStage):
         event_id: str = record["event_id"]
 
         seen_ids: set[str] = memory.setdefault("seen_ids", set())
-        history: list[tuple[str, datetime.date, MinHash]] = memory.setdefault(
-            "history", []
-        )
+        history: list[tuple[str, datetime.date]] = memory.setdefault("history", [])
+        signatures: dict[str, MinHash] = memory.setdefault("signatures", {})
         lsh: MinHashLSH = memory.setdefault(
             "lsh",
-            MinHashLSH(threshold=self.threshold, num_perm=self.num_perm),
+            MinHashLSH(threshold=self.lsh_threshold, num_perm=self.num_perm),
         )
 
-        # Update latest event date seen for this country and evict expired entries
+        # Update latest event date seen for this country, ignoring dates more than
+        # 1 day ahead of the newest date seen so far so a wrong future posted_date
+        # cannot empty the active 30-day window.
         post_date = parse_iso_date(record.get("posted_date"))
         if post_date != datetime.date.min:
             latest_seen: datetime.date = memory.get("latest_date", datetime.date.min)
-            if post_date > latest_seen:
+            if latest_seen == datetime.date.min:
                 memory["latest_date"] = post_date
-        self._evict_expired(memory, seen_ids, history, lsh)
+            elif (
+                post_date > latest_seen
+                and (post_date - latest_seen).days <= 1
+            ):
+                memory["latest_date"] = post_date
+
+        self._evict_expired(memory, seen_ids, history, signatures, lsh)
         history = memory["history"]
 
         # 1. Exact ID repetition: drop and count as duplicate
@@ -154,33 +167,37 @@ class S1DedupStage(RecordStage):
         # 2. Ads with empty text are never treated as duplicates
         if not text:
             seen_ids.add(event_id)
+            history.append((event_id, post_date))
             yield (OUTPUT_TOPIC, record)
             return
 
-        # 3. Query LSH index for candidate matches and verify Jaccard similarity
+        # 3. Query LSH index (threshold=0.6) and verify exact Jaccard (>= 0.75)
+        # by looking up only the candidate IDs in the signatures dict in O(1).
         tokens = clean_and_shingle(text)
         current_m = compute_minhash(tokens, num_perm=self.num_perm, seed=42)
 
-        candidate_ids = set(lsh.query(current_m))
-        if candidate_ids:
-            for prev_id, _, prev_m in history:
-                if (
-                    prev_id in candidate_ids
-                    and current_m.jaccard(prev_m) >= self.threshold
-                ):
-                    self._record_duplicate(memory)
-                    return
+        for cand_id in lsh.query(current_m):
+            prev_m = signatures.get(cand_id)
+            if prev_m is not None and current_m.jaccard(prev_m) >= self.threshold:
+                self._record_duplicate(memory)
+                return
 
-        # 4. Unique posting: index in LSH/history (if within window) and emit
-        seen_ids.add(event_id)
+        # 4. Unique posting: index in LSH/signatures if inside the active window.
+        # Intentionally do not index stale out-of-order ads older than the cutoff
+        # (or future-dated outliers) so bounded window memory is preserved; a later
+        # copy of an already-expired ad will not be caught, which is on purpose.
         latest_seen = memory.get("latest_date", datetime.date.min)
         cutoff = (
             latest_seen - datetime.timedelta(days=self.window_days)
             if latest_seen != datetime.date.min
             else datetime.date.min
         )
-        if post_date == datetime.date.min or post_date >= cutoff:
-            history.append((event_id, post_date, current_m))
+        if post_date == datetime.date.min or (
+            cutoff <= post_date <= latest_seen + datetime.timedelta(days=1)
+        ):
+            seen_ids.add(event_id)
+            history.append((event_id, post_date))
+            signatures[event_id] = current_m
             lsh.insert(event_id, current_m)
 
         yield (OUTPUT_TOPIC, record)
