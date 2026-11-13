@@ -7,6 +7,9 @@
 | `stage.py` | The stage on `ace.stage`: one sketch per (Country, day) window, queried for every taxonomy entry when the day closes |
 | `count_min.py` | The Count-Min Sketch: add, estimate, merge |
 | `taxonomy_keys.py` | The key set: every Skill, Certification and Role in `shared/taxonomy/`; replaced by `ace.taxonomy` once it is merged |
+| `__main__.py` | Runs the stage over a file of `skills.demand` messages and writes what it publishes |
+| `fixtures/job_ads.jsonl` | Six fake job ads, one of them invalid, that the container runs by default |
+| `Dockerfile` | The stage image (`runtime`) and an image that runs S4's tests (`test`) |
 
 ## How it counts
 
@@ -34,7 +37,31 @@ A busy Country with 1000 job ads a day and about 7 mentions each gives N = 7000,
 python -m pytest streaming/s4_demand_frequency -m "not flink"
 ```
 
-`test_count_min.py` checks the sketch alone: never under-counts, stays within its bound on a skewed stream, merges, survives pickling (Flink checkpoints), and hashes the same in a new process. `test_s4.py` runs the stage with `run_local`: exact counts on the fake job ads, never under-counting with a deliberately narrow sketch, exact job ad counts, unknown items, and every message checked against `agg.demand_daily`. The `flink` test runs the same job ads on a local Flink.
+`test_main.py` runs the command-line runner on the fixture file. `test_count_min.py` checks the sketch alone: never under-counts, stays within its bound on a skewed stream, merges, survives pickling (Flink checkpoints), and hashes the same in a new process. `test_s4.py` runs the stage with `run_local`: exact counts on the fake job ads, never under-counting with a deliberately narrow sketch, exact job ad counts, unknown items, and every message checked against `agg.demand_daily`. The `flink` test runs the same job ads on a local Flink.
+
+## Run
+
+On a file of `skills.demand` messages, one JSON message per line, from `streaming/`:
+
+```powershell
+python -m s4_demand_frequency --input s4_demand_frequency/fixtures/job_ads.jsonl --output-dir out
+```
+
+It writes `demand_daily.jsonl` and `invalid.jsonl` to `out/`. At the end of the file every open day closes, as when a Flink job reaches the end of a bounded input. `--engine flink` runs the same records on a local Flink instead (needs Java). Reading from and publishing to Kafka belongs to the deployment.
+
+In Docker, from the repository root. Name the `runtime` stage: without `--target`, Docker builds the last stage, which is the tests.
+
+```powershell
+docker build --target runtime -f streaming/s4_demand_frequency/Dockerfile -t ace-s4 .
+docker run --rm ace-s4
+```
+
+The image runs the fixture file on Flink and prints `demand_daily.jsonl: 4 rows` and `invalid.jsonl: 1 rows`. To keep the output files, mount a folder on `/output`, e.g. `docker run --rm -v ${PWD}/out:/output ace-s4`. To run S4's tests in the image, including the Flink test:
+
+```powershell
+docker build --target test -f streaming/s4_demand_frequency/Dockerfile -t ace-s4-test .
+docker run --rm ace-s4-test
+```
 
 ## References
 
