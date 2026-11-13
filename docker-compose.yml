@@ -1,4 +1,4 @@
-# Local development stack: single-node Kafka (KRaft), Kafka UI and Cassandra.
+# Local development stack: single-node Kafka (KRaft), Kafka UI, Cassandra and the sink.
 # The production layout (3 brokers, 3 Cassandra nodes) is in deploy/k8s/.
 
 services:
@@ -83,6 +83,22 @@ services:
       - ./storage/cql/schema.cql:/schema.cql:ro
     entrypoint: ["cqlsh", "cassandra", "-f", "/schema.cql"]
     restart: "no"
+
+  sink:
+    build:
+      context: .
+      dockerfile: storage/sink/Dockerfile
+    container_name: ace-sink
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      cassandra-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      CASSANDRA_HOSTS: cassandra
+      CASSANDRA_KEYSPACE: ace
+    restart: on-failure
 
 volumes:
   kafka-data:
