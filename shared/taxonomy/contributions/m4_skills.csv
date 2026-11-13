@@ -1,0 +1,14 @@
+skill,ecsf_roles,nice_ids,aliases
+Detection engineering,Cyber Incident Responder|Cybersecurity Implementer,,Security detection engineering|Detection rule engineering
+Indicator of compromise analysis,Cyber Threat Intelligence Specialist|Cyber Incident Responder,,IOC analysis|IoC analysis and enrichment|Indicators of compromise analysis
+Intelligence requirements management,Cyber Threat Intelligence Specialist,,Threat intelligence requirements|Priority intelligence requirements
+MISP,Cyber Threat Intelligence Specialist|Cyber Incident Responder,,MISP threat intelligence platform|Malware Information Sharing Platform
+MITRE ATT&CK,Cyber Threat Intelligence Specialist|Cyber Incident Responder|Penetration Tester,,ATT&CK|MITRE ATTACK|ATT&CK framework
+Open-source intelligence,Cyber Threat Intelligence Specialist,,OSINT|Open source intelligence
+Sigma rules,Cyber Incident Responder|Cybersecurity Implementer,,Sigma detection rules
+STIX,Cyber Threat Intelligence Specialist,,Structured Threat Information Expression|STIX 2.1
+TAXII,Cyber Threat Intelligence Specialist|Cybersecurity Implementer,,Trusted Automated Exchange of Intelligence Information|TAXII 2.1
+Threat actor profiling,Cyber Threat Intelligence Specialist,,Adversary profiling|Threat actor analysis
+Threat intelligence feed management,Cyber Threat Intelligence Specialist,,Threat feed management|CTI feed management|Threat feed integration
+Threat intelligence reporting,Cyber Threat Intelligence Specialist,,CTI reporting|Threat intelligence dissemination
+YARA,Cyber Threat Intelligence Specialist|Digital Forensics Investigator|Cybersecurity Researcher,,YARA rules|YARA rule development
