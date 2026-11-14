@@ -76,7 +76,10 @@ the queries in `map_data.py`.
 
 The M5 read-only endpoints are:
 
-- `GET /education?country=DE` — programmes and workforce baseline for a country.
+- `GET /education?country=DE&day=2026-11-02` — programmes and workforce
+  baseline for a country, plus per-ECSF-role programme and daily job-ad demand
+  counts when `day` is provided. `demand_available` distinguishes a missing
+  demand snapshot from roles with zero matching job ads.
 - `GET /emerging?country=DE&day=2026-11-02` — S9 snapshot for a country and day.
 - `GET /companies?country=DE&day=2026-11-02` — S10 estimates for a country and day.
 - `GET /platforms` — evidence rows for CyberSeek, ENISA ECSF and the ISC2 Workforce Study.

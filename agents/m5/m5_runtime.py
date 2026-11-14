@@ -1,5 +1,6 @@
 """Shared input and Kafka publishing helpers for the M5 agents."""
 
+import argparse
 import csv
 import json
 import os
@@ -8,6 +9,9 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from ace import contracts
+
+
+Normalizer = Callable[[Mapping[str, Any]], Mapping[str, Any]]
 
 
 class Producer(Protocol):
@@ -28,8 +32,10 @@ def _send(outgoing: contracts.Outgoing, producer: Producer) -> Any:
     )
 
 
-def read_records(path: str | Path) -> list[Mapping[str, Any]]:
-    """Read canonical records from a JSON array, JSONL, or CSV file."""
+def read_records(
+    path: str | Path, *, records_key: str | None = None
+) -> list[Mapping[str, Any]]:
+    """Read records from a JSON array, JSONL, or CSV file."""
     source = Path(path)
     suffix = source.suffix.lower()
     if suffix == ".csv":
@@ -45,7 +51,12 @@ def read_records(path: str | Path) -> list[Mapping[str, Any]]:
 
     if suffix == ".json":
         payload = json.loads(source.read_text(encoding="utf-8"))
-        records = payload if isinstance(payload, list) else [payload]
+        if isinstance(payload, list):
+            records = payload
+        elif records_key is not None and isinstance(payload, Mapping):
+            records = payload.get(records_key, [payload])
+        else:
+            records = [payload]
     elif suffix == ".jsonl":
         records = []
         with source.open(encoding="utf-8") as file:
@@ -170,6 +181,39 @@ def publish_normalized_file(
         return count
     finally:
         producer.close()
+
+
+def run_agent(
+    *,
+    topic: str,
+    producer_name: str,
+    normalizer_factory: Callable[[], Normalizer],
+    input_help: str,
+    output_label: str,
+    description: str | None = None,
+    input_default: str | Path | None = None,
+    records_key: str | None = None,
+) -> None:
+    """Run an M5 file-publishing CLI with shared argument and error handling."""
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument(
+        "--input",
+        default=input_default,
+        required=input_default is None,
+        help=input_help,
+    )
+    args = parser.parse_args()
+    records = (
+        read_records(args.input)
+        if records_key is None
+        else read_records(args.input, records_key=records_key)
+    )
+    normalize = normalizer_factory()
+    try:
+        count = publish_normalized_file(topic, producer_name, records, normalize)
+    except KafkaUnavailable as error:
+        parser.exit(2, f"{parser.prog}: error: {error}\n")
+    print(f"Processed and published {count} {output_label} rows")
 
 
 def parse_json_list(value: Any, field: str) -> Any:

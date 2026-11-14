@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ace import contracts
 from education import normalize_programme
 from platform_analysis import normalize_feature_evidence
 from workforce import normalize_workforce_record
@@ -33,6 +34,11 @@ class M5SchemaContractTests(unittest.TestCase):
     """Keep normalizer output keys aligned with the shared message schemas."""
 
     def test_education_output_matches_raw_programme_contract(self) -> None:
+        schema_path = ROOT / "shared" / "schemas" / "raw_programme.schema.json"
+        schema = json.loads(schema_path.read_text(encoding="utf-8"))
+        role_schema = schema["properties"]["ecsf_roles"]["items"]
+        self.assertEqual(role_schema["type"], "string")
+        self.assertNotIn("enum", role_schema)
         message = normalize_programme(
             {
                 "programme_id": "sample-1",
@@ -45,6 +51,13 @@ class M5SchemaContractTests(unittest.TestCase):
             }
         )
         assert_contract_shape(self, "raw_programme.schema.json", message)
+        contracts.validate("raw.programmes", message)
+        self.assertIsNone(
+            contracts.check(
+                "raw.programmes",
+                {**message, "ecsf_roles": ["Cybersecurity Operations"]},
+            )
+        )
 
     def test_workforce_output_matches_raw_workforce_contract(self) -> None:
         message = normalize_workforce_record(

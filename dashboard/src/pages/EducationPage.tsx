@@ -18,8 +18,15 @@ type WorkforceRecord = {
 
 type EducationData = {
   country: string;
+  day: string | null;
   programmes: Programme[];
   workforce: WorkforceRecord[];
+  demand_available: boolean;
+  role_comparison: {
+    role: string;
+    programme_count: number;
+    demand_count: number | null;
+  }[];
 };
 
 type EmergingData = {
@@ -132,7 +139,7 @@ export function EducationPage() {
     setError(null);
 
     Promise.all([
-      getJson<EducationData>(`/education?country=${encodeURIComponent(country)}`, controller.signal),
+      getJson<EducationData>(`/education?${query}`, controller.signal),
       getJson<EmergingData>(`/emerging?${query}`, controller.signal),
       getJson<PlatformData>('/platforms', controller.signal),
       getJson<CompaniesData>(`/companies?${query}`, controller.signal).catch(error => {
@@ -238,6 +245,45 @@ export function EducationPage() {
           <section className="m5-charts" aria-label="Education and workforce charts">
             <BarChart title="Workforce by year" items={workforceBars} />
             <BarChart title="Emerging skill candidates" items={emergingBars} />
+          </section>
+
+          <section className="m5-card m5-section">
+            <h2>Education programmes vs role demand</h2>
+            <p className="m5-empty">
+              ECSF role counts for {country} on {education?.day ?? day}. Demand is
+              based on the selected daily snapshot.
+            </p>
+            {education && !education.demand_available && (
+              <p className="m5-empty">
+                Demand data has not been stored for this date yet.
+              </p>
+            )}
+            {!education?.role_comparison.length ? (
+              <p className="m5-empty">
+                No programme or demand data is available for this country and date.
+              </p>
+            ) : (
+              <div className="m5-table-wrap">
+                <table className="m5-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">ECSF role</th>
+                      <th scope="col">Programmes</th>
+                      <th scope="col">Job-ad demand</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {education.role_comparison.map(item => (
+                      <tr key={item.role}>
+                        <td>{item.role}</td>
+                        <td>{item.programme_count.toLocaleString()}</td>
+                        <td>{item.demand_count?.toLocaleString() ?? 'No data'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
 
           <section className="m5-card m5-section">

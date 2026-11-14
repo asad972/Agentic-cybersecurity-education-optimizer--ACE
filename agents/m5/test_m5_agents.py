@@ -1,15 +1,70 @@
 """Tests for M5 message normalizers using source-independent sample records."""
 
+import json
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 
-from education import normalize_programme, normalize_programmes
+from ace import contracts
+from education import ECSF_ROLES, normalize_programme, normalize_programmes
+from education_agent.__main__ import normalize_record as normalize_exported_programme
+from m5_runtime import read_records
 from platform_analysis import normalize_feature_evidence, normalize_platform_evidence
 from workforce import normalize_workforce_record, normalize_workforce_records
 
 
 class EducationAgentTests(unittest.TestCase):
     """Check CYBERHEAD programme normalization and validation."""
+
+    def test_imports_synthetic_exports_without_claiming_ecsf_roles(self) -> None:
+        testdata = Path(__file__).parent / "testdata"
+        exports = (
+            ("sample_cyberhead_export.json", "programmes"),
+            ("sample_cyberhead_export.jsonl", None),
+            ("sample_cyberhead_export.csv", None),
+        )
+
+        for filename, records_key in exports:
+            with self.subTest(filename=filename):
+                records = read_records(
+                    testdata / filename, records_key=records_key
+                )
+                messages = [
+                    normalize_exported_programme(record) for record in records
+                ]
+
+                self.assertEqual(
+                    [
+                        (message["programme_id"], message["country"])
+                        for message in messages
+                    ],
+                    [("AT-001", "AT"), ("DE-001", "DE"), ("NL-001", "NL")],
+                )
+                for message in messages:
+                    self.assertEqual(message["ecsf_roles"], [])
+                    contracts.validate("raw.programmes", message)
+
+    def test_demo_role_categories_are_not_emitted_as_ecsf_roles(self) -> None:
+        testdata = Path(__file__).parent / "testdata"
+        categories = json.loads(
+            (testdata / "synthetic_role_categories.json").read_text(
+                encoding="utf-8"
+            )
+        )["categories"]
+        records = read_records(
+            testdata / "sample_cyberhead_export.json",
+            records_key="programmes",
+        )
+        messages = [normalize_exported_programme(record) for record in records]
+        demo_labels = set(categories)
+
+        self.assertTrue(demo_labels)
+        self.assertTrue(
+            all(
+                not (set(message["ecsf_roles"]) & demo_labels)
+                for message in messages
+            )
+        )
 
     def test_normalizes_programme_to_schema_fields(self) -> None:
         message = normalize_programme(
@@ -71,6 +126,58 @@ class EducationAgentTests(unittest.TestCase):
             )
         with self.assertRaises(ValueError):
             normalize_programmes([{"programme_id": "bad"}])
+
+    def test_accepts_the_twelve_canonical_ecsf_roles(self) -> None:
+        self.assertEqual(len(ECSF_ROLES), 12)
+        for role in ECSF_ROLES:
+            with self.subTest(role=role):
+                message = normalize_programme(
+                    {
+                        "programme_id": "canonical-role",
+                        "country": "DE",
+                        "name": "Course",
+                        "institution": "Example University",
+                        "ecsf_roles": [role],
+                    }
+                )
+                self.assertEqual(message["ecsf_roles"], [role])
+                contracts.validate("raw.programmes", message)
+
+    def test_programme_can_have_multiple_reviewed_ecsf_roles(self) -> None:
+        roles = ["Cybersecurity Architect", "Cybersecurity Implementer"]
+        message = normalize_programme(
+            {
+                "programme_id": "multi-role-course",
+                "country": "DE",
+                "name": "Cloud Security",
+                "institution": "Example University",
+                "ecsf_roles": roles,
+            }
+        )
+
+        self.assertEqual(message["ecsf_roles"], roles)
+
+    def test_rejects_noncanonical_ecsf_labels(self) -> None:
+        record = {
+            "programme_id": "invalid-role",
+            "country": "DE",
+            "name": "Course",
+            "institution": "Example University",
+            "ecsf_roles": ["Cyber Security Analyst"],
+        }
+        with self.assertRaisesRegex(ValueError, "non-canonical ECSF"):
+            normalize_programme(record)
+
+    def test_rejects_duplicate_ecsf_roles(self) -> None:
+        record = {
+            "programme_id": "duplicate-role",
+            "country": "DE",
+            "name": "Course",
+            "institution": "Example University",
+            "ecsf_roles": ["Cybersecurity Educator", "Cybersecurity Educator"],
+        }
+        with self.assertRaisesRegex(ValueError, "duplicate roles"):
+            normalize_programme(record)
 
 
 class WorkforceAgentTests(unittest.TestCase):

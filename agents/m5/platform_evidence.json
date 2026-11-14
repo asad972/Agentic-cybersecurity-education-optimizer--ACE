@@ -22,5 +22,11 @@
     "feature": "workforce_size_and_shortages",
     "supported": true,
     "notes": "The annual ISC2 Workforce Study assesses workforce size, shortages, skills gaps and workforce trends using survey evidence. Source: https://www.isc2.org/Insights/2024/10/ISC2-2024-Cybersecurity-Workforce-Study"
+  },
+  {
+    "platform": "isc2_workforce_study",
+    "feature": "eu_workforce_survey",
+    "supported": true,
+    "notes": "The 2024 Cybersecurity Workforce Survey - Focus on the E.U. reports EU-focused findings on workforce shortages, skills gaps, roles, industry distribution and market trends. The report does not provide a complete country-by-country table; do not treat EU-level findings as country data. Source: https://digital-skills-jobs.europa.eu/system/files/2025-03/ISC2_2024_EU_WFS_DSJP.pdf"
   }
 ]
