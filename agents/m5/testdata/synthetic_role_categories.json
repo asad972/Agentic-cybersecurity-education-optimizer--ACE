@@ -1,0 +1,26 @@
+{
+  "metadata": {
+    "classification_system": "synthetic_demo_categories_not_ecsf",
+    "description": "Synthetic skill-to-category mappings; not approved ECSF role mappings."
+  },
+  "categories": {
+    "Cyber Security Analyst": [
+      "network security",
+      "security monitoring",
+      "incident response",
+      "vulnerability assessment"
+    ],
+    "Cloud Security Specialist": [
+      "cloud security",
+      "identity management",
+      "IAM",
+      "access control"
+    ],
+    "SOC Analyst": [
+      "SIEM",
+      "threat detection",
+      "threat intelligence",
+      "incident handling"
+    ]
+  }
+}

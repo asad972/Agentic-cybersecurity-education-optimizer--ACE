@@ -10,7 +10,12 @@ estimated values as source data.
 
 - `education.py` normalizes one programme record. Supply `programme_id`,
   `country`, `name`, and `institution`; `ecsf_roles`, `level`, and `url` are
-  optional. Role labels must be reviewed and use the canonical ECSF names.
+  optional. Role labels must be reviewed and use one or more of the 12
+  canonical ECSF role names listed below.
+- The education CLI also adapts the fields in the synthetic CYBERHEAD fixtures
+  (`title`, `provider`, and country names) to the canonical message shape.
+  Those country-name conversions cover only the fixture countries; unreviewed
+  skill labels are not converted to ECSF roles.
 - `workforce.py` normalizes one country/year workforce record. Workforce
   figures are optional; missing figures remain absent rather than being
   guessed as zero. The ISC2 2024 global study and EU-focused survey are
@@ -51,12 +56,31 @@ numbers must be integers, and CSV platform decisions must be `true` or
 ## Current scope and placeholders
 
 - **Education:** the agent reads ready-made CYBERHEAD JSON/JSONL/CSV exports.
-  Portal collection/export download is not implemented. If supplied,
-  `ecsf_roles` must already be reviewed and use one of the 12 canonical ECSF
-  role names. When `ecsf_roles` is absent, the record is published with an
-  empty role list rather than inferring role mappings. The normalizer rejects
-  duplicate role labels. The shared schema currently accepts any role string
-  pending team agreement on enforcing the canonical ECSF list.
+  The input adapter accepts `title`/`provider` as aliases for `name`/
+  `institution`; country names are supported only for Austria, Germany, the
+  Netherlands, and Spain in the synthetic fixtures. Portal collection/export
+  download is not implemented. The accepted `ecsf_roles` are:
+  `Chief Information Security Officer (CISO)`, `Cyber Incident Responder`,
+  `Cyber Legal, Policy and Compliance Officer`,
+  `Cyber Threat Intelligence Specialist`, `Cybersecurity Architect`,
+  `Cybersecurity Auditor`, `Cybersecurity Educator`,
+  `Cybersecurity Implementer`, `Cybersecurity Researcher`,
+  `Cybersecurity Risk Manager`, `Digital Forensics Investigator`, and
+  `Penetration Tester`. Each programme may map to zero or more roles; only
+  reviewed roles supported by programme evidence should be supplied. If absent,
+  roles stay empty. Programme skills and the demo categories in `testdata/`
+  are not ECSF role mappings. The normalizer rejects unknown and duplicate
+  role labels. The shared message schema remains permissive; M5 enforces the
+  canonical role list before publishing.
+- **LLM mapping:** role classification is not yet wired into the agent.
+  When integrated through `ace.llm`, the classifier must choose zero or more
+  exact names from the 12-role list above, return no role when evidence is
+  insufficient, and never emit demo labels or invented roles. Review the
+  output against the programme's published curriculum before publishing.
+- **Synthetic education fixtures:** `agents/m5/testdata/` contains JSON,
+  JSONL, and CSV examples marked as mock data, plus a separate demo skill
+  category map. These files validate import and normalization only; they are
+  not official CYBERHEAD data and must not be used as production evidence.
 - **Workforce:** the agent reads ready-made canonical country/year files.
   The ISC2 2024 global study reports an international survey of 15,852
   practitioners and decision-makers, and a separate report focuses on the

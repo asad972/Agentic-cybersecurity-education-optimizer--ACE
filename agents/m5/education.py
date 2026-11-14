@@ -5,6 +5,22 @@ from typing import Any
 
 _REQUIRED_FIELDS = ("programme_id", "country", "name", "institution")
 _LEVELS = {"bachelor", "master", "phd", "other"}
+ECSF_ROLES = frozenset(
+    {
+        "Chief Information Security Officer (CISO)",
+        "Cyber Incident Responder",
+        "Cyber Legal, Policy and Compliance Officer",
+        "Cyber Threat Intelligence Specialist",
+        "Cybersecurity Architect",
+        "Cybersecurity Auditor",
+        "Cybersecurity Educator",
+        "Cybersecurity Implementer",
+        "Cybersecurity Researcher",
+        "Cybersecurity Risk Manager",
+        "Digital Forensics Investigator",
+        "Penetration Tester",
+    }
+)
 
 
 def normalize_programme(record: Mapping[str, Any]) -> dict[str, Any]:
@@ -24,6 +40,12 @@ def normalize_programme(record: Mapping[str, Any]) -> dict[str, Any]:
     roles = _text_list(record.get("ecsf_roles", []), "ecsf_roles")
     if len(roles) != len(set(roles)):
         raise ValueError("ecsf_roles must not contain duplicate roles")
+    unknown_roles = set(roles) - ECSF_ROLES
+    if unknown_roles:
+        raise ValueError(
+            "ecsf_roles contains non-canonical ECSF role names: "
+            + ", ".join(sorted(unknown_roles))
+        )
 
     level = record.get("level")
     if level is not None:

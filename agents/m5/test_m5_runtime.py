@@ -65,6 +65,25 @@ class M5RuntimeTests(unittest.TestCase):
             "raw.workforce", "m5-test", records, normalizer
         )
 
+    def test_run_agent_can_select_a_collection_from_json_export(self) -> None:
+        records = [{"programme_id": "AT-001"}]
+
+        with (
+            patch.object(sys, "argv", ["m5-agent", "--input", "input.json"]),
+            patch("m5_runtime.read_records", return_value=records) as read,
+            patch("m5_runtime.publish_normalized_file", return_value=1),
+        ):
+            run_agent(
+                topic="raw.programmes",
+                producer_name="m5-test",
+                normalizer_factory=lambda: lambda record: record,
+                input_help="input file",
+                output_label="programme",
+                records_key="programmes",
+            )
+
+        read.assert_called_once_with("input.json", records_key="programmes")
+
     def test_reads_jsonl_and_csv_records(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -25,6 +25,12 @@ education and training activities covered by the Cybersecurity Educator
 profile. They are not represented as verbatim ECSF skill names. NICE IDs are
 left blank until an exact component-level cross-reference is verified.
 
+Programme role mappings are a separate classification: a programme may map
+to zero or more of the twelve published ECSF role profiles based on reviewed
+curriculum evidence. It is not automatically a Cybersecurity Educator
+programme simply because it is an education programme. If evidence is
+insufficient, leave `ecsf_roles` empty for review rather than guessing.
+
 ## Reconciliation notes
 
 - `Security awareness training` is already proposed in `m2_skills.csv`; M5
@@ -32,3 +38,6 @@ left blank until an exact component-level cross-reference is verified.
 - ECSF role names use the published profile title so the contribution passes
   the shared role-name contract.
 - Aliases are limited to close alternate phrasings of each proposed entry.
+- The three synthetic demo categories (`Cyber Security Analyst`, `Cloud
+  Security Specialist`, and `SOC Analyst`) are not ECSF role names and must not
+  be published in `ecsf_roles`.
