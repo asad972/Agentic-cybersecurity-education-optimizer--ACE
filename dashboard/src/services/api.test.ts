@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { API_BASE, endpoint, getJSON } from './api';
+import { API_BASE, addAlert, endpoint, getJSON, liveURL, parseLiveMessage } from './api';
+import type { LiveAlert } from './api';
 
 afterEach(() => vi.unstubAllGlobals());
 const signal = () => new AbortController().signal;
@@ -27,5 +28,29 @@ describe('API requests', () => {
   it('explains an unreachable API instead of reporting "Failed to fetch"', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
     await expect(getJSON('/map/meta', {}, signal())).rejects.toThrow(`could not be reached at ${API_BASE}`);
+  });
+});
+
+describe('live alert feed', () => {
+  const alert: LiveAlert = { country: 'HU', day: '2026-11-02', created_at: '2026-11-02T12:00:00Z', alert_type: 'threat_burst', subject: 'phishing', score: 0.91, details: '' };
+
+  it('derives the WebSocket address from the API address', () => {
+    expect(liveURL('http://localhost:5173/#europe')).toBe(`${API_BASE.replace(/^http/, 'ws')}/live`);
+    expect(liveURL('https://ace.example/')).toMatch(/^wss?:\/\/.+\/live$/);
+  });
+  it('accepts status and complete alert messages only', () => {
+    expect(parseLiveMessage(JSON.stringify({ type: 'status', state: 'connected', message: 'ok' }))).toEqual({ type: 'status', state: 'connected', message: 'ok' });
+    expect(parseLiveMessage(JSON.stringify({ type: 'alert', alert: { ...alert, details: undefined } }))).toEqual({ type: 'alert', alert });
+    for (const bad of ['not json', 'null', '[]', '{"type":"status","state":"exploded"}', '{"type":"alert"}',
+      JSON.stringify({ type: 'alert', alert: { ...alert, score: 'high' } }), JSON.stringify({ type: 'alert', alert: { ...alert, country: '' } })]) {
+      expect(parseLiveMessage(bad)).toBeNull();
+    }
+  });
+  it('keeps the latest arrival first, without repeats and within the cap', () => {
+    const drift = { ...alert, alert_type: 'drift', subject: 'SIEM' };
+    expect(addAlert([alert], drift)).toEqual([drift, alert]);
+    expect(addAlert([drift, alert], { ...alert, score: 0.95 })).toEqual([{ ...alert, score: 0.95 }, drift]);
+    expect(addAlert([alert], { ...alert, country: 'DE' })).toHaveLength(2);
+    expect(addAlert([drift, alert], { ...alert, subject: 'malware' }, 2)).toEqual([{ ...alert, subject: 'malware' }, drift]);
   });
 });

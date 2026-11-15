@@ -45,3 +45,43 @@ export async function getJSON<T>(path: string, params: Record<string, string>, s
   }
   return response.json() as Promise<T>;
 }
+
+// ---- Live alert feed (WS /live) ----
+export type LiveAlert = CountryAlert & { country: string; day: string };
+export type LiveState = 'connecting' | 'connected' | 'unavailable' | 'disabled';
+export type LiveMessage = { type: 'status'; state: LiveState; message: string } | { type: 'alert'; alert: LiveAlert };
+export const ALERT_LABELS: Record<string, string> = { drift: 'Demand drift', threat_burst: 'Threat burst' };
+const LIVE_STATES = ['connecting', 'connected', 'unavailable', 'disabled'];
+
+/** The feed's ws:// or wss:// address. A relative API base is resolved against the page. */
+export function liveURL(page: string = window.location.href) {
+  const url = new URL(`${API_BASE}/live`, page);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return url.toString();
+}
+
+/** One feed message, or null for anything that is not a status or a complete alert. */
+export function parseLiveMessage(data: unknown): LiveMessage | null {
+  let message: unknown;
+  try { message = JSON.parse(String(data)); } catch { return null; }
+  if (typeof message !== 'object' || message === null) return null;
+  const { type, state, message: text, alert } = message as Record<string, unknown>;
+  if (type === 'status' && typeof state === 'string' && LIVE_STATES.includes(state)) {
+    return { type, state: state as LiveState, message: typeof text === 'string' ? text : '' };
+  }
+  if (type !== 'alert' || typeof alert !== 'object' || alert === null) return null;
+  const { country, day, created_at, alert_type, subject, score, details } = alert as Record<string, unknown>;
+  if ([country, day, created_at, alert_type, subject].some(value => typeof value !== 'string' || !value)) return null;
+  if (typeof score !== 'number' || !Number.isFinite(score)) return null;
+  return { type, alert: { country, day, created_at, alert_type, subject, score, details: typeof details === 'string' ? details : '' } as LiveAlert };
+}
+
+export function alertKey(alert: LiveAlert) {
+  return [alert.country, alert.created_at, alert.alert_type, alert.subject].join('|');
+}
+
+/** Latest arrival first, without repeats, capped so a long-open page does not grow without bound. */
+export function addAlert(existing: LiveAlert[], alert: LiveAlert, limit = 50) {
+  const key = alertKey(alert);
+  return [alert, ...existing.filter(item => alertKey(item) !== key)].slice(0, limit);
+}

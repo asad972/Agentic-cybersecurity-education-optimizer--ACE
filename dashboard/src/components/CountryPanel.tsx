@@ -1,4 +1,5 @@
 import { MapPin, Zap } from 'lucide-react';
+import { ALERT_LABELS } from '../services/api';
 import type { CountryData } from '../services/api';
 import { countLabel, formatDate, formatTime } from '../services/dates';
 import { ErrorState, Loading } from './Status';
@@ -10,8 +11,6 @@ type Props = {
   panel: { data?: CountryData; error?: string; loading: boolean; retry: () => void };
   onSkill: (skill: string) => void;
 };
-
-const ALERT_LABELS: Record<string, string> = { drift: 'Demand drift', threat_burst: 'Threat burst' };
 
 export function CountryPanel({ code, name, date, panel, onSkill }: Props) {
   const data = panel.data;
