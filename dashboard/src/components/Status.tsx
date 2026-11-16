@@ -1,0 +1,3 @@
+import { AlertCircle, LoaderCircle, RotateCw } from 'lucide-react';
+export function Loading({ text = 'Loading observations…' }: { text?: string }) { return <div className="state-box" role="status"><LoaderCircle size={22} className="spin" /><span>{text}</span></div>; }
+export function ErrorState({ message, retry }: { message: string; retry?: () => void }) { return <div className="state-box error-box" role="alert"><AlertCircle size={23}/><strong>We couldn’t load this data</strong><p>{message}</p>{retry && <button className="button secondary" onClick={retry}><RotateCw size={14}/> Try again</button>}</div>; }

@@ -168,6 +168,8 @@ CREATE TABLE IF NOT EXISTS companies_by_day (
   missing_company int,       -- Job ads with no company field (S10)
   PRIMARY KEY (day, country)
 );
+-- missing_company came later; CREATE TABLE IF NOT EXISTS leaves an older table as it is.
+ALTER TABLE companies_by_day ADD IF NOT EXISTS missing_company int;
 
 CREATE TABLE IF NOT EXISTS platform_analysis (
   platform    text,
@@ -225,19 +227,53 @@ CREATE TABLE IF NOT EXISTS orchestrator_decisions (
 
 CREATE TABLE IF NOT EXISTS llm_cache (
   task        text,          -- e.g. 'skill_extraction', 'programme_roles'
-  input_hash  text,          -- hash of prompt version + input text
+  input_hash  text,          -- hash of provider, model, prompt version, prompts and JSON schema
   provider    text,
   model       text,
   answer      text,          -- validated JSON answer
   cost_eur    double,
+  input_tokens int,
+  output_tokens int,
   created_at  timestamp,
   PRIMARY KEY ((task, input_hash))
 );
 
+-- Upgrade existing installations created before token usage was recorded.
+ALTER TABLE llm_cache ADD IF NOT EXISTS input_tokens int;
+ALTER TABLE llm_cache ADD IF NOT EXISTS output_tokens int;
+
+-- Distributed single-flight lease: only one agent calls an LLM for a cache miss.
+-- An expired claim may be taken over. Any attached reservation is charged
+-- pessimistically before the replacement worker starts a new hosted attempt.
+CREATE TABLE IF NOT EXISTS llm_cache_claims (
+  task         text,
+  input_hash   text,
+  claim_token  uuid,
+  claim_until  timestamp,
+  budget_day   date,
+  reserved_eur decimal,
+  PRIMARY KEY ((task, input_hash))
+);
+
+-- One LWT-coordinated row per UTC day enforces the hosted-model budget across
+-- every agent process. A higher configured limit raises budget_eur atomically;
+-- it is never lowered until the next UTC day's row is created.
+CREATE TABLE IF NOT EXISTS llm_daily_budget (
+  day          date PRIMARY KEY,
+  budget_eur   decimal,
+  spent_eur    decimal,
+  reserved_eur decimal,
+  updated_at   timestamp
+);
+
 CREATE TABLE IF NOT EXISTS replay_position (
-  dataset     text,          -- e.g. 'de_job_postings', 'stackoverflow_survey', 'testdata_profiles'
-  row_number  bigint,        -- last row published
-  event_date  date,          -- event time of that row
-  updated_at  timestamp,
+  dataset       text,          -- e.g. 'de_job_postings', 'stackoverflow_survey', 'testdata_profiles'
+  row_number    bigint,        -- last row published
+  event_date    date,          -- event time of that row
+  last_event_id text,          -- stable ID of the last row published for safe resume
+  updated_at    timestamp,
   PRIMARY KEY (dataset)
 );
+
+-- Upgrade existing installations created before last_event_id was recorded.
+ALTER TABLE replay_position ADD IF NOT EXISTS last_event_id text;
