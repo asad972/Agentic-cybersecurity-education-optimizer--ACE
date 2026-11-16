@@ -13,7 +13,7 @@ from ace.stage import RecordStage
 
 from .detector import ADWINSeries, DriftChange, DriftConfig
 
-_STATE_VERSION = 2
+_STATE_VERSION = 3
 _GLOBAL_KEY = "s6-global"
 _COUNTERS = ("duplicate", "conflicting", "already_finalized", "late_top10")
 
@@ -77,6 +77,7 @@ class DemandDrift(RecordStage):
                 country_detectors={},
                 eu_detectors={},
                 eu_country_values={},
+                eu_coverage_resets={},
                 last_finalized_day=None,
                 latest_demand_day=None,
                 replay_counters={name: 0 for name in _COUNTERS},
@@ -97,6 +98,7 @@ class DemandDrift(RecordStage):
             "country_detectors",
             "eu_detectors",
             "eu_country_values",
+            "eu_coverage_resets",
             "last_finalized_day",
             "latest_demand_day",
             "replay_counters",
@@ -202,20 +204,37 @@ class DemandDrift(RecordStage):
 
         eu_detectors = memory["eu_detectors"]
         eu_country_values = memory["eu_country_values"]
+        eu_coverage_resets = memory["eu_coverage_resets"]
         observed_countries = set(observations)
         for skill in sorted(memory["eu_eligibility_dates"]):
             eligible_day = date.fromisoformat(memory["eu_eligibility_dates"][skill])
             if eligible_day > day:
                 continue
             country_values = eu_country_values.setdefault(skill, {})
+            previous_countries = set(country_values)
             for country, counts in observations.items():
                 country_values[country] = counts.get(skill, 0)
             if not country_values:
                 continue
+            new_countries = set(country_values).difference(previous_countries)
             observed = len(observed_countries)
             carried = len(set(country_values).difference(observed_countries))
             value = sum(country_values.values())
-            detector = eu_detectors.setdefault(skill, ADWINSeries(self.config))
+
+            detector = eu_detectors.get(skill)
+            if detector is None:
+                detector = ADWINSeries(self.config)
+                eu_detectors[skill] = detector
+                detector.update(value)
+                continue
+
+            if new_countries:
+                detector = ADWINSeries(self.config)
+                eu_detectors[skill] = detector
+                detector.update(value)
+                eu_coverage_resets[skill] = eu_coverage_resets.get(skill, 0) + 1
+                continue
+
             change = detector.update(value)
             if change is not None:
                 alerts.append(

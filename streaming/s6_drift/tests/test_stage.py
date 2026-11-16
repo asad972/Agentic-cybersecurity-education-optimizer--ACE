@@ -76,6 +76,7 @@ def state_view(memory: dict) -> dict:
             for key, model in memory["eu_detectors"].items()
         },
         "eu_values": memory["eu_country_values"],
+        "eu_resets": memory["eu_coverage_resets"],
         "counters": memory["replay_counters"],
     }
 
@@ -230,6 +231,31 @@ def test_upward_and_downward_shifts_emit_country_and_eu_contract_alerts() -> Non
 
 
 def test_eu_carries_missing_country_without_an_artificial_drop() -> None:
+    stage = DemandDrift()
+    memory: dict = {}
+    apply(
+        stage,
+        memory,
+        [
+            (TOP10, top10("2026-01-01", country="DE")),
+            (TOP10, top10("2026-01-01", country="FR")),
+            (DEMAND, demand("2026-01-01", {"Cloud Security": 5}, country="DE")),
+            (DEMAND, demand("2026-01-01", {"Cloud Security": 7}, country="FR")),
+            (DEMAND, demand("2026-01-02", {"Cloud Security": 5}, country="DE")),
+            (DEMAND, demand("2026-01-03", {"Cloud Security": 5}, country="DE")),
+        ],
+    )
+
+    eu = memory["eu_detectors"]["Cloud Security"]
+    assert (eu.width, eu.mean) == (2, 12)
+    assert memory["eu_country_values"] == {
+        "Cloud Security": {"DE": 5, "FR": 7}
+    }
+    assert memory["eu_coverage_resets"] == {}
+    assert memory["country_detectors"]["FR", "Cloud Security"].width == 1
+
+
+def test_eu_alert_details_report_observed_and_carried_coverage() -> None:
     class AlwaysChange:
         def __init__(self, config):
             self.width = 0
@@ -240,7 +266,9 @@ def test_eu_carries_missing_country_without_an_artificial_drop() -> None:
 
             self.width += 1
             self.mean = float(value)
-            return DriftChange(float(value), 0.0, float(value), self.width, "up", float(value))
+            return DriftChange(
+                float(value), 0.0, float(value), self.width, "up", float(value)
+            )
 
     stage = DemandDrift()
     memory: dict = {}
@@ -252,36 +280,112 @@ def test_eu_carries_missing_country_without_an_artificial_drop() -> None:
             (TOP10, top10("2026-01-01", country="FR")),
             (DEMAND, demand("2026-01-01", {"Cloud Security": 5}, country="DE")),
             (DEMAND, demand("2026-01-01", {"Cloud Security": 7}, country="FR")),
+            (DEMAND, demand("2026-01-02", {"Cloud Security": 5}, country="DE")),
         ],
     )
-    # Substitute a deterministic detector only to inspect the exact finalized EU value.
-    memory["country_detectors"] = {
-        key: AlwaysChange(stage.config) for key in memory["country_detectors"]
-    }
     memory["eu_detectors"]["Cloud Security"] = AlwaysChange(stage.config)
-    first_alerts = apply(
-        stage,
-        memory,
-        [(DEMAND, demand("2026-01-02", {"Cloud Security": 5}, country="DE"))],
-    )
 
-    [eu] = [alert for alert in first_alerts if alert["country"] == "EU"]
-    assert "observation=12" in eu["details"]
-    assert "observed_countries=2" in eu["details"]
-    assert "carried_countries=0" in eu["details"]
-    assert "contributing_countries=2" in eu["details"]
-
-    second_alerts = apply(
+    alerts = apply(
         stage,
         memory,
         [(DEMAND, demand("2026-01-03", {"Cloud Security": 5}, country="DE"))],
     )
-    [eu] = [alert for alert in second_alerts if alert["country"] == "EU"]
+
+    [eu] = [alert for alert in alerts if alert["country"] == "EU"]
     assert "observation=12" in eu["details"]
     assert "observed_countries=1" in eu["details"]
     assert "carried_countries=1" in eu["details"]
     assert "contributing_countries=2" in eu["details"]
+
+
+def test_new_countries_reset_and_seed_eu_detector_once_without_alerting() -> None:
+    stage = DemandDrift()
+    memory: dict = {}
+    apply(
+        stage,
+        memory,
+        [
+            (TOP10, top10("2026-01-01", country="DE")),
+            (TOP10, top10("2026-01-01", country="FR")),
+            (TOP10, top10("2026-01-01", country="IT")),
+            (DEMAND, demand("2026-01-01", {"Cloud Security": 10}, country="DE")),
+            (DEMAND, demand("2026-01-02", {"Cloud Security": 10}, country="DE")),
+        ],
+    )
+    original_eu = memory["eu_detectors"]["Cloud Security"]
+    assert memory["eu_coverage_resets"] == {}
+
+    alerts = apply(
+        stage,
+        memory,
+        [
+            (DEMAND, demand("2026-01-02", {"Cloud Security": 80}, country="FR")),
+            (DEMAND, demand("2026-01-02", {"Cloud Security": 20}, country="IT")),
+            (DEMAND, demand("2026-01-03", {"Cloud Security": 10}, country="DE")),
+        ],
+    )
+
+    assert not [alert for alert in alerts if alert["country"] == "EU"]
+    replacement = memory["eu_detectors"]["Cloud Security"]
+    assert replacement is not original_eu
+    assert (replacement.width, replacement.mean) == (1, 110)
+    assert memory["eu_coverage_resets"] == {"Cloud Security": 1}
+    assert memory["country_detectors"]["DE", "Cloud Security"].width == 2
     assert memory["country_detectors"]["FR", "Cloud Security"].width == 1
+    assert memory["country_detectors"]["IT", "Cloud Security"].width == 1
+
+    restored = pickle.loads(pickle.dumps(memory))
+    assert state_view(restored) == state_view(memory)
+    apply(
+        stage,
+        restored,
+        [(DEMAND, demand("2026-01-04", {"Cloud Security": 10}, country="DE"))],
+    )
+    assert restored["eu_detectors"]["Cloud Security"].width == 2
+    assert restored["eu_coverage_resets"] == {"Cloud Security": 1}
+
+
+def test_eu_detects_real_shifts_after_coverage_stabilizes() -> None:
+    start = date(2026, 1, 1)
+    records = [
+        (TOP10, top10(start.isoformat(), country="DE")),
+        (TOP10, top10(start.isoformat(), country="FR")),
+    ]
+    for offset in range(20):
+        day = (start + timedelta(days=offset)).isoformat()
+        records.append((DEMAND, demand(day, {"Cloud Security": 10}, country="DE")))
+    for offset, value in (
+        [(offset, 10) for offset in range(20, 60)]
+        + [(offset, 40) for offset in range(60, 120)]
+        + [(offset, 2) for offset in range(120, 200)]
+    ):
+        day = (start + timedelta(days=offset)).isoformat()
+        records.extend(
+            [
+                (DEMAND, demand(day, {"Cloud Security": value}, country="DE")),
+                (DEMAND, demand(day, {"Cloud Security": value}, country="FR")),
+            ]
+        )
+    records.append(
+        (
+            DEMAND,
+            demand(
+                (start + timedelta(days=200)).isoformat(),
+                {"Cloud Security": 2},
+                country="DE",
+            ),
+        )
+    )
+
+    memory: dict = {}
+    alerts = apply(DemandDrift(DriftConfig(delta=0.01)), memory, records)
+    eu_details = " ".join(
+        alert["details"] for alert in alerts if alert["country"] == "EU"
+    )
+
+    assert memory["eu_coverage_resets"] == {"Cloud Security": 1}
+    assert "direction=up" in eu_details
+    assert "direction=down" in eu_details
 
 
 def test_explicit_zero_replaces_carried_value_and_unseen_country_is_excluded() -> None:
@@ -303,6 +407,7 @@ def test_explicit_zero_replaces_carried_value_and_unseen_country_is_excluded() -
     )
 
     assert memory["eu_country_values"] == {"Cloud Security": {"DE": 5, "FR": 0}}
+    assert memory["eu_coverage_resets"] == {}
     assert "IT" not in memory["eu_country_values"]["Cloud Security"]
 
 
@@ -371,7 +476,7 @@ def test_checkpoint_restores_models_buffer_and_signature() -> None:
     )
 
     restored = pickle.loads(pickle.dumps(memory))
-    assert restored["state_version"] == 2
+    assert restored["state_version"] == 3
     assert restored["river_version"] == "0.23.0"
     assert restored["config_signature"] == stage._config_signature
     assert state_view(restored) == state_view(memory)
@@ -383,11 +488,17 @@ def test_checkpoint_restores_models_buffer_and_signature() -> None:
     assert restored["country_detectors"]["DE", "Cloud Security"].width == 2
 
     with pytest.raises(RuntimeError, match="config_signature"):
-        list(DemandDrift(DriftConfig(delta=0.01)).process(TOP10, top10("2026-01-04"), restored))
+        list(
+            DemandDrift(DriftConfig(delta=0.01)).process(
+                TOP10, top10("2026-01-04"), restored
+            )
+        )
 
-    restored["state_version"] = 1
-    with pytest.raises(RuntimeError, match="state_version"):
-        list(stage.process(TOP10, top10("2026-01-04"), restored))
+    for old_version in (1, 2):
+        restored["state_version"] = old_version
+        with pytest.raises(RuntimeError, match="state_version"):
+            list(stage.process(TOP10, top10("2026-01-04"), restored))
+    restored["state_version"] = 3
 
 
 def test_state_is_bounded_by_eligibility_and_one_pending_day() -> None:
@@ -419,6 +530,9 @@ def test_state_is_bounded_by_eligibility_and_one_pending_day() -> None:
     assert len(memory["eu_detectors"]) == 2
     assert len(memory["eu_country_values"]) == 2
     assert all(len(values) == 1 for values in memory["eu_country_values"].values())
+    assert set(memory["eu_coverage_resets"]).issubset(
+        memory["eu_eligibility_dates"]
+    )
     assert memory["last_finalized_day"] == "2026-01-29"
     assert list(memory["pending_demand"]) == ["2026-01-30"]
 

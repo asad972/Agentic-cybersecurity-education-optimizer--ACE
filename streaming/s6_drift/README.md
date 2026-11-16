@@ -23,7 +23,12 @@ For a country that published an S4 snapshot, an eligible Skill absent from
 missing, not zero, so its country detector is not updated. For the EU sum, S6
 carries forward that country's last observed value. A country that has never
 contributed to an EU Skill is excluded until its first snapshot, rather than
-being invented as zero.
+being invented as zero. When a new country first joins an existing EU Skill
+series, S6 replaces that Skill's EU detector and seeds it once with the full
+current sum. It emits no EU alert on that coverage-change day. Detection then
+resumes with stable coverage; this conservative reset delays regional
+detection while ADWIN accumulates new evidence, rather than triggering false
+forecast retraining because a country started reporting.
 
 ## Country and EU alerts
 
@@ -61,11 +66,13 @@ All countries share one internal Flink key so checkpoint state can construct
 EU sums. Published Kafka keys still come from each alert's `country`. State
 records its format version, River version, configuration signature,
 eligibility dates, the pending demand day, ADWIN detectors, the last finalized
-day, the latest per-country EU contributions, and replay counters. A restore
-made with an incompatible version or configuration fails explicitly instead
-of silently changing detection behavior. After a River upgrade or S6 state
-version change, stop the job, discard the incompatible checkpoint/savepoint,
-and restart with empty state so the detectors rebuild from new events.
+day, the latest per-country EU contributions, coverage-reset counters, and
+replay counters. Coverage-reset counters contain at most one entry per
+eligible Skill. A restore made with an incompatible version or configuration
+fails explicitly instead of silently changing detection behavior. After a
+River upgrade or S6 state version change, stop the job, discard the
+incompatible checkpoint/savepoint, and restart with empty state so the
+detectors rebuild from new events.
 
 ADWIN state is bounded by its compressed bucket structure. S6 adds one country
 detector and one latest EU value per eligible country/Skill pair, one EU
@@ -74,14 +81,18 @@ rather than an unbounded demand history.
 
 ## Configuration and installation
 
-S6 pins `river==0.23.0` in its own `requirements.txt`; River is not imposed on
-unrelated users of the shared Python package. This is temporary until the
-team-approved shared `stages` extra from PR #80 is merged; S6 will then use that
-single pin and remove its requirements file.
+River 0.23.0 is pinned once by the shared package's `stages` extra. Both `dev`
+and `flink` include that extra, so S6 does not maintain a private dependency
+file. For ordinary stage development and offline tests:
 
 ```bash
-python -m pip install -e "shared/python[flink,dev]" \
-  -r streaming/s6_drift/requirements.txt
+python -m pip install -e "shared/python[dev]"
+```
+
+For the marked local Flink test:
+
+```bash
+python -m pip install -e "shared/python[flink,dev]"
 ```
 
 `DriftConfig` defaults are:
