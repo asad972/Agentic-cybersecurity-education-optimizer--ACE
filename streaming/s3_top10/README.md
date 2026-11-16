@@ -22,6 +22,38 @@ python -m pytest streaming/s3_top10 -m "not flink"   # fast, plain Python
 python -m pytest streaming/s3_top10 -m flink         # same records on a local Flink (needs Java)
 ```
 
+`test_main.py` runs the command-line runner on the fixture file.
+
+## Run
+
+| File | What it does |
+| --- | --- |
+| `__main__.py` | Runs the stage over a file of `skills.demand` messages and writes what it publishes |
+| `fixtures/job_ads.jsonl` | Six fake job ads, one of them invalid, for tests and a Docker smoke test |
+| `Dockerfile` | The stage image (`runtime`) and an image that runs S3's tests (`test`) |
+
+On a file of `skills.demand` messages, one JSON message per line, from `streaming/`:
+
+```powershell
+python -m s3_top10 --input s3_top10/fixtures/job_ads.jsonl --output-dir out
+```
+
+It writes `top10_demand.jsonl` and `invalid.jsonl` to `out/`. At the end of the file every open day closes, as when a Flink job reaches the end of a bounded input. `--engine flink` runs the same records on a local Flink instead (needs Java). Reading from and publishing to Kafka belongs to the deployment.
+
+In Docker, from the repository root. Name the `runtime` stage: without `--target`, Docker builds the last stage, which is the tests.
+
+```powershell
+docker build --target runtime -f streaming/s3_top10/Dockerfile -t ace-s3 .
+docker run --rm ace-s3 --input s3_top10/fixtures/job_ads.jsonl --output-dir /output --engine flink
+```
+
+The image has no default input, so it never processes the fake job ads unless asked to; started without arguments it prints the usage and exits. The command above is a smoke test: it runs the fixture file on Flink and prints `top10_demand.jsonl: 8 rows` (a Skill and a Certification Top 10 for each of 4 Country-days) and `invalid.jsonl: 1 rows`. To keep the output files, mount a folder on `/output`, e.g. `docker run --rm -v ${PWD}/out:/output ace-s3 --input ...`. To run S3's tests in the image, including the Flink test:
+
+```powershell
+docker build --target test -f streaming/s3_top10/Dockerfile -t ace-s3-test .
+docker run --rm ace-s3-test
+```
+
 ## References
 
 1. Metwally, A., Agrawal, D., & El Abbadi, A. (2005). Efficient computation of frequent and top-k elements in data streams. In *Database Theory – ICDT 2005*, LNCS 3363, pp. 398–412. Springer. https://doi.org/10.1007/978-3-540-30570-5_27. The original Space-Saving algorithm (older than 10 years, cited as the source).
