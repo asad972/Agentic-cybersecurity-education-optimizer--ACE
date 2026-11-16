@@ -1,0 +1,6 @@
+{"event_id": "7a2d4c1e-3b5f-4e6a-8c9d-0e1f2a3b4c01", "source": "fixture", "country": "DE", "posted_date": "2026-10-01", "skills": ["SIEM", "Incident response"], "certifications": ["CISSP"]}
+{"event_id": "7a2d4c1e-3b5f-4e6a-8c9d-0e1f2a3b4c02", "source": "fixture", "country": "DE", "posted_date": "2026-10-01", "skills": ["SIEM", "GDPR"], "certifications": ["CISSP", "CISM"]}
+{"event_id": "7a2d4c1e-3b5f-4e6a-8c9d-0e1f2a3b4c03", "source": "fixture", "country": "FR", "posted_date": "2026-10-01", "skills": ["Penetration testing"], "certifications": ["OSCP"]}
+{"event_id": "7a2d4c1e-3b5f-4e6a-8c9d-0e1f2a3b4c04", "source": "fixture", "country": "DE", "posted_date": "2026-10-02", "skills": ["GDPR", "Cloud security"]}
+{"event_id": "7a2d4c1e-3b5f-4e6a-8c9d-0e1f2a3b4c05", "source": "fixture", "country": "DE", "posted_date": "2026-10-03", "skills": ["GDPR"]}
+{"event_id": "7a2d4c1e-3b5f-4e6a-8c9d-0e1f2a3b4c06", "source": "fixture", "country": "Germany", "posted_date": "2026-10-01", "skills": ["SIEM"]}
