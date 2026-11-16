@@ -4,6 +4,8 @@ import json
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
+import tempfile
+import zipfile
 
 from ace import contracts
 from education import ECSF_ROLES, normalize_programme, normalize_programmes
@@ -11,6 +13,7 @@ from education_agent.__main__ import normalize_record as normalize_exported_prog
 from m5_runtime import read_records
 from platform_analysis import normalize_feature_evidence, normalize_platform_evidence
 from workforce import normalize_workforce_record, normalize_workforce_records
+from prepare_cyberhead import prepare_records, read_docx_rows
 
 
 class EducationAgentTests(unittest.TestCase):
@@ -178,6 +181,87 @@ class EducationAgentTests(unittest.TestCase):
         }
         with self.assertRaisesRegex(ValueError, "duplicate roles"):
             normalize_programme(record)
+
+    def test_prepares_docx_rows_without_mistaking_job_titles_for_ecsf_roles(self) -> None:
+        document_xml = """\
+        <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+          <w:body><w:tbl>
+            <w:tr>
+              <w:tc><w:p><w:r><w:t>Name</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>Abschlussgrad</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>PorgrammeId</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>Institution</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>Land</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>URL</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>Lehrplan-/Skill-Information</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>Kompatible rollen</w:t></w:r></w:p></w:tc>
+            </w:tr>
+            <w:tr>
+              <w:tc><w:p><w:r><w:t>Cybersecurity</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>M. Sc.</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>programme-001</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>Example University</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>Deutschland</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>https://example.edu/course</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>Cloud security, SIEM</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>SOC Analyst</w:t></w:r></w:p></w:tc>
+            </w:tr>
+            <w:tr>
+              <w:tc><w:p><w:r><w:t>Regional programme</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>M. Sc.</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>programme-eu</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>EU Consortium</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>Europäisches Gemeinschaftsprogramm</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>https://example.eu/course</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>Governance</w:t></w:r></w:p></w:tc>
+              <w:tc><w:p><w:r><w:t>Security Consultant</w:t></w:r></w:p></w:tc>
+            </w:tr>
+          </w:tbl></w:body>
+        </w:document>
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "cyberhead.docx"
+            with zipfile.ZipFile(path, "w") as document:
+                document.writestr("word/document.xml", document_xml)
+            rows = read_docx_rows(path)
+
+        review, programmes = prepare_records(rows, "2026-11-16")
+
+        self.assertEqual(len(review), 2)
+        self.assertEqual(len(programmes), 1)
+        self.assertEqual(programmes[0]["country"], "DE")
+        self.assertEqual(programmes[0]["level"], "master")
+        self.assertEqual(programmes[0]["ecsf_roles"], [])
+        self.assertEqual(review[0]["compatible_roles"], "SOC Analyst")
+        self.assertEqual(review[0]["curriculum"], "Cloud security, SIEM")
+        self.assertIn("country is not a recognized", review[1]["validation_errors"][0])
+
+    def test_preparation_does_not_invent_access_date_or_silently_duplicate_ids(self) -> None:
+        row = {
+            "name": "Course",
+            "level": "M. Sc.",
+            "programme_id": "same-id",
+            "institution": "University",
+            "country": "Spain",
+            "url": "https://example.edu/course",
+            "curriculum": "",
+            "compatible_roles": "Cybersecurity Analyst",
+            "cyberhead_url": "",
+            "_row": "2",
+        }
+
+        review, programmes = prepare_records([row, {**row, "_row": "3"}])
+
+        self.assertIsNone(review[0]["accessed_on"])
+        self.assertEqual(len(programmes), 1)
+        self.assertIn("duplicate programme_id", review[1]["validation_errors"])
+        self.assertEqual(review[0]["ecsf_roles"], [])
+
+    def test_rejects_invalid_access_date(self) -> None:
+        with self.assertRaisesRegex(ValueError, "ISO 8601 date"):
+            prepare_records([], "yesterday")
+        with self.assertRaisesRegex(ValueError, "YYYY-MM-DD"):
+            prepare_records([], "20261116")
 
 
 class WorkforceAgentTests(unittest.TestCase):

@@ -30,6 +30,35 @@ estimated values as source data.
 
 ## Publishing agents
 
+### Preparing a Word programme list
+
+`prepare_cyberhead.py` reads a DOCX table with the programme, degree,
+programme ID, institution, country, URL, curriculum/skills, and compatible
+roles columns. It writes:
+
+- `cyberhead_review.jsonl`, retaining the source fields and validation notes;
+- `programmes.jsonl`, containing only valid country-specific records for the
+  education agent.
+
+The script maps recognized country names to ISO alpha-2 codes and degree names
+to the accepted M5 levels. Regional entries (such as an EU-wide programme) are
+kept in the review file but excluded from country-level M5 input. Source
+compatible-role labels remain separate from `ecsf_roles`; ECSF roles are left
+empty until they have been mapped and reviewed against programme evidence.
+Provide an actual retrieval date and CYBERHEAD detail-page URL when available;
+the script does not guess either value.
+
+```powershell
+$retrievedOn = '2026-11-16'  # replace with the date you checked the source
+python agents\m5\prepare_cyberhead.py `
+  --input "C:\path\to\Liste CYBERHEAD.docx" `
+  --output-dir "C:\path\to\prepared-cyberhead" `
+  --accessed-on $retrievedOn
+```
+
+Feed the resulting `programmes.jsonl` file to the education agent. Review
+`cyberhead_review.jsonl` for excluded rows, warnings, and source details first.
+
 Build each image from the repository root:
 
 ```powershell

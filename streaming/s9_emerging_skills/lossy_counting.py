@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from math import ceil
 
 
@@ -79,6 +79,8 @@ class EmergingSkillsCounter:
     """Keep one daily sketch per country and produce schema-shaped output."""
 
     def __init__(self, epsilon: float = 0.01, limit: int = 50) -> None:
+        # Validate the sketch accuracy now, not only after the first event.
+        LossyCounting(epsilon=epsilon)
         # The schema permits no more than 50 candidates in one output message.
         if limit < 1:
             raise ValueError("limit must be at least 1")
@@ -108,6 +110,8 @@ class EmergingSkillsCounter:
         # Validate the country using the same rule as regular ingestion.
         if len(country) != 2 or not country.isalpha() or country != country.upper():
             raise ValueError("country must be an uppercase ISO alpha-2 code")
+        if sketch.epsilon != self.epsilon:
+            raise ValueError("daily sketch epsilon must match the counter epsilon")
         # Normalize the day so the dictionary key is always a date object.
         event_day = self._parse_day(day)
         # A replay or checkpoint restore can close a day again; the latest
@@ -180,6 +184,8 @@ class EmergingSkillsCounter:
     @staticmethod
     def _parse_day(day: date | str) -> date:
         # Date objects already have the desired representation.
+        if isinstance(day, datetime):
+            raise ValueError("day must be a date, not a datetime")
         if isinstance(day, date):
             return day
         # Parse a wire-format date and provide a clear error for bad input.
