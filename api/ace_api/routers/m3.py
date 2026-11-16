@@ -15,6 +15,8 @@ from pydantic import (
     model_validator,
 )
 
+from ..map_data import COUNTRIES
+
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["M3 supply, gap and forecast"])
 
@@ -100,12 +102,22 @@ def _read(request: Request, query: str, parameters: tuple[object, ...]):
         ) from error
 
 
-def _invalid_stored_data(error: ValidationError):
+def _invalid_stored_data(error: Exception):
     log.warning("M3 stored data failed response validation (%s)", type(error).__name__)
     raise HTTPException(
         status_code=503,
         detail="M3 dashboard storage returned invalid data",
     ) from error
+
+
+def _validate_area(value: str, *, allow_eu: bool = False) -> None:
+    if value in COUNTRIES or (allow_eu and value == "EU"):
+        return
+    label = "Region" if allow_eu else "Country"
+    raise HTTPException(
+        status_code=422,
+        detail=f"{label} must be from /map/meta" + (" or EU" if allow_eu else ""),
+    )
 
 
 @router.get("/gap", response_model=GapResponse)
@@ -115,6 +127,7 @@ def get_gap(
     month: str = Query(pattern=_MONTH_PATTERN),
 ) -> GapResponse:
     """Return one complete country/month Skills Gap partition."""
+    _validate_area(country)
     rows = _read(
         request,
         "SELECT skill, demand, supply, gap_ratio FROM skills_gap "
@@ -142,7 +155,7 @@ def get_gap(
             )
         )
         return GapResponse(country=country, month=month, items=items)
-    except ValidationError as error:
+    except (AttributeError, OverflowError, TypeError, ValidationError, ValueError) as error:
         _invalid_stored_data(error)
 
 
@@ -153,6 +166,7 @@ def get_forecast(
     skill: str = Query(min_length=1, max_length=200),
 ) -> ForecastResponse:
     """Return the ordered forecast horizon for one region and exact Skill."""
+    _validate_area(region, allow_eu=True)
     skill = skill.strip()
     if not skill:
         raise HTTPException(status_code=422, detail="Skill must not be blank")
@@ -185,5 +199,5 @@ def get_forecast(
             )
         )
         return ForecastResponse(region=region, skill=skill, items=items)
-    except ValidationError as error:
+    except (AttributeError, OverflowError, TypeError, ValidationError, ValueError) as error:
         _invalid_stored_data(error)

@@ -72,6 +72,23 @@ with 503 rather than a truncated count. Storage problems are also 503, and
 there is no sample-data fallback. The module is `routers/europe_map.py`, with
 the queries in `map_data.py`.
 
+### M3 Supply, Gap and Forecast endpoints (#31)
+
+- `GET /gap?country=DE&month=2026-10` returns one complete Skills Gap
+  partition, alphabetically ordered by canonical Skill. Each item contains
+  `demand`, `supply`, and `gap_ratio`. A null ratio means Supply was below the
+  job's minimum threshold; it is not converted to zero. An empty partition is
+  returned as `items: []`.
+- `GET /forecast?region=EU&skill=Cloud%20Security` returns up to twelve ordered
+  forecast months for an exact canonical Skill. Each item contains the
+  prediction, lower and upper bounds, selected model, and UTC training time.
+  The region is `EU` or one of the countries from `/map/meta`.
+
+Both endpoints use complete partition keys, five-second Cassandra timeouts,
+and bounded reads. Oversized partitions, invalid stored values, and storage
+failures return a sanitized 503 response. They never scan, write, or substitute
+sample data.
+
 ### M5 endpoints
 
 The M5 read-only endpoints are:

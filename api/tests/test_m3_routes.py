@@ -136,9 +136,11 @@ def test_empty_partitions_return_successful_empty_items():
     "path",
     [
         "/gap?country=de&month=2026-10",
+        "/gap?country=ZZ&month=2026-10",
         "/gap?country=DE&month=2026-13",
         "/gap?country=DE&month=October",
         "/forecast?region=eU&skill=Linux",
+        "/forecast?region=ZZ&skill=Linux",
         "/forecast?region=EU&skill=%20%20",
         "/forecast?region=EU&skill=" + "a" * 201,
     ],
@@ -166,6 +168,18 @@ def test_invalid_stored_values_return_sanitized_503(session, path):
         response = client.get(path)
     assert response.status_code == 503
     assert response.json() == {"detail": "M3 dashboard storage returned invalid data"}
+
+
+def test_malformed_stored_rows_return_sanitized_503():
+    with client_for(Session(gap=[SimpleNamespace(skill="Linux")])) as client:
+        gap = client.get("/gap?country=DE&month=2026-10")
+    with client_for(Session(forecast=[SimpleNamespace(target_month="2026-11")])) as client:
+        forecast = client.get("/forecast?region=EU&skill=Linux")
+
+    assert gap.status_code == 503
+    assert forecast.status_code == 503
+    assert "invalid data" in gap.json()["detail"]
+    assert "invalid data" in forecast.json()["detail"]
 
 
 def test_partition_limits_refuse_incomplete_responses():
