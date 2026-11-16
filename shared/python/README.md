@@ -26,6 +26,12 @@ pip install -e "shared/python[flink,llm,dev]"
 python -m pytest shared/python/tests streaming
 ```
 
+The `stages` extra pins River to **0.23.0**. Both `dev` and `flink` include
+`ace[stages]`, so the existing setup and CI commands install it automatically;
+no separate S8 requirements install is needed. Contracts-only installations
+remain lightweight. For stage logic without Java, install
+`pip install -e "shared/python[dev]"` and run `pytest streaming -m "not flink"`.
+
 **Windows:** PyFlink starts its Python workers through a batch file that breaks when the virtual environment's path has spaces or brackets, as our repo folder name does. Keep the virtual environment in a folder without them, and don't put the repo in `PYTHONPATH`; `pip install -e` is enough. `ace.stage` stops with a clear message if either is wrong. Linux containers are not affected.
 
 ## Writing a stage
