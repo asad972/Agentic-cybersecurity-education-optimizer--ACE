@@ -1,0 +1,13 @@
+skill,ecsf_roles,nice_ids,aliases
+Credential Dumping,Penetration Tester,,Credential Harvesting|Pass-the-Hash
+Intrusion Detection,Cyber Incident Responder,,Intrusion Detection Systems|Snort|Suricata
+Intrusion Prevention,Cyber Incident Responder,,Intrusion Prevention Systems
+Lateral Movement,Penetration Tester,,Internal Pivoting|Network Pivoting
+Malware Triage,Digital Forensics Investigator,,Artifact Analysis
+Memory Forensics,Digital Forensics Investigator,,Volatile Memory Analysis|RAM Analysis|Volatility
+Network Security Monitoring,Cyber Incident Responder,,Zeek
+Post-Exploitation,Penetration Tester,,Post Exploitation
+Privilege Escalation,Penetration Tester,,PrivEsc|Local Privilege Escalation
+Root Cause Analysis,Cyber Incident Responder,,Root Cause Investigation
+Security Automation,Cyber Incident Responder,,SOAR|Security Orchestration|Playbook Automation
+Social Engineering,Penetration Tester,,Social Engineering Testing|Pretexting
