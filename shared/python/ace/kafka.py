@@ -1,4 +1,11 @@
-"""Kafka for stream stages: the Flink Kafka connector JAR, the Kafka source and the Kafka sink.
+"""Kafka for stream stages: the connector JAR, the Kafka source and sink, and running a stage on Kafka.
+
+Run a stage on the Kafka stack, e.g. S4 against the local Compose Kafka:
+
+    python -m ace.kafka s4_demand_frequency.stage:DemandFrequency
+
+KAFKA_BOOTSTRAP_SERVERS sets the brokers (default localhost:9092). --bounded
+processes what is in the input topics now and then stops.
 
 PyFlink's Kafka source and sink run in Flink's Java side, so every job needs the
 connector JAR. It is not on PyPI; this module downloads the pinned version from
@@ -15,7 +22,9 @@ together when a release for Flink 2.3 appears.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
+import importlib
 import os
 import urllib.request
 from pathlib import Path
@@ -30,6 +39,9 @@ CONNECTOR_URL = (
     "https://repo1.maven.org/maven2/org/apache/flink/flink-sql-connector-kafka/"
     f"{CONNECTOR_VERSION}/{CONNECTOR_JAR}"
 )
+
+DEFAULT_BOOTSTRAP_SERVERS = "localhost:9092"
+CHECKPOINT_MS = 60_000      # how often an unbounded job saves its state and Kafka offsets
 
 
 def jars_dir() -> Path:
@@ -159,3 +171,56 @@ def write_topics(outputs: Any, bootstrap_servers: str) -> Any:
             .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
             .build())
     return rows.sink_to(sink).name("Kafka sink")
+
+
+def build_job(stage: Any, bootstrap_servers: str, bounded: bool = False) -> Any:
+    """A Flink job that runs stage between Kafka topics: its input topics in, its outputs out.
+
+    The consumer group is the stage's name, so a restarted job continues where
+    it stopped. An unbounded job saves a checkpoint every CHECKPOINT_MS, with the
+    stage's state and the Kafka offsets it has processed.
+    """
+    from ace import stage as ace_stage
+
+    env = ace_stage.flink_env()
+    add_connector(env)
+    for root in {ace_stage._import_root(type(stage).__module__), ace_stage._import_root(contracts.__name__)}:
+        env.add_python_file(root)  # so Flink's Python workers can import the stage and ace
+    if not bounded:
+        env.enable_checkpointing(CHECKPOINT_MS)
+    topics = stage.inputs if isinstance(stage, ace_stage.RecordStage) else (stage.input,)
+    records = read_topics(env, topics, bootstrap_servers, group_id=stage.name, bounded=bounded)
+    outputs, late = ace_stage.build_flink(stage, records)
+    write_topics(outputs, bootstrap_servers)
+    if late is not None:
+        # The late stream only counts late records (late_records_total); this sink
+        # writes nothing but makes Flink run that count.
+        late.filter(lambda _: False).print()
+    return env
+
+
+def run_on_kafka(stage: Any, bootstrap_servers: str | None = None, bounded: bool = False) -> None:
+    """Run stage on Kafka until it is stopped, or, if bounded, until its input topics are read."""
+    servers = bootstrap_servers or os.environ.get("KAFKA_BOOTSTRAP_SERVERS", DEFAULT_BOOTSTRAP_SERVERS)
+    build_job(stage, servers, bounded).execute(f"ace {stage.name}")
+
+
+def load_stage(spec: str) -> Any:
+    """'module:Class' -> a stage instance, e.g. 's4_demand_frequency.stage:DemandFrequency'."""
+    module_name, sep, class_name = spec.partition(":")
+    if not sep or not module_name or not class_name:
+        raise ValueError(f"expected module:Class, got {spec!r}")
+    return getattr(importlib.import_module(module_name), class_name)()
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(prog="python -m ace.kafka", description="Run a stream stage on Kafka.")
+    parser.add_argument("stage", help="module:Class, e.g. s4_demand_frequency.stage:DemandFrequency")
+    parser.add_argument("--bounded", action="store_true",
+                        help="process what is in the input topics now, then stop")
+    args = parser.parse_args(argv)
+    run_on_kafka(load_stage(args.stage), bounded=args.bounded)
+
+
+if __name__ == "__main__":
+    main()

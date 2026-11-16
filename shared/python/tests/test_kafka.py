@@ -5,6 +5,7 @@ import hashlib
 import pytest
 
 from ace import kafka
+from ace.stage import WindowedStage
 
 
 @pytest.fixture
@@ -109,4 +110,31 @@ def test_write_topics_adds_one_kafka_sink_for_all_output_topics():
     kafka.write_topics(outputs, "localhost:9092")
     plan = json.loads(env.get_execution_plan())
     nodes = [node["contents"] for node in plan["nodes"]]
+    assert nodes.count("Kafka sink: Writer") == 1
+
+
+class Counts(WindowedStage):
+    """A tiny windowed stage for building a job graph; never run here."""
+
+    name = "test-counts"
+    input = "skills.demand"
+    output = "agg.demand_daily"
+    time_field = "posted_date"
+
+
+def test_load_stage_imports_module_and_class():
+    stage = kafka.load_stage(f"{__name__}:Counts")
+    assert isinstance(stage, Counts)
+    for bad in ("no_colon", ":Counts", f"{__name__}:"):
+        with pytest.raises(ValueError, match="module:Class"):
+            kafka.load_stage(bad)
+
+
+@pytest.mark.flink
+def test_build_job_reads_the_input_topic_and_writes_to_kafka():
+    import json
+
+    env = kafka.build_job(Counts(), "localhost:9092", bounded=True)
+    nodes = [node["contents"] for node in json.loads(env.get_execution_plan())["nodes"]]
+    assert "Source: Kafka skills.demand" in nodes
     assert nodes.count("Kafka sink: Writer") == 1
