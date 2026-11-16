@@ -13,6 +13,17 @@ export type CountryData = {
   alerts: CountryAlert[];
   alerts_truncated: boolean;
 };
+export type GapItem = { skill: string; demand: number; supply: number; gap_ratio: number | null };
+export type GapData = { country: string; month: string; items: GapItem[] };
+export type ForecastItem = {
+  target_month: string;
+  predicted: number;
+  lower: number;
+  upper: number;
+  model: 'sarima' | 'lightgbm' | 'seasonal_naive';
+  trained_at: string;
+};
+export type ForecastData = { region: string; skill: string; items: ForecastItem[] };
 
 // Same default as the other pages: a configured API URL in deployments, the local API otherwise.
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000').replace(/\/$/, '');

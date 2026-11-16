@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { countLabel, formatDate, formatTime, isDay, yesterday } from './dates';
+import { countLabel, formatDate, formatTime, formatTimestamp, isDay, previousMonth, yesterday } from './dates';
 
 describe('dates and values', () => {
   it('accepts only real calendar days inside the range', () => {
@@ -11,8 +11,11 @@ describe('dates and values', () => {
   });
   it('uses UTC for yesterday and for display', () => {
     expect(yesterday(Date.parse('2026-11-11T00:30:00Z'))).toBe('2026-11-10');
+    expect(previousMonth(Date.parse('2026-01-11T00:30:00Z'))).toBe('2025-12');
+    expect(previousMonth(Date.parse('2026-11-11T00:30:00Z'))).toBe('2026-10');
     expect(formatDate('2026-11-02')).toBe('2 Nov 2026');
     expect(formatTime('2026-11-02T09:30:00+00:00')).toBe('09:30 UTC');
+    expect(formatTimestamp('2026-11-02T09:30:00+00:00')).toBe('2 Nov 2026, 09:30 UTC');
     expect(formatTime('not a time')).toBe('not a time');
   });
   it('never shows a missing value as zero', () => {
