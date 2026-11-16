@@ -10,18 +10,19 @@ A new push to a pull request cancels the run that is still going for the older c
 | --- | --- | --- |
 | Shared package and stream stages | Installs `shared/python` with the `llm` extra and every stage's own `requirements.txt`, then runs all tests in `shared/python/tests` and `streaming/` except the Flink ones | Python 3.11 |
 | Stream stages on Flink | Same installs plus PyFlink, then runs the tests marked `@pytest.mark.flink`: the same fake records through a real local Flink | Python 3.11, Java 17 |
-| Sink | Installs the shared package and `storage/sink`, runs `storage/sink/tests` (skipped while the sink is not on the branch) | Python 3.11 |
+| Sink | Installs the shared package and `storage/sink`, runs `storage/sink/tests` | Python 3.11 |
+| Batch job (forecast), Batch job (gap) | Installs `batch/forecast` or `batch/gap` on its own and runs its tests from the repository root; tests that need a live Cassandra skip themselves | Python 3.11, as in the batch images |
 | Monitoring exporter | Installs the shared package and `deploy/monitoring/exporter`, runs its tests (skipped while monitoring is not on the branch) | Python 3.11 |
 | Prometheus config and rules | `promtool check config` on `prometheus.yml` and the rules it loads, `promtool test rules` on the rule tests (skipped while monitoring is not on the branch) | `prom/prometheus` image |
 | M5 agents | Installs `shared/python` and runs the tests in `agents/m5` | Python 3.11, as in the M5 agent images |
 | Threat agent | Installs `shared/python` and `agents/threat/requirements-dev.txt`, runs `agents/threat/tests` | Python 3.12, as in `agents/threat/Dockerfile` |
 | API | Installs `api/` and runs `api/tests` | Python 3.12, as in `api/Dockerfile` |
 | Dashboard build | `pnpm install --frozen-lockfile` and `pnpm build` (type check and production build) | Node 22, pnpm from `package.json` |
-| Docker images and Compose files | Checks `docker-compose.yml`, `api/compose.yml` and `dashboard/compose.yml`, then builds the API, dashboard, sink, monitoring exporter, three M5 agent, threat agent and S7 images (built only, never pushed) | Docker |
+| Docker images and Compose files | Checks `docker-compose.yml`, `api/compose.yml` and `dashboard/compose.yml`, then builds the API, dashboard, sink, monitoring exporter, three M5 agent, threat agent, forecast, gap, S7, S8, S3 and S4 images (built only, never pushed) | Docker |
 | Setup script (bash) | `bash -n` and ShellCheck on `setup.sh` | Ubuntu |
 | Setup script (Windows PowerShell 5.1) | Parses `setup.ps1` and checks it is ASCII-only, since PowerShell 5.1 misreads other characters | Windows PowerShell 5.1 |
 
-New tests are picked up without changing the workflow: a stage's tests in `streaming/<stage>/tests/`, new tests in `agents/m5` or `agents/threat/tests`, new API tests in `api/tests/`, new dashboard pages under `dashboard/src/`. A stage that needs a package beyond the shared one (such as `river` or `datasketch`) lists it, pinned exactly, in `streaming/<stage>/requirements.txt`; both stage jobs install every such file. Only a new image, a new agent folder or a new Python package with its own `pyproject.toml` needs a new step in `ci.yml`.
+New tests are picked up without changing the workflow: a stage's tests in `streaming/<stage>/tests/`, new tests in `agents/m5`, `agents/threat/tests` or `batch/*/tests`, new API tests in `api/tests/`, new dashboard pages under `dashboard/src/`. A stage that needs a package beyond the shared one (such as `river` or `datasketch`) lists it, pinned exactly, in `streaming/<stage>/requirements.txt`; both stage jobs install every such file. Only a new image, a new agent folder or a new Python package with its own `pyproject.toml` needs a new step in `ci.yml`.
 
 Each stage folder and its `tests/` folder need an empty `__init__.py`, as in `streaming/s4_demand_frequency/`. Without them, two test files with the same name in different folders (for example two `test_stage.py`) stop the whole test run.
 
@@ -29,8 +30,8 @@ All jobs must pass before a pull request is merged. The Flink job is the slowest
 
 ### What is not checked yet
 
-- Some jobs check parts that arrive with their own pull requests: the sink, the monitoring exporter, the Prometheus rules and the setup scripts. While a part is not on the branch, its steps are skipped and the job still shows a green tick. The job's summary then shows a notice such as "storage/sink is not on this branch". A green tick on those jobs only means "passed or not there yet".
-- Only the images that have a Dockerfile and a step in the `docker` job are built: the API, the dashboard, the three M5 agents, the threat agent and S7, plus the sink and exporter once they are on the branch. The images are built but never started, so CI does not check that a container runs. A new Dockerfile (another agent, a stage or a batch job) needs its own `docker build` step.
+- Some jobs check parts that arrive with their own pull requests: the monitoring exporter, the Prometheus rules, the S3 and S4 images (#82, #90) and the setup scripts. While a part is not on the branch, its steps are skipped and the job still shows a green tick. The job's summary then shows a notice such as "deploy/monitoring/exporter is not on this branch". A green tick on those jobs only means "passed or not there yet".
+- Only the images that have a Dockerfile and a step in the `docker` job are built: the API, the dashboard, the sink, the three M5 agents, the threat agent, the forecast and gap jobs, S7 and S8, plus the exporter, S3 and S4 once they are on the branch. The images are built but never started, so CI does not check that a container runs. A new Dockerfile (another agent or stage) needs its own `docker build` step.
 - No job runs against a real Kafka or Cassandra. Tests that need a live Cassandra (such as `shared/python/tests/test_llm_cassandra.py`) are skipped.
 
 ### Making the checks required
@@ -75,6 +76,19 @@ M5 agents, in the same environment:
 python -m pytest agents/m5
 ```
 
+Batch jobs, each in its own Python 3.11 environment (the forecast job pins pandas 3, which the shared package cannot use):
+
+```powershell
+py -3.11 -m venv C:\venvs\ace-forecast
+C:\venvs\ace-forecast\Scripts\Activate.ps1
+pip install -e "batch/forecast[dev]"
+python -m pytest batch/forecast/tests
+py -3.11 -m venv C:\venvs\ace-gap
+C:\venvs\ace-gap\Scripts\Activate.ps1
+pip install -e "batch/gap[dev]"
+python -m pytest batch/gap/tests
+```
+
 Prometheus configuration and rules (Docker Desktop running):
 
 ```powershell
@@ -108,7 +122,12 @@ docker build -f agents/m5/education_agent/Dockerfile .
 docker build -f agents/m5/workforce_agent/Dockerfile .
 docker build -f agents/m5/platform_agent/Dockerfile .
 docker build -f agents/threat/Dockerfile .
+docker build -f batch/forecast/Dockerfile .
+docker build -f batch/gap/Dockerfile .
 docker build --target runtime -f streaming/s7_threat_frequency/Dockerfile .
+docker build --target runtime -f streaming/s8_threat_bursts/Dockerfile .
+docker build --target runtime -f streaming/s3_top10/Dockerfile .
+docker build --target runtime -f streaming/s4_demand_frequency/Dockerfile .
 ```
 
 Setup scripts (the first line runs ShellCheck in Docker; the second prints nothing when `setup.ps1` parses):
