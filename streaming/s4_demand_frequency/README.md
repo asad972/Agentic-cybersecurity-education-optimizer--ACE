@@ -8,7 +8,7 @@
 | `count_min.py` | The Count-Min Sketch: add, estimate, merge |
 | `taxonomy_keys.py` | The key set: every Skill, Certification and Role in `shared/taxonomy/`; replaced by `ace.taxonomy` once it is merged |
 | `__main__.py` | Runs the stage over a file of `skills.demand` messages and writes what it publishes |
-| `fixtures/job_ads.jsonl` | Six fake job ads, one of them invalid, that the container runs by default |
+| `fixtures/job_ads.jsonl` | Six fake job ads, one of them invalid, for tests and a Docker smoke test |
 | `Dockerfile` | The stage image (`runtime`) and an image that runs S4's tests (`test`) |
 
 ## How it counts
@@ -53,10 +53,10 @@ In Docker, from the repository root. Name the `runtime` stage: without `--target
 
 ```powershell
 docker build --target runtime -f streaming/s4_demand_frequency/Dockerfile -t ace-s4 .
-docker run --rm ace-s4
+docker run --rm ace-s4 --input s4_demand_frequency/fixtures/job_ads.jsonl --output-dir /output --engine flink
 ```
 
-The image runs the fixture file on Flink and prints `demand_daily.jsonl: 4 rows` and `invalid.jsonl: 1 rows`. To keep the output files, mount a folder on `/output`, e.g. `docker run --rm -v ${PWD}/out:/output ace-s4`. To run S4's tests in the image, including the Flink test:
+The image has no default input, so it never processes the fake job ads unless asked to; started without arguments it prints the usage and exits. The command above is a smoke test: it runs the fixture file on Flink and prints `demand_daily.jsonl: 4 rows` and `invalid.jsonl: 1 rows`. To keep the output files, mount a folder on `/output`, e.g. `docker run --rm -v ${PWD}/out:/output ace-s4 --input ...`. To run S4's tests in the image, including the Flink test:
 
 ```powershell
 docker build --target test -f streaming/s4_demand_frequency/Dockerfile -t ace-s4-test .

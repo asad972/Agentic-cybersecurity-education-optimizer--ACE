@@ -9,7 +9,7 @@ ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
 COPY shared/python /app/shared/python
 # ARM64 needs to compile PyFlink's extensions; remove the compiler afterwards.
 RUN apt-get update && apt-get install -y --no-install-recommends default-jre-headless g++ \
-    && pip install --no-cache-dir -e '/app/shared/python[flink]' \
+    && pip install --no-cache-dir -e '/app/shared/python[flink]' && pip check \
     && apt-get purge -y --auto-remove g++ && rm -rf /var/lib/apt/lists/*
 COPY shared/schemas /app/shared/schemas
 # S4 asks its sketch about every taxonomy entry, so the image needs the taxonomy.
@@ -19,7 +19,9 @@ RUN useradd --create-home --uid 10001 ace && mkdir /output && chown ace:ace /out
 USER ace
 WORKDIR /app/streaming
 ENTRYPOINT ["python", "-m", "s4_demand_frequency"]
-CMD ["--input", "s4_demand_frequency/fixtures/job_ads.jsonl", "--output-dir", "/output", "--engine", "flink"]
+# No default input: the image never processes the fake job ads unless asked to.
+# Smoke test: docker run --rm ace-s4 --input s4_demand_frequency/fixtures/job_ads.jsonl --output-dir /output --engine flink
+CMD []
 
 # S4's tests, including the Flink one:
 #   docker build --target test -f streaming/s4_demand_frequency/Dockerfile -t ace-s4-test .
