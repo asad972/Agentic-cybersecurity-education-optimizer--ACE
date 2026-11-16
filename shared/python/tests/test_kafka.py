@@ -90,3 +90,23 @@ def test_read_topics_gives_one_kafka_source_per_topic_as_topic_text_pairs():
     plan = json.loads(env.get_execution_plan())
     sources = sorted(node["contents"] for node in plan["nodes"] if node["type"].startswith("Source"))
     assert sources == ["Source: Kafka jobs.clean", "Source: Kafka raw.profiles"]
+
+
+@pytest.mark.flink
+def test_write_topics_adds_one_kafka_sink_for_all_output_topics():
+    """Builds the job graph only; writing to a real Kafka is tested end to end with S4."""
+    import json
+
+    from pyflink.common import Types
+
+    from ace.stage import flink_env
+
+    env = flink_env()
+    kafka.add_connector(env)
+    outputs = env.from_collection(
+        [("agg.demand_daily", "DE", "{}"), ("errors.invalid", "skills.demand", "{}")],
+        type_info=Types.TUPLE([Types.STRING(), Types.STRING(), Types.STRING()]))
+    kafka.write_topics(outputs, "localhost:9092")
+    plan = json.loads(env.get_execution_plan())
+    nodes = [node["contents"] for node in plan["nodes"]]
+    assert nodes.count("Kafka sink: Writer") == 1

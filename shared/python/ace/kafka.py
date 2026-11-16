@@ -1,4 +1,4 @@
-"""Kafka for stream stages: the Flink Kafka connector JAR and the Kafka source.
+"""Kafka for stream stages: the Flink Kafka connector JAR, the Kafka source and the Kafka sink.
 
 PyFlink's Kafka source and sink run in Flink's Java side, so every job needs the
 connector JAR. It is not on PyPI; this module downloads the pinned version from
@@ -122,3 +122,40 @@ def read_topics(env: Any, topics: Iterable[str], bootstrap_servers: str, group_i
         raise ValueError("read_topics needs at least one topic")
     first, *rest = streams
     return first.union(*rest) if rest else first
+
+
+def write_topics(outputs: Any, bootstrap_servers: str) -> Any:
+    """Write ace.stage.build_flink's (topic, key, JSON text) outputs to Kafka, each to its own topic.
+
+    The topic comes from each output, so one sink serves a stage's results and
+    its errors.invalid records. Delivery is at least once: after a restart from
+    a checkpoint a few results may be written twice, which the sink's upserts
+    absorb.
+
+    Records are written without a Kafka key. PyFlink can only serialise the whole
+    record as the key, not one field of it. Nothing downstream reads the key:
+    stages group by the record's own country field and the Cassandra sink ignores
+    it. The agents, which publish the raw topics, still set the key.
+    """
+    from pyflink.common import Row, Types
+    from pyflink.common.serialization import SerializationSchema, SimpleStringSchema
+    from pyflink.datastream.connectors.base import DeliveryGuarantee
+    from pyflink.datastream.connectors.kafka import KafkaRecordSerializationSchema, KafkaSink
+    from pyflink.java_gateway import get_gateway
+
+    rows = outputs.map(lambda output: Row(output[0], output[2]),
+                       output_type=Types.ROW([Types.STRING(), Types.STRING()]))
+    # The topic selector picks the topic from column 0; this writes only column 1,
+    # the JSON text. PyFlink has no Python class for it, so the Java one is used.
+    value_only = SerializationSchema(
+        get_gateway().jvm.org.apache.flink.python.util.PythonConnectorUtils
+        .SecondColumnSerializationSchema(SimpleStringSchema()._j_serialization_schema))
+    sink = (KafkaSink.builder()
+            .set_bootstrap_servers(bootstrap_servers)
+            .set_record_serializer(KafkaRecordSerializationSchema.builder()
+                                   .set_topic_selector(lambda row: row[0])
+                                   .set_value_serialization_schema(value_only)
+                                   .build())
+            .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
+            .build())
+    return rows.sink_to(sink).name("Kafka sink")
