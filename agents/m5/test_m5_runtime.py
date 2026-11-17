@@ -18,7 +18,10 @@ from m5_runtime import (
 from education_agent.__main__ import main as education_main
 from education_agent.__main__ import normalize_record as normalize_programme_record
 from platform_agent.__main__ import normalize_record as normalize_platform_record
-from workforce_agent.__main__ import normalize_record as normalize_workforce_record
+from workforce_agent.__main__ import (
+    DEFAULT_INPUT as WORKFORCE_DEFAULT_INPUT,
+    normalize_record as normalize_workforce_record,
+)
 
 
 class RecordingProducer:
@@ -108,8 +111,18 @@ class M5RuntimeTests(unittest.TestCase):
     def test_publication_uses_contract_topic_and_invalid_route(self) -> None:
         producer = RecordingProducer()
         messages: list[dict[str, Any]] = [
-            {"country": "DE", "year": 2024, "source": "isc2_2024"},
-            {"country": "Germany", "year": 2024, "source": "isc2_2024"},
+            {
+                "geography_level": "country",
+                "geography": "DE",
+                "year": 2024,
+                "source": "isc2_2024",
+            },
+            {
+                "geography_level": "country",
+                "geography": "Germany",
+                "year": 2024,
+                "source": "isc2_2024",
+            },
         ]
 
         sent = publish_records("raw.workforce", "m5-test", messages, producer)
@@ -130,7 +143,14 @@ class M5RuntimeTests(unittest.TestCase):
             publish_records(
                 "raw.workforce",
                 "m5-test",
-                [{"country": "DE", "year": 2024, "source": "isc2_2024"}],
+                [
+                    {
+                        "geography_level": "country",
+                        "geography": "DE",
+                        "year": 2024,
+                        "source": "isc2_2024",
+                    }
+                ],
                 FailingProducer(),
             )
 
@@ -194,6 +214,38 @@ class M5RuntimeTests(unittest.TestCase):
         invalid = json.loads(producer.sent[1][2])
         self.assertIn("row 2", invalid["reason"])
 
+    def test_default_isc2_source_publishes_all_reported_geographies(self) -> None:
+        records = read_records(WORKFORCE_DEFAULT_INPUT)
+        producer = RecordingProducer()
+
+        sent = publish_normalized_records(
+            "raw.workforce",
+            "m5-workforce",
+            records,
+            normalize_workforce_record,
+            producer,
+        )
+
+        self.assertEqual(sent, 6)
+        self.assertEqual(
+            [message[0] for message in producer.sent],
+            ["raw.workforce"] * 6,
+        )
+        self.assertEqual(
+            [message[1] for message in producer.sent],
+            [
+                b"GLOBAL",
+                b"North America",
+                b"Europe",
+                b"Middle East and Africa",
+                b"Asia-Pacific",
+                b"Latin America",
+            ],
+        )
+        first_record = json.loads(producer.sent[0][2])
+        self.assertEqual(first_record["geography_level"], "global")
+        self.assertEqual(first_record["workforce_size"], 5_457_173)
+
     def test_agent_csv_inputs_are_converted_before_normalization(self) -> None:
         programme = normalize_programme_record(
             {
@@ -205,11 +257,19 @@ class M5RuntimeTests(unittest.TestCase):
             }
         )
         workforce = normalize_workforce_record(
-            {"country": "DE", "year": "2024", "workforce_size": "120", "source": "isc2_2024"}
+            {
+                "geography_level": "region",
+                "geography": "Europe",
+                "year": "2024",
+                "workforce_size": "120",
+                "workforce_growth_percent": "-0.7",
+                "source": "isc2_2024",
+            }
         )
 
         self.assertEqual(programme["ecsf_roles"], ["Cybersecurity Implementer"])
         self.assertEqual(workforce["workforce_size"], 120)
+        self.assertEqual(workforce["workforce_growth_percent"], -0.7)
         timestamp = datetime(2026, 11, 8, tzinfo=timezone.utc)
         platform = normalize_platform_record(
             {"platform": "ENISA ECSF", "feature": "role profiles", "supported": "true"},

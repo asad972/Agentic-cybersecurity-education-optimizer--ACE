@@ -1,0 +1,68 @@
+[
+  {
+    "geography_level": "global",
+    "geography": "GLOBAL",
+    "year": 2024,
+    "workforce_size": 5457173,
+    "workforce_gap": 4762963,
+    "workforce_growth_percent": 0.1,
+    "workforce_gap_growth_percent": 19.1,
+    "source": "https://www.isc2.org/Insights/2024/10/ISC2-2024-Cybersecurity-Workforce-Study",
+    "source_reference": "Figures 2 and 3"
+  },
+  {
+    "geography_level": "region",
+    "geography": "North America",
+    "year": 2024,
+    "workforce_size": 1454868,
+    "workforce_gap": 542687,
+    "workforce_growth_percent": -2.7,
+    "workforce_gap_growth_percent": 4.0,
+    "source": "https://www.isc2.org/Insights/2024/10/ISC2-2024-Cybersecurity-Workforce-Study",
+    "source_reference": "Figures 2 and 3"
+  },
+  {
+    "geography_level": "region",
+    "geography": "Europe",
+    "year": 2024,
+    "workforce_size": 1300023,
+    "workforce_gap": 392320,
+    "workforce_growth_percent": -0.7,
+    "workforce_gap_growth_percent": 12.8,
+    "source": "https://www.isc2.org/Insights/2024/10/ISC2-2024-Cybersecurity-Workforce-Study",
+    "source_reference": "Figures 2 and 3"
+  },
+  {
+    "geography_level": "region",
+    "geography": "Middle East and Africa",
+    "year": 2024,
+    "workforce_size": 431302,
+    "workforce_gap": 124978,
+    "workforce_growth_percent": 7.4,
+    "workforce_gap_growth_percent": 11.8,
+    "source": "https://www.isc2.org/Insights/2024/10/ISC2-2024-Cybersecurity-Workforce-Study",
+    "source_reference": "Figures 2 and 3"
+  },
+  {
+    "geography_level": "region",
+    "geography": "Asia-Pacific",
+    "year": 2024,
+    "workforce_size": 997068,
+    "workforce_gap": 3374580,
+    "workforce_growth_percent": 3.8,
+    "workforce_gap_growth_percent": 26.4,
+    "source": "https://www.isc2.org/Insights/2024/10/ISC2-2024-Cybersecurity-Workforce-Study",
+    "source_reference": "Figures 2 and 3"
+  },
+  {
+    "geography_level": "region",
+    "geography": "Latin America",
+    "year": 2024,
+    "workforce_size": 1273868,
+    "workforce_gap": 328397,
+    "workforce_growth_percent": -0.9,
+    "workforce_gap_growth_percent": -5.7,
+    "source": "https://www.isc2.org/Insights/2024/10/ISC2-2024-Cybersecurity-Workforce-Study",
+    "source_reference": "Figures 2 and 3"
+  }
+]

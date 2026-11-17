@@ -2,9 +2,9 @@
 
 These modules normalize source records and the containerized agents publish
 them to Kafka through `ace.contracts`. The agents accept canonical JSON,
-JSONL, or CSV inputs. Portal-specific CYBERHEAD extraction and ISC2 report
-parsing require verified source layouts; do not treat sample or manually
-estimated values as source data.
+JSONL, or CSV inputs. Source-specific values must retain their published
+geography and citation; do not treat sample or manually estimated values as
+source data.
 
 ## Modules
 
@@ -16,11 +16,10 @@ estimated values as source data.
   (`title`, `provider`, and country names) to the canonical message shape.
   Those country-name conversions cover only the fixture countries; unreviewed
   skill labels are not converted to ECSF roles.
-- `workforce.py` normalizes one country/year workforce record. Workforce
-  figures are optional; missing figures remain absent rather than being
-  guessed as zero. The ISC2 2024 global study and EU-focused survey are
-  documented sources, but the available reports do not provide a complete
-  EU country-by-country workforce table.
+- `workforce.py` normalizes a workforce record at country, region, or global
+  scope. Workforce figures and year-over-year percentages are optional;
+  missing values remain absent rather than being guessed as zero. `sources/`
+  contains reviewed regional and global values from the ISC2 2024 study.
 - `platform_analysis.py` formats reviewed platform/feature decisions. The
   caller must provide an explicit boolean decision and evidence notes where
   appropriate; the module does not invent product capabilities.
@@ -73,22 +72,30 @@ agent containers and mount the canonical input read-only:
 ```powershell
 $network = docker inspect ace-kafka --format '{{range $name, $network := .NetworkSettings.Networks}}{{$name}}{{end}}'
 docker run --rm --env-file .env --network $network -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 -v "${PWD}\data\m5:/data:ro" ace-m5-education --input /data/programmes.jsonl
-docker run --rm --env-file .env --network $network -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 -v "${PWD}\data\m5:/data:ro" ace-m5-workforce --input /data/workforce.csv
+docker run --rm --env-file .env --network $network -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 ace-m5-education --enisa
+docker run --rm --env-file .env --network $network -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 ace-m5-workforce
 docker run --rm --env-file .env --network $network -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 ace-m5-platform
 ```
 
 Set `KAFKA_BOOTSTRAP_SERVERS` when the broker is not reachable as
 `kafka:29092`. CSV `ecsf_roles` cells must contain a JSON array, CSV workforce
-numbers must be integers, and CSV platform decisions must be `true` or
-`false`. Invalid messages are routed by `ace.contracts` to `errors.invalid`.
+counts and years must be integers, and CSV workforce growth values must be
+numbers. CSV platform decisions must be `true` or `false`. Invalid messages
+are routed by `ace.contracts` to `errors.invalid`.
 
 ## Current scope and placeholders
 
-- **Education:** the agent reads ready-made CYBERHEAD JSON/JSONL/CSV exports.
+- **Education:** the agent reads ready-made CYBERHEAD JSON/JSONL/CSV exports
+  with `--input`, or fetches all currently public and approved programmes
+  directly from ENISA with `--enisa`. The live path maps ECSF roles from each
+  programme description through `ace.llm`, then validates the canonical
+  `raw.programmes` contract before publishing. It requires the shared LLM
+  configuration and Cassandra cache/budget tables.
   The input adapter accepts `title`/`provider` as aliases for `name`/
   `institution`; country names are supported only for Austria, Germany, the
-  Netherlands, and Spain in the synthetic fixtures. Portal collection/export
-  download is not implemented. The accepted `ecsf_roles` are:
+  Netherlands, and Spain in the synthetic fixtures. The live fetch includes
+  all currently public, approved programmes, not just a selected subset. The
+  accepted `ecsf_roles` are:
   `Chief Information Security Officer (CISO)`, `Cyber Incident Responder`,
   `Cyber Legal, Policy and Compliance Officer`,
   `Cyber Threat Intelligence Specialist`, `Cybersecurity Architect`,
@@ -100,23 +107,30 @@ numbers must be integers, and CSV platform decisions must be `true` or
   roles stay empty. Programme skills and the demo categories in `testdata/`
   are not ECSF role mappings. The normalizer rejects unknown and duplicate
   role labels. The shared message schema remains permissive; M5 enforces the
-  canonical role list before publishing.
-- **LLM mapping:** role classification is not yet wired into the agent.
-  When integrated through `ace.llm`, the classifier must choose zero or more
-  exact names from the 12-role list above, return no role when evidence is
-  insufficient, and never emit demo labels or invented roles. Review the
-  output against the programme's published curriculum before publishing.
+  canonical role list before publishing. The live classifier uses the
+  programme description as evidence, requests no role when evidence is
+  insufficient, and rejects labels outside the canonical list.
+- **LLM mapping:** the live fetch path uses `ace.llm` with task
+  `programme_roles`; it inherits that client's provider switch, validated JSON,
+  retries, shared cache, and hosted daily budget. LLM-generated role mappings
+  should still be reviewed against the source before they are treated as
+  verified labels.
 - **Synthetic education fixtures:** `agents/m5/testdata/` contains JSON,
   JSONL, and CSV examples marked as mock data, plus a separate demo skill
   category map. These files validate import and normalization only; they are
   not official CYBERHEAD data and must not be used as production evidence.
-- **Workforce:** the agent reads ready-made canonical country/year files.
-  The ISC2 2024 global study reports an international survey of 15,852
-  practitioners and decision-makers, and a separate report focuses on the
-  E.U. Neither report supplies a complete per-country table for the EU.
-  Country-level figures must therefore come from a verified country breakdown
-  or another source; regional findings must not be copied into country rows.
-  PDF/table extraction is not implemented.
+- **Workforce:** the default source file is
+  `sources/isc2_2024_global.json`. Its 2024 estimates and year-over-year
+  changes come from Figures 2 and 3 of the ISC2 global study. Records use
+  `geography_level` (`global` or `region`) and the figure's published label;
+  none are distributed to countries. The report's figure totals differ
+  slightly from totals in its narrative, so this dataset consistently uses
+  the values printed in the figures and records their figure references.
+  Regional figures may also differ slightly from their global totals. ISC2
+  defines the workforce gap as required staff minus active cybersecurity
+  professionals, not current job openings.
+  Supply a reviewed JSON, JSONL, or CSV file with `--input` to publish a
+  different report. The agent does not perform OCR or infer table values.
 - **Platform analysis:** the agent republishes the hand-curated
   `platform_evidence.json`. This does not discover new facts or refresh source
   data.
@@ -179,10 +193,9 @@ python -m unittest discover -s streaming\s10_hiring_companies -t streaming -p "t
 
 ## Remaining source-specific work
 
-Remaining data-source work must be based on actual artifacts: implement a
-CYBERHEAD portal/export adapter once its export format or API is available,
-and an ISC2 PDF/table extractor for verified metrics while preserving their
-global or EU geography. Do not publish regional ISC2 figures as country-level
-records. The platform publisher uses cited, curated evidence; an automated
-comparison should wait for reviewed evidence covering the same features
-across each platform rather than infer unsupported capabilities.
+Review the live CYBERHEAD source and LLM-generated role mappings before
+treating them as verified data. Additional workforce source files must preserve
+the report's original geography; do not publish regional ISC2 figures as
+country-level records. The platform publisher uses cited, curated evidence; an
+automated comparison should wait for reviewed evidence covering the same
+features across each platform rather than infer unsupported capabilities.

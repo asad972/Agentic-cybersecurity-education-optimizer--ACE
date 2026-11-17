@@ -65,11 +65,15 @@ The M5 read-only endpoints are:
   baseline for a country, plus per-ECSF-role programme and daily job-ad demand
   counts when `day` is provided. `demand_available` distinguishes a missing
   demand snapshot from roles with zero matching job ads.
+- `GET /workforce?geography_level=region&geography=Europe` — workforce
+  estimates and year-over-year changes for a published country, region, or
+  global scope.
 - `GET /emerging?country=DE&day=2026-11-02` — S9 snapshot for a country and day.
 - `GET /companies?country=DE&day=2026-11-02` — S10 estimates for a country and day.
 - `GET /platforms` — evidence rows for CyberSeek, ENISA ECSF and the ISC2 Workforce Study.
 
 The reads use bounded Cassandra partition queries. `/education` requires an
 uppercase ISO alpha-2 country code; `/emerging` and `/companies` also require
-an ISO date. These endpoints return database-backed data only: there is no
-sample-data fallback.
+an ISO date. `/workforce` uses the geography and level printed by its source,
+so regional/global estimates are not shown as country values. These endpoints
+return database-backed data only: there is no sample-data fallback.

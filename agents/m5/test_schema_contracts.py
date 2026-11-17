@@ -8,6 +8,7 @@ from typing import Any
 
 from ace import contracts
 from education import normalize_programme
+from m5_runtime import read_records
 from platform_analysis import normalize_feature_evidence
 from workforce import normalize_workforce_record
 
@@ -62,14 +63,35 @@ class M5SchemaContractTests(unittest.TestCase):
     def test_workforce_output_matches_raw_workforce_contract(self) -> None:
         message = normalize_workforce_record(
             {
-                "country": "DE",
+                "geography_level": "region",
+                "geography": "Europe",
                 "year": 2024,
                 "workforce_size": 1000,
                 "workforce_gap": 100,
                 "source": "isc2_2024",
+                "source_reference": "Figures 2 and 3",
             }
         )
         assert_contract_shape(self, "raw_workforce.schema.json", message)
+        contracts.validate("raw.workforce", message)
+
+    def test_isc2_2024_source_records_preserve_published_geography(self) -> None:
+        records = read_records(
+            ROOT / "agents" / "m5" / "sources" / "isc2_2024_global.json"
+        )
+        messages = [normalize_workforce_record(record) for record in records]
+
+        for message in messages:
+            assert_contract_shape(self, "raw_workforce.schema.json", message)
+            contracts.validate("raw.workforce", message)
+
+        self.assertEqual(len(messages), 6)
+        europe = next(
+            message for message in messages if message["geography"] == "Europe"
+        )
+        self.assertEqual(europe["workforce_size"], 1_300_023)
+        self.assertEqual(europe["workforce_gap"], 392_320)
+        self.assertTrue(all("country" not in message for message in messages))
 
     def test_platform_output_matches_platform_analysis_contract(self) -> None:
         message = normalize_feature_evidence(

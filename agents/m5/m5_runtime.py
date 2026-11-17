@@ -234,3 +234,13 @@ def parse_integer(value: Any, field: str) -> Any:
         return int(value)
     except ValueError as error:
         raise ValueError(f"{field} in CSV must be an integer") from error
+
+
+def parse_number(value: Any, field: str) -> Any:
+    """Convert a CSV numeric cell while preserving non-string values."""
+    if value is None or not isinstance(value, str):
+        return value
+    try:
+        return float(value)
+    except ValueError as error:
+        raise ValueError(f"{field} in CSV must be a number") from error

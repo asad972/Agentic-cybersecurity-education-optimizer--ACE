@@ -6,10 +6,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 import tempfile
 import zipfile
+from types import SimpleNamespace
 
 from ace import contracts
 from education import ECSF_ROLES, normalize_programme, normalize_programmes
-from education_agent.__main__ import normalize_record as normalize_exported_programme
+from education_agent.__main__ import (
+    normalize_enisa_record,
+    normalize_record as normalize_exported_programme,
+)
 from m5_runtime import read_records
 from platform_analysis import normalize_feature_evidence, normalize_platform_evidence
 from workforce import normalize_workforce_record, normalize_workforce_records
@@ -68,6 +72,76 @@ class EducationAgentTests(unittest.TestCase):
                 for message in messages
             )
         )
+
+    def test_maps_public_enisa_programme_and_validates_the_contract(self) -> None:
+        class FakeLLM:
+            def __init__(self) -> None:
+                self.request = None
+
+            def generate(self, **kwargs):
+                self.request = kwargs
+                return SimpleNamespace(
+                    value=SimpleNamespace(
+                        ecsf_roles=[
+                            "Cyber Incident Responder",
+                            "Cybersecurity Researcher",
+                        ]
+                    )
+                )
+
+        llm = FakeLLM()
+        message = normalize_enisa_record(
+            {
+                "ID": "programme-123",
+                "state": {"public": True, "state": "approved"},
+                "fields": {
+                    "programme_name": "Cybersecurity MSc",
+                    "programme_description": "Prepares incident responders.",
+                    "institution_name": "Example University",
+                    "country": "esp",
+                    "programme_type": "Master Degree",
+                    "related_urls": [
+                        {"kind": "Website", "link": "https://example.edu/course"}
+                    ],
+                },
+            },
+            llm,
+        )
+
+        self.assertEqual(message["programme_id"], "programme-123")
+        self.assertEqual(message["country"], "ES")
+        self.assertEqual(message["level"], "master")
+        self.assertEqual(
+            message["ecsf_roles"],
+            ["Cyber Incident Responder", "Cybersecurity Researcher"],
+        )
+        self.assertEqual(llm.request["task"], "programme_roles")
+        contracts.validate("raw.programmes", message)
+
+    def test_enisa_programme_without_description_does_not_call_llm(self) -> None:
+        class UnexpectedLLM:
+            def generate(self, **_kwargs):
+                self.fail("LLM must not be called without programme evidence")
+
+            def fail(self, message):
+                raise AssertionError(message)
+
+        message = normalize_enisa_record(
+            {
+                "ID": "programme-no-description",
+                "fields": {
+                    "programme_name": "Programme",
+                    "programme_description": "",
+                    "institution_name": "Example University",
+                    "country": "deu",
+                    "programme_type": "Postgraduate Course",
+                    "related_urls": [],
+                },
+            },
+            UnexpectedLLM(),
+        )
+        self.assertEqual(message["ecsf_roles"], [])
+        self.assertEqual(message["level"], "other")
 
     def test_normalizes_programme_to_schema_fields(self) -> None:
         message = normalize_programme(
@@ -270,30 +344,73 @@ class WorkforceAgentTests(unittest.TestCase):
     def test_normalizes_workforce_message_and_optional_figures(self) -> None:
         message = normalize_workforce_record(
             {
-                "country": "de",
+                "geography_level": "country",
+                "geography": "de",
                 "year": 2024,
                 "workforce_size": 100_000,
                 "workforce_gap": 20_000,
                 "source": "isc2_2024",
             }
         )
-        self.assertEqual(message["country"], "DE")
+        self.assertEqual(message["geography_level"], "country")
+        self.assertEqual(message["geography"], "DE")
         self.assertEqual(message["workforce_size"], 100_000)
         self.assertEqual(
             normalize_workforce_records(
-                [{"country": "FR", "year": 2024, "source": "isc2_2024"}]
+                [
+                    {
+                        "country": "FR",
+                        "year": 2024,
+                        "source": "isc2_2024",
+                    }
+                ]
             ),
-            [{"country": "FR", "year": 2024, "source": "isc2_2024"}],
+            [
+                {
+                    "geography_level": "country",
+                    "geography": "FR",
+                    "year": 2024,
+                    "source": "isc2_2024",
+                }
+            ],
         )
 
+    def test_normalizes_published_regional_estimates_and_growth_rates(self) -> None:
+        message = normalize_workforce_record(
+            {
+                "geography_level": "region",
+                "geography": "Europe",
+                "year": 2024,
+                "workforce_size": 1_300_023,
+                "workforce_gap": 392_320,
+                "workforce_growth_percent": -0.7,
+                "workforce_gap_growth_percent": 12.8,
+                "source": "isc2_2024",
+                "source_reference": "Figures 2 and 3",
+            }
+        )
+
+        self.assertEqual(message["geography"], "Europe")
+        self.assertEqual(message["workforce_size"], 1_300_023)
+        self.assertEqual(message["workforce_gap"], 392_320)
+        self.assertEqual(message["workforce_growth_percent"], -0.7)
+        self.assertEqual(message["workforce_gap_growth_percent"], 12.8)
+
     def test_rejects_invalid_workforce_values(self) -> None:
-        base = {"country": "DE", "year": 2024, "source": "isc2_2024"}
+        base = {
+            "geography_level": "country",
+            "geography": "DE",
+            "year": 2024,
+            "source": "isc2_2024",
+        }
         for invalid in (
             {**base, "year": True},
             {**base, "workforce_gap": -1},
             {**base, "workforce_size": 12.5},
-            {**base, "country": "Germany"},
-            {**base, "country": "ßA"},
+            {**base, "geography": "Germany"},
+            {**base, "geography": "ßA"},
+            {**base, "geography": "EU"},
+            {**base, "workforce_growth_percent": float("inf")},
         ):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):
                 normalize_workforce_record(invalid)

@@ -59,6 +59,19 @@ CREATE TABLE IF NOT EXISTS workforce_baseline (
   PRIMARY KEY (country, year)
 ) WITH CLUSTERING ORDER BY (year DESC);
 
+CREATE TABLE IF NOT EXISTS workforce_baseline_by_geography (
+  geography_level              text,
+  geography                    text,
+  year                         int,
+  workforce_size               int,
+  workforce_gap                int,
+  workforce_growth_percent     double,
+  workforce_gap_growth_percent double,
+  source                       text,
+  source_reference             text,
+  PRIMARY KEY ((geography_level, geography), year)
+) WITH CLUSTERING ORDER BY (year DESC);
+
 -- Stream aggregates (written by the sink from agg.* topics; upserts, so replays are safe)
 
 CREATE TABLE IF NOT EXISTS job_ads_by_day (

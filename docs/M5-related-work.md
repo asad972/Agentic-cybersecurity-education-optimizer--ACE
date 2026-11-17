@@ -18,12 +18,21 @@ evidence; the framework alone does not establish that a course teaches a role
 
 ISC2's 2024 global workforce study surveyed 15,852 cybersecurity practitioners
 and decision-makers and reports workforce size, shortages, skills gaps, hiring
-needs and changing skills priorities [3]. The separate *2024 Cybersecurity
-Workforce Survey - Focus on the E.U.* adds EU-focused findings [4]. These
-reports complement programme catalogues and job-ad observations, but regional
-findings are not country-level counts. ACE must preserve each report's
-geography, metric definition and year, and must not allocate an EU aggregate
-among individual countries without a published breakdown.
+needs and changing skills priorities [3]. Figures 2 and 3 publish estimates
+and year-over-year changes for the global total and five regions. The separate
+*2024 Cybersecurity Workforce Survey - Focus on the E.U.* adds EU-focused
+findings [4]. These reports complement programme catalogues and job-ad
+observations, but regional findings are not country-level counts. ACE
+preserves each report's geography, metric definition and year, and does not
+allocate regional aggregates among individual countries.
+
+The 2024 global report's narrative totals differ slightly from the totals
+printed in Figures 2 and 3. ACE's curated source records use the figure values
+consistently and retain the figure references so the chosen source values are
+auditable; the regional figures also do not sum exactly to the published
+global totals. ISC2's workforce gap is the estimated difference between the
+staff organizations require and active cybersecurity professionals, not a
+count of current job openings.
 
 ## Streaming methods used by ACE
 

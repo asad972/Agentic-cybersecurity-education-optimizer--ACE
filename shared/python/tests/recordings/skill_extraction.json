@@ -1,0 +1,11 @@
+{
+  "recordings": {
+    "f2fa167c4d859b1e72fcfdca1ca4d293444ad8ee75024a45c7a627249b6d4800": {
+      "answer": {
+        "value": "recorded"
+      },
+      "input_tokens": 3,
+      "output_tokens": 2
+    }
+  }
+}

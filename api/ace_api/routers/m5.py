@@ -2,7 +2,7 @@
 
 import logging
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 from cassandra import DriverException
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -102,6 +102,57 @@ def get_education(
             for row in workforce
         ],
         "role_comparison": role_comparison,
+    }
+
+
+@router.get("/workforce")
+def get_workforce(
+    request: Request,
+    geography_level: Literal["country", "region", "global"],
+    geography: str = Query(min_length=2, max_length=64),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> dict[str, Any]:
+    """Return workforce figures for one published geographic scope."""
+    if geography_level == "country" and (
+        len(geography) != 2
+        or geography != geography.upper()
+        or not geography.isascii()
+        or not geography.isalpha()
+        or geography == "EU"
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Country geography must be an uppercase ISO alpha-2 code",
+        )
+    if geography_level == "global" and geography != "GLOBAL":
+        raise HTTPException(
+            status_code=422, detail="Global geography must be GLOBAL"
+        )
+
+    rows = _read(
+        request,
+        "SELECT year, workforce_size, workforce_gap, "
+        "workforce_growth_percent, workforce_gap_growth_percent, "
+        "source, source_reference "
+        "FROM workforce_baseline_by_geography "
+        "WHERE geography_level = %s AND geography = %s LIMIT %s",
+        (geography_level, geography, limit),
+    )
+    return {
+        "geography_level": geography_level,
+        "geography": geography,
+        "items": [
+            {
+                "year": row.year,
+                "workforce_size": row.workforce_size,
+                "workforce_gap": row.workforce_gap,
+                "workforce_growth_percent": row.workforce_growth_percent,
+                "workforce_gap_growth_percent": row.workforce_gap_growth_percent,
+                "source": row.source,
+                "source_reference": row.source_reference,
+            }
+            for row in rows
+        ],
     }
 
 

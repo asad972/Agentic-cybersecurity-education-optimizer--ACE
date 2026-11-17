@@ -24,6 +24,18 @@ class CassandraSession:
                     url="https://example.test/course",
                 )
             ]
+        if "workforce_baseline_by_geography" in query:
+            return [
+                SimpleNamespace(
+                    year=2024,
+                    workforce_size=1_300_023,
+                    workforce_gap=392_320,
+                    workforce_growth_percent=-0.7,
+                    workforce_gap_growth_percent=12.8,
+                    source="isc2_2024",
+                    source_reference="Figures 2 and 3",
+                )
+            ]
         if "workforce_baseline" in query:
             return [
                 SimpleNamespace(
@@ -148,3 +160,52 @@ def test_education_endpoint_rejects_non_iso_country_codes():
         response = client.get("/education?country=Germany")
 
     assert response.status_code == 422
+
+
+def test_workforce_endpoint_returns_regional_figures():
+    database = Database()
+    with TestClient(create_app(database=database)) as client:
+        response = client.get(
+            "/workforce?geography_level=region&geography=Europe"
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "geography_level": "region",
+        "geography": "Europe",
+        "items": [
+            {
+                "year": 2024,
+                "workforce_size": 1_300_023,
+                "workforce_gap": 392_320,
+                "workforce_growth_percent": -0.7,
+                "workforce_gap_growth_percent": 12.8,
+                "source": "isc2_2024",
+                "source_reference": "Figures 2 and 3",
+            }
+        ],
+    }
+    query, parameters = database.session.calls[-1]
+    assert "workforce_baseline_by_geography" in query
+    assert parameters == ("region", "Europe", 100)
+
+
+def test_workforce_endpoint_rejects_invalid_geography():
+    with TestClient(create_app(database=Database())) as client:
+        invalid_country = client.get(
+            "/workforce?geography_level=country&geography=Europe"
+        )
+        lowercase_country = client.get(
+            "/workforce?geography_level=country&geography=de"
+        )
+        eu_as_country = client.get(
+            "/workforce?geography_level=country&geography=EU"
+        )
+        invalid_global = client.get(
+            "/workforce?geography_level=global&geography=EU"
+        )
+
+    assert invalid_country.status_code == 422
+    assert lowercase_country.status_code == 422
+    assert eu_as_country.status_code == 422
+    assert invalid_global.status_code == 422
