@@ -230,15 +230,34 @@ def test_s1_dedup_memory_picklable() -> None:
     assert "lsh" in loaded
     assert "88888888-8888-8888-8888-888888888888" in loaded["seen_ids"]
 
+class _FlinkCheckedS1Stage(S1DedupStage):
+    """Verify inside the Flink worker that open() registered the
+    duplicates_removed_total counter and incremented it when dropping a duplicate.
+    """
+
+    def process(self, topic, record, memory):
+        assert self._flink_counter is not None
+        before = self._flink_counter.get_count()
+        outputs = list(super().process(topic, record, memory))
+        expected_inc = 0 if outputs else 1
+        assert self._flink_counter.get_count() == before + expected_inc
+        assert self._flink_counter.get_count() == memory.get("duplicates_removed", 0)
+        return outputs
+
 
 @pytest.mark.flink
 def test_s1_dedup_flink() -> None:
-    """Run S1DedupStage through run_flink_local (which invokes open() via Process.open)."""
+    """Run S1DedupStage through run_flink_local and verify duplicates_removed_total is counted."""
     pytest.importorskip("pyflink")
     records = _sample_records()
-    local_res = run_local(S1DedupStage(threshold=0.75, lsh_threshold=0.6, window_days=30), records)
-    flink_outs = run_flink_local(S1DedupStage(threshold=0.75, lsh_threshold=0.6, window_days=30), records)
+    local_stage = S1DedupStage(threshold=0.75, lsh_threshold=0.6, window_days=30)
+    local_res = run_local(local_stage, records)
+    flink_outs = run_flink_local(
+        _FlinkCheckedS1Stage(threshold=0.75, lsh_threshold=0.6, window_days=30),
+        records,
+    )
 
     local_ids = [r["event_id"] for r in local_res.published(JOBS_CLEAN)]
     flink_ids = [out.value["event_id"] for out in flink_outs if out.topic == JOBS_CLEAN]
     assert sorted(flink_ids) == sorted(local_ids)
+    assert local_stage.duplicates_removed == 1
