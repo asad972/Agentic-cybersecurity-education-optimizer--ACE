@@ -1,6 +1,9 @@
-# React app shell — M4 / #34
+# React dashboard — M4 shell and member workspaces
 
-This release provides responsive navigation and one placeholder page per workspace. It runs independently of FastAPI, Cassandra and Kafka. No observations, maps, charts or live alerts are shipped in this skeleton.
+The app provides responsive navigation and member-owned dashboard pages. M4's
+Europe overview (the home page) and M5's Education & workforce workspace read
+live data from the FastAPI endpoints; other workspaces may still be
+placeholders. It does not use mock or sample data when the API is unavailable.
 
 ## Run with Docker
 
@@ -24,11 +27,19 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-Open the Local URL printed by Vite. Run `pnpm build` for TypeScript checking and a production build.
+Open the Local URL printed by Vite. Run `pnpm build` for TypeScript checking and a production build,
+and `pnpm test` for the unit tests of the request and date helpers.
+The Europe overview requests `/map/meta`, `/map` and `/map/country`.
+The M5 page requests `/education`, `/emerging`, `/companies` and `/platforms`
+from `http://localhost:8000` by default. Set `VITE_API_BASE_URL` before the
+build or Vite startup to use another API origin. Start the API and Cassandra
+stack separately as documented in `api/README.md`; without them, the M5 page
+shows an explicit connection error instead of sample data. The Europe
+overview does the same, with a retry button.
 
-## Calling the API
+## Calling the API through `/api` (Skills demand page)
 
-Pages call the API on the same origin under `/api`, e.g. `/api/top10?...`. Whatever sits in front of the page forwards `/api/...` to the FastAPI service and removes the `/api` prefix, so the API serves `/top10`:
+The Skills demand page calls the API on the same origin under `/api`, e.g. `/api/top10?...`. Whatever sits in front of the page forwards `/api/...` to the FastAPI service and removes the `/api` prefix, so the API serves `/top10`:
 
 | Where | What forwards `/api` |
 | --- | --- |
@@ -42,6 +53,27 @@ The page still loads without an API; requests to `/api` then fail and each dashb
 ```powershell
 docker run --rm -p 127.0.0.1:5173:80 -e ACE_API_URL=http://host.docker.internal:8000 ace-dashboard
 ```
+
+## Europe overview (M4, #37)
+
+A choropleth of the EU27, the EEA, the United Kingdom and Switzerland with a
+metric switch: job advertisements, skill demand, skill supply, skills gap,
+education programmes, hiring companies and threat observations. Demand, supply
+and gap are stored per skill, so they need an exact skill name: type it and
+press Enter, or click a skill in the country panel. Only Skills can be mapped
+this way for now, not Certifications. Which metrics need a skill comes from
+`/map/meta`. For threat observations the API also returns countries outside
+Europe (for the world threat map, #40); this page shows the Europe-map
+countries only. Clicking a country (or
+choosing it in the selector or the data table) opens its panel with the Top 10
+skills and certifications, the latest workforce baseline and that day's drift
+and threat-burst alerts. Countries with no stored value stay grey; a missing
+value is never shown as zero.
+
+The map is drawn with ECharts from `public/countries.geojson` (Natural Earth,
+public domain; see `public/MAP-LICENSE.txt`). Shared pieces other pages may
+reuse: `src/services/api.ts` (`getJSON`), `src/hooks/useQuery.ts`,
+`src/components/Chart.tsx`, `CountryMap.tsx` and `Status.tsx`.
 
 ## Teammate extension points
 
@@ -59,7 +91,7 @@ Replace your own placeholder component with your dashboard. Preserve other membe
 
 Direct hash links, browser Back/Forward and unknown-route fallback work without a server router. At narrow widths use the menu button; Escape closes the navigation. The skip link focuses the main content.
 
-The FastAPI skeleton is delivered separately under #33. Domain endpoints and dashboard requirements remain in `docs/ARCHITECTURE.md`; this release does not claim the later Europe/threat dashboard issues complete.
+The FastAPI skeleton is delivered separately under #33. Domain endpoints and dashboard requirements remain in `docs/ARCHITECTURE.md`. The threat landscape dashboard (#40) and the live alert feed (#39) are later releases.
 
 ## Skills demand page (M2)
 
@@ -74,7 +106,7 @@ It reads these endpoints (`api/ace_api/routers/demand.py`):
 | `GET /demand/map?kind=&item=&date=` | Map values |
 | `GET /top10?country=&kind=&date=` | Top 10 bar charts; falls back to the latest earlier day within 30 days |
 
-Charts use [Apache ECharts](https://echarts.apache.org) 6.1.0 (Apache-2.0 licence), loaded only when the page opens.
+Charts use [Apache ECharts](https://echarts.apache.org) 6 (Apache-2.0 licence), loaded only when the page opens.
 
 **Map data:** `src/demand/europe.geo.json` is made from [Natural Earth](https://www.naturalearthdata.com) 1:50m Admin 0 countries, v5.1.2, which is in the public domain. It keeps the area 25°W–45°E, 34°N–71.5°N, without Greenland. Countries in the Skills Scope (EU27, Iceland, Liechtenstein, Norway, the UK and Switzerland) have `scope: true` and their ISO 3166-1 alpha-2 code as `id`; Åland is merged into FI and Northern Cyprus into CY. Neighbouring countries are kept for orientation only, with `id` set to `~` plus their name. Overseas territories, the Canary Islands, Madeira and the Azores fall outside the area. To rebuild it, download `ne_50m_admin_0_countries.geojson` from the `v5.1.2` tag of github.com/nvkelso/natural-earth-vector into an empty folder, then run from that folder:
 
