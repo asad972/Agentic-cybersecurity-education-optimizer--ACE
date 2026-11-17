@@ -1,0 +1,81 @@
+# One-off Job: creates every topic in shared/schemas/topics.csv with
+# deploy/kafka/create-topics.sh, the same script docker-compose.yml runs.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-init
+  labels:
+    app.kubernetes.io/name: kafka-init
+    app.kubernetes.io/component: setup
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka-init
+        app.kubernetes.io/component: setup
+    spec:
+      restartPolicy: OnFailure
+      enableServiceLinks: false
+      initContainers:
+        - name: wait-for-kafka
+          image: apache/kafka:3.8.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              # Wait until every broker has joined, so topics get all their replicas
+              until [ "$(/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server "$BOOTSTRAP" 2>/dev/null | grep -c '^kafka-')" -ge "$BROKERS" ]; do
+                echo "Waiting for $BROKERS Kafka brokers ..."
+                sleep 5
+              done
+          env:
+            - name: BOOTSTRAP
+              value: kafka:9092
+            - name: BROKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: BROKERS
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      containers:
+        - name: create-topics
+          image: apache/kafka:3.8.0
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "/scripts/create-topics.sh"]
+          env:
+            - name: BOOTSTRAP
+              value: kafka:9092
+            - name: TOPICS_FILE
+              value: /scripts/topics.csv
+            - name: PARTITIONS
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: PARTITIONS
+            - name: REPLICATION
+              valueFrom:
+                configMapKeyRef:
+                  name: kafka-config
+                  key: KAFKA_DEFAULT_REPLICATION_FACTOR
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: kafka-topics
