@@ -33,7 +33,7 @@ Still to come from their owners: the agents (one Deployment each), the LLM serve
 
 ## 1. Build the images
 
-The sink, API and web app images are built on your machine and never pulled from a registry. The sink's Dockerfile comes with the sink pull request (#65), so merge that one before deploying; until then the `sink` pod cannot start. From the repository root in PowerShell:
+The sink, API and web app images are built on your machine and never pulled from a registry. From the repository root in PowerShell:
 
 ```powershell
 docker build -t ace-sink -f storage/sink/Dockerfile .
@@ -74,12 +74,9 @@ After a few minutes every pod is `Running` and the two setup jobs are `Completed
 
 ## 4. Open the services
 
-On Docker Desktop:
+The laptop layout gives the web app NodePort 30080 and the API NodePort 30800. Whether `localhost` reaches them depends on how Docker Desktop made the cluster (Settings → Kubernetes): with the **kubeadm** cluster, http://localhost:30080 and http://localhost:30800/docs work; with the **kind** cluster they do not, so forward the ports.
 
-- Web app: http://localhost:30080
-- API: http://localhost:30800/docs (`/health` and `/ready`)
-
-On any cluster, forward a port instead (one command per window, Ctrl+C stops it):
+On any cluster, forward a port (one command per window, Ctrl+C stops it):
 
 ```powershell
 kubectl -n ace port-forward svc/dashboard 5173:80

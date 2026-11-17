@@ -86,10 +86,12 @@ configMapGenerator:
       - SINK_GROUP_ID=ace-sink
       - SINK_TOPICS=jobs.clean,raw.profiles,raw.programmes,raw.workforce,agg.demand_daily,agg.supply_daily,agg.top10_demand,agg.threats_hourly,agg.threats_daily,agg.emerging_skills,agg.companies_daily,alerts.drift,alerts.threats,analysis.platforms,tasks.collect
 
-  # API (browser origins allowed to call it directly; through the Ingress it is the same origin)
+  # API: browser origins allowed to call it directly. The web app opened through
+  # kubectl port-forward (5173) or the NodePort (30080) calls the API on another
+  # port; through the Ingress it is the same origin.
   - name: api-config
     literals:
-      - API_CORS_ORIGINS=http://localhost,http://localhost:30080
+      - API_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:30080
 
   # Flink session cluster
   - name: flink-config
