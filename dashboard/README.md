@@ -25,8 +25,23 @@ pnpm dev
 ```
 
 Open the Local URL printed by Vite. Run `pnpm build` for TypeScript checking and a production build.
-The shell intentionally makes no API requests, so it remains usable before the API release is merged.
-Add the agreed API proxy/client when the first data-backed page is introduced.
+
+## Calling the API
+
+Pages call the API on the same origin under `/api`, e.g. `/api/top10?...`. Whatever sits in front of the page forwards `/api/...` to the FastAPI service and removes the `/api` prefix, so the API serves `/top10`:
+
+| Where | What forwards `/api` |
+| --- | --- |
+| `pnpm dev` / `pnpm preview` | Vite proxy to `http://127.0.0.1:8000` (`vite.config.ts`) |
+| Dashboard image | nginx proxy to `ACE_API_URL` (default `http://api:8000`) |
+| `dashboard/compose.yml` | nginx proxy to `http://host.docker.internal:8000`, the API from `api/compose.yml` |
+| Kubernetes | The Ingress routes `/api` to the API service |
+
+The page still loads without an API; requests to `/api` then fail and each dashboard shows a "not reachable" message. To point the image at another API (in Kubernetes use the full service name, e.g. `http://api.ace.svc.cluster.local:8000`, because nginx does not apply DNS search domains):
+
+```powershell
+docker run --rm -p 127.0.0.1:5173:80 -e ACE_API_URL=http://host.docker.internal:8000 ace-dashboard
+```
 
 ## Teammate extension points
 
@@ -45,3 +60,25 @@ Replace your own placeholder component with your dashboard. Preserve other membe
 Direct hash links, browser Back/Forward and unknown-route fallback work without a server router. At narrow widths use the menu button; Escape closes the navigation. The skip link focuses the main content.
 
 The FastAPI skeleton is delivered separately under #33. Domain endpoints and dashboard requirements remain in `docs/ARCHITECTURE.md`; this release does not claim the later Europe/threat dashboard issues complete.
+
+## Skills demand page (M2)
+
+`#demand` shows a Europe map of Demand for one Skill or Certification on one day, and the Top 10 Skills and Top 10 Certifications of the selected country. Click a country on the map, or use the Country list, to select it. The day defaults to the latest day with data.
+
+It reads these endpoints (`api/ace_api/routers/demand.py`):
+
+| Endpoint | Used for |
+| --- | --- |
+| `GET /demand/latest-day` | Default day |
+| `GET /demand/items?kind=&date=` | Skill or Certification list, most demanded first |
+| `GET /demand/map?kind=&item=&date=` | Map values |
+| `GET /top10?country=&kind=&date=` | Top 10 bar charts; falls back to the latest earlier day within 30 days |
+
+Charts use [Apache ECharts](https://echarts.apache.org) 6.1.0 (Apache-2.0 licence), loaded only when the page opens.
+
+**Map data:** `src/demand/europe.geo.json` is made from [Natural Earth](https://www.naturalearthdata.com) 1:50m Admin 0 countries, v5.1.2, which is in the public domain. It keeps the area 25°W–45°E, 34°N–71.5°N, without Greenland. Countries in the Skills Scope (EU27, Iceland, Liechtenstein, Norway, the UK and Switzerland) have `scope: true` and their ISO 3166-1 alpha-2 code as `id`; Åland is merged into FI and Northern Cyprus into CY. Neighbouring countries are kept for orientation only, with `id` set to `~` plus their name. Overseas territories, the Canary Islands, Madeira and the Azores fall outside the area. To rebuild it, download `ne_50m_admin_0_countries.geojson` from the `v5.1.2` tag of github.com/nvkelso/natural-earth-vector into an empty folder, then run from that folder:
+
+```powershell
+$scope = "['AT','BE','BG','HR','CY','CZ','DK','EE','FI','FR','DE','GR','HU','IE','IT','LV','LT','LU','MT','NL','PL','PT','RO','SK','SI','ES','SE','IS','LI','NO','GB','CH']"
+docker run --rm -v "${PWD}:/geo" -w /geo node:22-alpine npx -y mapshaper@0.7.101 -i ne_50m_admin_0_countries.geojson -filter "ISO_A2_EH != 'GL'" -clip bbox=-25,34,45,71.5 -each "code = ADMIN == 'Northern Cyprus' ? 'CY' : (ISO_A2_EH == 'AX' ? 'FI' : ISO_A2_EH)" -each "scope = $scope.indexOf(code) > -1, id = scope ? code : '~' + NAME_EN" -dissolve id copy-fields=scope -simplify 20% keep-shapes -o europe.geo.json format=geojson precision=0.01
+```

@@ -248,6 +248,9 @@ A FastAPI service is the only reader of Cassandra for the web app. M4 sets up th
 | --- | --- | --- |
 | `GET /map?metric=&date=&item=` | One value per country for a metric (`job_ads`, `demand`, `supply`, `gap`, `programmes`, `companies`, `threats`) | Europe map, world threat map |
 | `GET /top10?country=&kind=&date=` | Top 10 Skills or Certifications | Country panel, Skills demand dashboard |
+| `GET /demand/map?kind=&item=&date=` | Demand for one Skill, Certification or role per country on one day | Skills demand dashboard |
+| `GET /demand/items?kind=&date=` | Every Skill, Certification or role with Demand on one day, summed over the Skills Scope, most demanded first | Skills demand dashboard (Skill filter) |
+| `GET /demand/latest-day` | Newest day with Demand data | Skills demand dashboard (default day) |
 | `GET /forecast?region=&skill=` | Forecast series with bands | Forecast dashboard |
 | `GET /gap?country=&month=` | Demand vs Supply per Skill | Gap dashboard |
 | `GET /threats/hourly?country=&from=&to=` | Hourly threat counts with burst alerts | Threat landscape dashboard |
