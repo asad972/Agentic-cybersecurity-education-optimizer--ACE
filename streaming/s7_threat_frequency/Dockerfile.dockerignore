@@ -1,0 +1,15 @@
+**
+!shared/
+!shared/python/
+!shared/python/**
+!shared/schemas/
+!shared/schemas/**
+!streaming/
+!streaming/**
+**/__pycache__/
+**/.pytest_cache/
+**/*.egg-info/
+**/.venv/
+**/.env*
+**/*.sqlite*
+**/*.local.md
