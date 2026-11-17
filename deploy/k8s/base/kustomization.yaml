@@ -26,6 +26,11 @@ resources:
   - dashboard.yaml
   - ingress.yaml
   - flink.yaml
+  - threat-agent.yaml
+  - m5-platform-job.yaml
+  # Batch jobs, kept next to their code (outside this folder, see README.md)
+  - ../../../batch/forecast/k8s/cronjob.yaml
+  - ../../../batch/gap/k8s/cronjob.yaml
 
 configMapGenerator:
   # Shared files, read from where they live, so the cluster gets exactly what
@@ -107,4 +112,8 @@ images:
   - name: ace-api
     newTag: latest
   - name: ace-dashboard
+    newTag: latest
+  - name: ace-threat
+    newTag: latest
+  - name: ace-m5-platform
     newTag: latest

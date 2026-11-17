@@ -20,6 +20,8 @@ replicas:
     count: 1
   - name: flink-taskmanager
     count: 1
+  - name: threat-agent
+    count: 0                            # needs the API keys; see README.md
 
 configMapGenerator:
   - name: kafka-config
