@@ -25,7 +25,7 @@ class Settings:
         if not self.kafka_bootstrap_servers.strip():
             raise ValueError("KAFKA_BOOTSTRAP_SERVERS must contain a broker address")
         if not 0 < self.live_retry_seconds <= 300:
-            raise ValueError("live_retry_seconds must be between 0 and 300")
+            raise ValueError("API_LIVE_RETRY_SECONDS must be more than 0 and at most 300")
 
     @classmethod
     def from_env(cls):
@@ -40,4 +40,5 @@ class Settings:
             cors_origins=values("API_CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173"),
             kafka_bootstrap_servers=os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"),
             live_alerts=os.getenv("API_LIVE_ALERTS", "true").strip().lower() not in {"false", "0", "no", "off"},
+            live_retry_seconds=float(os.getenv("API_LIVE_RETRY_SECONDS", "5")),
         )

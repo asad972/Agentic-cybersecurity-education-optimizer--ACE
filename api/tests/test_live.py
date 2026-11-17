@@ -1,8 +1,11 @@
 """WS /live (#39) against a fake Kafka consumer; no broker and no native client needed."""
 import asyncio
+import csv
 import json
+from pathlib import Path
 import queue
 import sys
+import time
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -10,9 +13,11 @@ import pytest
 from starlette.websockets import WebSocketDisconnect
 
 from ace_api.config import Settings
-from ace_api.live import ALERT_TOPICS, OVERFLOW, AlertHub, kafka_consumer, parse_alert
+from ace_api.live import (ALERT_FIELDS, ALERT_TOPICS, ALERT_TYPES, COUNTRY, OVERFLOW, REQUIRED, AlertHub,
+                          kafka_consumer, parse_alert)
 from ace_api.main import create_app
 
+SCHEMAS = Path(__file__).resolve().parents[2] / "shared" / "schemas"
 BURST = {"country": "HU", "day": "2026-11-02", "created_at": "2026-11-02T12:00:00Z",
          "alert_type": "threat_burst", "subject": "phishing", "score": 0.91, "details": "HST=0.91"}
 DRIFT = {"country": "EU", "day": "2026-11-02", "created_at": "2026-11-02T00:00:00+00:00",
@@ -34,19 +39,21 @@ class Message:
 
 
 class Consumer:
-    """Stands in for a confluent_kafka Consumer that is already assigned."""
+    """Stands in for an AlertConsumer."""
 
-    def __init__(self):
+    def __init__(self, down=False, missing=()):
         self.messages = queue.Queue()
-        self.closed = self.down = False
+        self.closed = False
+        self.down, self.missing, self.follows = down, list(missing), 0
 
-    def list_topics(self, topic, timeout):
+    def follow(self):
+        self.follows += 1
         if self.down:
-            raise RuntimeError("timed out")
-        return SimpleNamespace(topics={topic: None})
+            raise RuntimeError("broker 10.0.0.5:9092 refused the connection")
+        return list(self.missing)
 
     def push(self, payload, **message):
-        raw = payload if isinstance(payload, bytes) else json.dumps(payload).encode()
+        raw = payload if payload is None or isinstance(payload, bytes) else json.dumps(payload).encode()
         self.messages.put(Message(raw, **message))
 
     def poll(self, timeout):
@@ -60,19 +67,16 @@ class Consumer:
 
 
 class Kafka:
-    """Consumer factory: hands out a new fake consumer per connection, or fails first."""
+    """Consumer factory: a new fake consumer per connection; the first `failures` reach no broker."""
 
-    def __init__(self, failures=0):
-        self.failures = failures
+    def __init__(self, failures=0, missing=()):
+        self.failures, self.missing = failures, missing
         self.consumers = []
         self.faults = []
 
     def __call__(self, settings, on_fault):
-        if self.failures:
-            self.failures -= 1
-            raise RuntimeError("broker 10.0.0.5:9092 refused the connection")
         self.faults.append(on_fault)
-        self.consumers.append(Consumer())
+        self.consumers.append(Consumer(down=len(self.consumers) < self.failures, missing=self.missing))
         return self.consumers[-1]
 
 
@@ -104,6 +108,13 @@ def states(socket, until):
     return seen
 
 
+def eventually(condition, seconds=5):
+    deadline = time.monotonic() + seconds
+    while not condition():
+        assert time.monotonic() < deadline, "timed out"
+        time.sleep(0.01)
+
+
 def test_new_alerts_reach_every_connected_browser():
     client, hub, kafka = serve()
     with client, client.websocket_connect("/live") as first:
@@ -124,31 +135,95 @@ def test_malformed_messages_are_skipped_not_forwarded():
     client, hub, kafka = serve()
     with client, client.websocket_connect("/live") as socket:
         states(socket, "connected")
-        for bad in (b"not json", b"[]", {**BURST, "alert_type": "outage"}, {**BURST, "extra": 1}):
-            kafka.consumers[0].push(bad)
+        bad = (b"not json", b"[]", None, b"[" * 100_000,  # a tombstone; nesting that exhausts the parser
+               {**BURST, "alert_type": "outage"}, {**BURST, "extra": 1})
+        for payload in bad:
+            kafka.consumers[0].push(payload)
         kafka.consumers[0].push(BURST)
         assert socket.receive_json() == {"type": "alert", "alert": BURST}
-    assert hub.skipped == 4
+    assert hub.skipped == len(bad) and len(kafka.consumers) == 1
 
 
-@pytest.mark.parametrize("alert", [BURST, DRIFT, {**BURST, "country": "EU", "score": 0}])
-def test_parse_alert_accepts_the_shared_alert_schema(alert):
+# ---- The alert check and the topic names against shared/schemas ----
+
+ACCEPTED = [
+    BURST, DRIFT, {**BURST, "country": "EU", "score": 0}, {**BURST, "score": -2.5e-3}, {**BURST, "subject": ""},
+    {**BURST, "created_at": "2026-11-02T12:00:00.123456789+01:00"}, {**BURST, "created_at": "2026-11-02t12:00:00z"},
+    {**BURST, "day": "2024-02-29"},
+]
+REJECTED = [{**BURST, **change} for change in (
+    {"country": "hu"}, {"country": "HUN"}, {"country": None}, {"alert_type": "burst"}, {"subject": 7},
+    {"day": "02/11/2026"}, {"day": 20261102}, {"day": "20261102"}, {"day": "2026-02-30"}, {"day": "2026-11-02T00:00:00Z"},
+    {"created_at": "noon"}, {"created_at": "2026-11-02T12:00:00"}, {"created_at": "2026-11-02 12:00:00Z"},
+    {"created_at": "2026-11-02T12:00Z"}, {"created_at": "2026-11-31T12:00:00Z"}, {"created_at": "2026-11-02T24:00:00Z"},
+    {"score": "0.9"}, {"score": True}, {"score": None}, {"details": {"hst": 0.9}}, {"details": None}, {"unknown": 1},
+)] + [{key: value for key, value in BURST.items() if key != field} for field in REQUIRED] + [["not", "an", "object"]]
+
+
+@pytest.mark.parametrize("alert", ACCEPTED)
+def test_parse_alert_accepts_alerts_that_fit_the_schema(alert):
     assert parse_alert(json.dumps(alert)) == {"details": "", **alert}
 
 
-@pytest.mark.parametrize("change", [
-    {"country": "hu"}, {"country": "HUN"}, {"country": None}, {"day": "02/11/2026"}, {"day": 20261102},
-    {"created_at": "noon"}, {"alert_type": "burst"}, {"subject": ""}, {"subject": 7},
-    {"score": "0.9"}, {"score": True}, {"score": float("nan")}, {"score": float("inf")},
-    {"details": {"hst": 0.9}}, {"unknown": 1},
-])
-def test_parse_alert_rejects_what_the_schema_rejects(change):
+@pytest.mark.parametrize("alert", REJECTED)
+def test_parse_alert_rejects_alerts_that_do_not_fit_the_schema(alert):
     with pytest.raises((ValueError, TypeError)):
-        parse_alert(json.dumps({**BURST, **change}))
-    for field in ("country", "day", "created_at", "alert_type", "subject", "score"):
-        with pytest.raises((ValueError, TypeError)):
-            parse_alert(json.dumps({key: value for key, value in BURST.items() if key != field}))
+        parse_alert(json.dumps(alert))
 
+
+@pytest.mark.parametrize("score", ["NaN", "Infinity", "-Infinity", "1e400"])
+def test_parse_alert_rejects_numbers_json_does_not_have(score):
+    # Python's json module reads these, and jsonschema would call them numbers.
+    with pytest.raises(ValueError):
+        parse_alert(json.dumps(BURST).replace("0.91", score))
+
+
+def shared_schema(name):
+    return json.loads((SCHEMAS / f"{name}.schema.json").read_text(encoding="utf-8"))
+
+
+def test_parse_alert_agrees_with_the_shared_schema_validator():
+    """The validator and format checks ace.contracts uses, so S6 and S8 publish exactly what is accepted here."""
+    from jsonschema import Draft202012Validator
+
+    checker = Draft202012Validator.FORMAT_CHECKER
+    assert {"date", "date-time"} <= set(checker.checkers), "install the API's dev extra: jsonschema[format]"
+    validator = Draft202012Validator(shared_schema("alert"), format_checker=checker)
+    for alert in ACCEPTED + REJECTED:
+        try:
+            parse_alert(json.dumps(alert))
+            accepted = True
+        except (ValueError, TypeError):
+            accepted = False
+        assert accepted == validator.is_valid(alert), alert
+
+
+def test_parse_alert_covers_every_rule_of_the_shared_schema():
+    """Fails when alert.schema.json changes, so that parse_alert is changed with it."""
+    schema = shared_schema("alert")
+    assert (schema["type"], schema["additionalProperties"]) == ("object", False)
+    assert tuple(schema["properties"]) == ALERT_FIELDS and set(schema["required"]) == set(REQUIRED)
+    rules = {name: {key: value for key, value in rule.items() if key != "description"}
+             for name, rule in schema["properties"].items()}
+    assert set(rules["alert_type"].pop("enum")) == ALERT_TYPES
+    assert rules == {
+        "country": {"type": "string", "pattern": f"^{COUNTRY.pattern}$"},
+        "day": {"type": "string", "format": "date"},
+        "created_at": {"type": "string", "format": "date-time"},
+        "alert_type": {"type": "string"},
+        "subject": {"type": "string"},
+        "score": {"type": "number"},
+        "details": {"type": "string"},
+    }
+
+
+def test_alert_topics_are_the_shared_alert_topics():
+    with open(SCHEMAS / "topics.csv", newline="", encoding="utf-8") as f:
+        shared = [row["topic"] for row in csv.DictReader(f) if row["schema"] == "alert"]
+    assert sorted(ALERT_TOPICS) == sorted(shared)
+
+
+# ---- Kafka connection, outages and missing topics ----
 
 def test_feed_reports_an_unreachable_kafka_and_recovers_without_leaking_details():
     client, hub, kafka = serve(Kafka(failures=2))
@@ -158,8 +233,27 @@ def test_feed_reports_an_unreachable_kafka_and_recovers_without_leaking_details(
         assert (first["state"], unavailable["state"]) == ("connecting", "unavailable")
         assert "10.0.0.5" not in json.dumps(unavailable)
         assert states(socket, "connected") == ["connected"]
-        kafka.consumers[0].push(BURST)
+        assert [consumer.closed for consumer in kafka.consumers] == [True, True, False]
+        kafka.consumers[-1].push(BURST)
         assert socket.receive_json()["alert"] == BURST
+
+
+def test_a_missing_topic_does_not_stop_the_feed_and_is_looked_for_again():
+    client, hub, kafka = serve(Kafka(missing=["alerts.threats"]))
+    with client, client.websocket_connect("/live") as socket:
+        assert states(socket, "connected") == ["connecting", "connected"]
+        consumer = kafka.consumers[0]
+        consumer.push(DRIFT, topic="alerts.drift")  # the topic that exists is followed
+        assert socket.receive_json()["alert"]["subject"] == DRIFT["subject"]
+        eventually(lambda: consumer.follows >= 3)  # looked for again every API_LIVE_RETRY_SECONDS
+        consumer.missing = []
+        eventually(lambda: hub._missing == [])
+        follows = consumer.follows
+        time.sleep(0.2)
+        assert consumer.follows == follows  # then only every follow_seconds, for new partitions
+        consumer.push(BURST)
+        assert socket.receive_json() == {"type": "alert", "alert": BURST}  # no change of state in between
+        assert kafka.consumers == [consumer]
 
 
 def test_an_outage_is_reported_but_the_consumer_keeps_its_position():
@@ -179,6 +273,19 @@ def test_an_outage_is_reported_but_the_consumer_keeps_its_position():
         assert kafka.consumers == [consumer] and not consumer.closed  # never replaced, so nothing skipped
 
 
+def test_a_failed_look_for_new_partitions_is_reported_as_an_outage():
+    client, hub, kafka = serve()
+    hub.follow_seconds = 0.01
+    with client, client.websocket_connect("/live") as socket:
+        states(socket, "connected")
+        consumer = kafka.consumers[0]
+        consumer.down = True
+        assert socket.receive_json()["state"] == "unavailable"
+        consumer.down = False
+        assert states(socket, "connected") == ["connected"]
+        assert kafka.consumers == [consumer] and not consumer.closed
+
+
 @pytest.mark.parametrize("failure", ["fatal client error", "consumer error"])
 def test_an_unrecoverable_consumer_is_closed_and_replaced(failure):
     client, hub, kafka = serve()
@@ -193,6 +300,8 @@ def test_an_unrecoverable_consumer_is_closed_and_replaced(failure):
         kafka.consumers[1].push(BURST)
         assert socket.receive_json()["alert"] == BURST
 
+
+# ---- Browsers ----
 
 def test_a_switched_off_feed_says_so_and_never_touches_kafka():
     client, hub, kafka = serve(live_alerts=False)
@@ -217,25 +326,27 @@ def test_only_configured_origins_may_open_the_feed():
     with client:
         with client.websocket_connect("/live", headers={"Origin": "http://localhost:5173"}) as socket:
             assert states(socket, "connected")[-1] == "connected"
-        with pytest.raises(WebSocketDisconnect) as refused:
-            with client.websocket_connect("/live", headers={"Origin": "https://evil.example"}):
-                pass
-        assert refused.value.code == 1008
+        # Closed after the handshake with 1008, so the dashboard can tell it apart from a lost connection.
+        with client.websocket_connect("/live", headers={"Origin": "https://ace.example"}) as socket:
+            with pytest.raises(WebSocketDisconnect) as refused:
+                socket.receive_json()
+        assert (refused.value.code, refused.value.reason) == (1008, "Origin not allowed")
     assert len(kafka.consumers) == 1
 
 
 def test_a_slow_browser_is_told_it_missed_alerts_and_memory_stays_bounded():
     hub = AlertHub(Settings(), Kafka())
     hub.state = "connected"
-    slow = asyncio.Queue(maxsize=3)
+    slow = asyncio.Queue(maxsize=4)
     hub._clients.add(slow)
-    for number in range(5):
+    for number in range(6):
         hub._publish({"type": "alert", "alert": {**BURST, "score": number}})
-        assert slow.qsize() <= 3
+        assert slow.qsize() <= 4
     received = [slow.get_nowait() for _ in range(slow.qsize())]
-    # 0-2 filled the queue; 3 emptied it and left a notice; 4 followed normally.
-    assert received[0] == {"type": "status", "state": "connected", "message": OVERFLOW}
-    assert [message["alert"]["score"] for message in received[1:]] == [3, 4]
+    # 0-3 filled the queue; 4 emptied it and left a notice and the current state; 5 followed normally.
+    # The notice is its own message type, so the next heartbeat does not replace it in the dashboard.
+    assert received[:2] == [{"type": "skipped", "message": OVERFLOW}, hub.status()]
+    assert [message["alert"]["score"] for message in received[2:]] == [4, 5]
 
 
 def test_connections_are_capped():
@@ -260,24 +371,32 @@ def test_a_quiet_feed_sends_heartbeats():
 
 
 def test_kafka_settings_come_from_the_environment(monkeypatch):
-    assert (Settings().kafka_bootstrap_servers, Settings().live_alerts) == ("localhost:9092", True)
+    defaults = Settings.from_env()
+    assert (defaults.kafka_bootstrap_servers, defaults.live_alerts, defaults.live_retry_seconds) == ("localhost:9092", True, 5)
     monkeypatch.setenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:29092")
     monkeypatch.setenv("API_LIVE_ALERTS", "False")
+    monkeypatch.setenv("API_LIVE_RETRY_SECONDS", "2.5")
     settings = Settings.from_env()
-    assert (settings.kafka_bootstrap_servers, settings.live_alerts) == ("kafka:29092", False)
-    for invalid in ({"kafka_bootstrap_servers": " "}, {"live_retry_seconds": 0}):
+    assert (settings.kafka_bootstrap_servers, settings.live_alerts, settings.live_retry_seconds) == ("kafka:29092", False, 2.5)
+    for retry in ("0", "301", "nan", "soon"):
+        monkeypatch.setenv("API_LIVE_RETRY_SECONDS", retry)
         with pytest.raises(ValueError):
-            Settings(**invalid)
+            Settings.from_env()
+    with pytest.raises(ValueError):
+        Settings(kafka_bootstrap_servers=" ")
 
+
+# ---- The real consumer factory, against a fake confluent_kafka module ----
 
 class FakeKafkaClient:
-    """Just enough of the confluent_kafka module for kafka_consumer()."""
+    """Just enough of the confluent_kafka module for kafka_consumer() and AlertConsumer."""
 
     OFFSET_END = -1
     KafkaError = SimpleNamespace(_ALL_BROKERS_DOWN=-187)
 
     def __init__(self, topics):
         self.topics = topics
+        self.down = False
         self.created = []
         client = self
 
@@ -287,14 +406,22 @@ class FakeKafkaClient:
 
         class Consumer:
             def __init__(self, config):
-                self.config, self.assigned, self.closed = config, None, False
+                self.config, self.assigned, self.lookups, self.closed = config, [], [], False
                 client.created.append(self)
 
-            def list_topics(self, topic, timeout):
-                return SimpleNamespace(topics={topic: client.topics[topic]} if topic in client.topics else {})
+            def list_topics(self, timeout):
+                if client.down:
+                    raise RuntimeError("KafkaError{code=_TRANSPORT}")
+                return SimpleNamespace(topics=dict(client.topics))
 
-            def assign(self, partitions):
-                self.assigned = [(p.topic, p.partition, p.offset) for p in partitions]
+            def offsets_for_times(self, partitions, timeout):
+                self.lookups.append([(p.topic, p.partition, p.offset) for p in partitions])
+                return [TopicPartition(p.topic, p.partition, 40 + p.partition) for p in partitions]
+
+            def incremental_assign(self, partitions):
+                pairs = {(p.topic, p.partition) for p in partitions}
+                assert not pairs & {(topic, partition) for topic, partition, _ in self.assigned}, "assigned twice"
+                self.assigned += [(p.topic, p.partition, p.offset) for p in partitions]
 
             def close(self):
                 self.closed = True
@@ -306,17 +433,23 @@ def topic(partitions=(0, 1, 2), error=None):
     return SimpleNamespace(error=error, partitions=dict.fromkeys(partitions))
 
 
-def test_the_kafka_consumer_follows_every_alert_partition_from_its_end(monkeypatch):
-    kafka = FakeKafkaClient({name: topic() for name in ALERT_TOPICS})
-    monkeypatch.setitem(sys.modules, "confluent_kafka", kafka)
+@pytest.fixture
+def fake_client(monkeypatch):
+    def install(topics):
+        client = FakeKafkaClient(topics)
+        monkeypatch.setitem(sys.modules, "confluent_kafka", client)
+        return client
+    return install
+
+
+def test_the_kafka_consumer_commits_nothing_and_passes_on_only_outages_and_fatal_errors(fake_client):
+    kafka = fake_client({})
     faults = []
-    consumer = kafka_consumer(Settings(kafka_bootstrap_servers="kafka:29092"), faults.append)
-    assert consumer.config["bootstrap.servers"] == "kafka:29092"
-    assert consumer.config["enable.auto.commit"] is False  # the sink's offsets are never touched
-    assert consumer.assigned == [(name, partition, kafka.OFFSET_END)
-                                 for name in ALERT_TOPICS for partition in (0, 1, 2)]
-    # Only the loss of every broker (or a fatal error) is passed on to the hub.
-    report = consumer.config["error_cb"]
+    kafka_consumer(Settings(kafka_bootstrap_servers="kafka:29092"), faults.append)
+    config = kafka.created[0].config
+    assert config["bootstrap.servers"] == "kafka:29092"
+    assert config["enable.auto.commit"] is False  # the sink's offsets are never touched
+    report = config["error_cb"]
     report(SimpleNamespace(fatal=lambda: False, code=lambda: -195))
     assert faults == []
     report(SimpleNamespace(fatal=lambda: False, code=lambda: kafka.KafkaError._ALL_BROKERS_DOWN))
@@ -324,14 +457,45 @@ def test_the_kafka_consumer_follows_every_alert_partition_from_its_end(monkeypat
     assert faults == [False, True]  # is the error fatal?
 
 
-@pytest.mark.parametrize("topics", [
-    {"alerts.drift": topic()},                                             # alerts.threats does not exist
-    {"alerts.drift": topic(), "alerts.threats": topic(error="unknown")},   # broker reports an error
-    {"alerts.drift": topic(), "alerts.threats": topic(partitions=())},     # no partitions yet
+def test_the_consumer_follows_every_alert_partition_from_its_end(fake_client):
+    kafka = fake_client({name: topic() for name in ALERT_TOPICS} | {"alerts.other": topic()})
+    consumer = kafka_consumer(Settings(), lambda fatal: None)
+    assert consumer.follow() == []
+    assert kafka.created[0].assigned == [(name, partition, kafka.OFFSET_END)
+                                         for name in ALERT_TOPICS for partition in (0, 1, 2)]
+    assert kafka.created[0].lookups == []
+
+
+@pytest.mark.parametrize("threats", [
+    None,                       # alerts.threats does not exist
+    topic(error="unknown"),     # the broker reports an error for it
+    topic(partitions=()),       # it has no partitions yet
 ])
-def test_a_missing_alert_topic_fails_the_connection_and_closes_the_consumer(monkeypatch, topics):
-    kafka = FakeKafkaClient(topics)
-    monkeypatch.setitem(sys.modules, "confluent_kafka", kafka)
-    with pytest.raises(RuntimeError, match="alerts.threats is not available"):
-        kafka_consumer(Settings(), lambda fatal: None)
-    assert kafka.created[0].closed and kafka.created[0].assigned is None
+def test_a_missing_alert_topic_is_reported_and_the_other_is_followed(fake_client, threats):
+    kafka = fake_client({"alerts.drift": topic()} | ({"alerts.threats": threats} if threats else {}))
+    consumer = kafka_consumer(Settings(), lambda fatal: None)
+    assert consumer.follow() == ["alerts.threats"]
+    assert kafka.created[0].assigned == [("alerts.drift", partition, kafka.OFFSET_END) for partition in (0, 1, 2)]
+
+
+def test_a_topic_or_partition_created_later_starts_at_the_first_alert_after_the_feed_connected(fake_client):
+    kafka = fake_client({"alerts.drift": topic((0, 1))})
+    consumer = kafka_consumer(Settings(), lambda fatal: None)
+    assert consumer.follow() == ["alerts.threats"]
+    since = consumer.since
+    assert abs(since - time.time() * 1000) < 60_000
+    kafka.topics = {"alerts.drift": topic((0, 1, 2)), "alerts.threats": topic((0,))}
+    assert consumer.follow() == []
+    real = kafka.created[0]
+    assert real.lookups == [[("alerts.drift", 2, since), ("alerts.threats", 0, since)]]
+    assert real.assigned[2:] == [("alerts.drift", 2, 42), ("alerts.threats", 0, 40)]  # the offsets Kafka named
+    assert consumer.follow() == [] and len(real.assigned) == 4 and len(real.lookups) == 1  # nothing new
+
+
+def test_follow_raises_when_no_broker_answers(fake_client):
+    kafka = fake_client({name: topic() for name in ALERT_TOPICS})
+    kafka.down = True
+    consumer = kafka_consumer(Settings(), lambda fatal: None)
+    with pytest.raises(RuntimeError):
+        consumer.follow()
+    assert kafka.created[0].assigned == [] and consumer.since is None

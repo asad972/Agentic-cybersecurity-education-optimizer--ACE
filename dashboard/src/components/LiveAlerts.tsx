@@ -1,11 +1,10 @@
 import { Radio, Zap } from 'lucide-react';
 import { ALERT_LABELS, alertKey } from '../services/api';
-import type { Country } from '../services/api';
+import type { Country, FeedState } from '../services/api';
 import { useLiveAlerts } from '../hooks/useLiveAlerts';
-import type { FeedState } from '../hooks/useLiveAlerts';
 import { countLabel, formatDate, formatTime } from '../services/dates';
 
-const STATE_LABELS: Record<FeedState, string> = { connecting: 'Connecting', connected: 'Live', unavailable: 'Feed unavailable', disabled: 'Switched off', offline: 'Reconnecting' };
+const STATE_LABELS: Record<FeedState, string> = { connecting: 'Connecting', connected: 'Live', unavailable: 'Feed unavailable', disabled: 'Switched off', offline: 'Reconnecting', refused: 'Not allowed' };
 
 /** Drift and threat-burst alerts as they are raised, from WS /live. Earlier alerts live in the country panel. */
 export function LiveAlerts({ countries, onCountry }: { countries: Country[]; onCountry: (code: string) => void }) {
@@ -30,6 +29,7 @@ export function LiveAlerts({ countries, onCountry }: { countries: Country[]; onC
         ? 'No alerts have been raised since this page was opened. Earlier alerts are listed per day in the country panel.'
         : feed.message}</p>}
       {feed.alerts.length > 0 && feed.state !== 'connected' && <p className="tiny-note">{feed.message}</p>}
+      {feed.skipped && <p className="tiny-note feed-skipped" role="status">Some alerts were skipped because this page fell behind. The country panel lists every alert of a day.</p>}
     </div>
   </section>;
 }

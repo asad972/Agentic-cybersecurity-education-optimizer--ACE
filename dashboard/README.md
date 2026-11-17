@@ -58,8 +58,12 @@ Below the map, the **Live alerts** panel lists drift and threat-burst alerts
 as they are raised (`WS /live`, #39), latest arrival first, up to 50. It shows
 what happened since the page was opened; earlier alerts of a day are in the
 country panel. The badge shows the feed's state: Live, Feed unavailable (the
-API cannot reach Kafka) or Reconnecting (the browser lost the API and retries
-after 1 to 30 seconds). Clicking a country name selects it on the map.
+API cannot reach Kafka), Reconnecting (the browser lost the API and retries
+after 1 to 30 seconds), Switched off (`API_LIVE_ALERTS=false`) or Not allowed
+(the page's address is missing from the API's `API_CORS_ORIGINS`; the panel
+does not retry). If the page falls behind and the API skips alerts for it, a
+note says so until the page is reloaded. Clicking a country name selects it on
+the map.
 Reusable pieces: `src/hooks/useLiveAlerts.ts` and `components/LiveAlerts.tsx`.
 
 The map is drawn with ECharts from `public/countries.geojson` (Natural Earth,

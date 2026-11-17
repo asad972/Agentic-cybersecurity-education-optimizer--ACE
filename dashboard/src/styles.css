@@ -25,5 +25,5 @@
 @media(prefers-reduced-motion:reduce){.spin{animation:none}}
 
 /* M4 live alert feed (#39). */
-.live-panel{margin-top:16px}.live-body{padding:6px 22px 18px}.live-body .alert-list{max-height:340px;overflow:auto}.live-body .text-button{font-weight:inherit}.feed-state{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:20px;border:1px solid #e0e7e5;background:#f5f7f6;color:#65796f;font-size:10px;font-weight:550;white-space:nowrap}.feed-connected{border-color:#cfe3d8;background:#eef6f1;color:#2b6f5c}.feed-unavailable,.feed-offline{border-color:#ece5d2;background:#f8f5ec;color:#7b673c}
+.live-panel{margin-top:16px}.live-body{padding:6px 22px 18px}.live-body .alert-list{max-height:340px;overflow:auto}.live-body .text-button{font-weight:inherit}.feed-state{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:20px;border:1px solid #e0e7e5;background:#f5f7f6;color:#65796f;font-size:10px;font-weight:550;white-space:nowrap}.feed-connected{border-color:#cfe3d8;background:#eef6f1;color:#2b6f5c}.feed-unavailable,.feed-offline{border-color:#ece5d2;background:#f8f5ec;color:#7b673c}.feed-refused{border-color:#e8c9c4;background:#fff5f3;color:#8f382d}.feed-skipped{color:#7b673c}
 @media(max-width:760px){.live-body{padding:6px 16px 16px}}
