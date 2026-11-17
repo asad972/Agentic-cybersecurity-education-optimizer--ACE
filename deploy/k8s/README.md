@@ -19,12 +19,16 @@ Everything goes into the namespace `ace`. Prometheus and Grafana are set up sepa
 | Way in from outside | Ingresses `web` (`/`) and `api` (`/api`) | yes | NodePorts 30080 and 30800 |
 | Flink JobManager | Deployment + Service `flink-jobmanager` (web UI on 8081) | 1 | 1 |
 | Flink TaskManagers | Deployment `flink-taskmanager`, headless Service for metrics | 2 (6 slots each) | 1 (10 slots) |
+| Threat agent | Deployment `threat-agent`, one 1 GiB volume for its state | 1 | 0 until the API keys exist (see [Agents](#agents)) |
+| M5 platform agent | Job `m5-platform` (publishes `agents/m5/platform_evidence.json` to `analysis.platforms`) | runs once | runs once |
+| Demand forecast | CronJob `ace-demand-forecast` from [`batch/forecast/k8s/`](../../batch/forecast/k8s/cronjob.yaml) | Mondays 02:00 UTC | Mondays 02:00 UTC |
+| Skills gap | CronJob `ace-skills-gap` and ConfigMap `ace-gap-config` from [`batch/gap/k8s/`](../../batch/gap/k8s/cronjob.yaml) | 1st of the month 03:00 UTC | 1st of the month 03:00 UTC |
 | Settings | ConfigMaps `ace-config`, `kafka-config`, `cassandra-config`, `sink-config`, `api-config`, `flink-config`, `kafka-topics`, `cassandra-schema` | | |
 | API keys | Secret `ace-api-keys`, created by hand on the cluster (see [Settings](#settings)) | | |
 
 The ten stream stages are not Deployments of their own. Each stage is a PyFlink job that is submitted to the one Flink session cluster and runs in the TaskManagers' slots (see [Stream stages on Flink](#stream-stages-on-flink)).
 
-Still to come from their owners: the agents (one Deployment each), the LLM server (Deployment + Service `llm`) and the forecast and gap jobs (CronJobs).
+Still to come: the job-ad and profile agents, the M5 education and workforce agents (they read input files that are not in the repository yet), the LLM server (Deployment + Service `llm`) and the ACE Flink image that runs the stages.
 
 ## Before you start
 
@@ -33,24 +37,26 @@ Still to come from their owners: the agents (one Deployment each), the LLM serve
 
 ## 1. Build the images
 
-The sink, API and web app images are built on your machine and never pulled from a registry. From the repository root in PowerShell:
+The ACE images are built on your machine and never pulled from a registry. From the repository root in PowerShell:
 
 ```powershell
 docker build -t ace-sink -f storage/sink/Dockerfile .
 docker build -t ace-api -f api/Dockerfile api
 docker build -t ace-dashboard -f dashboard/Dockerfile dashboard
+docker build -t ace-threat -f agents/threat/Dockerfile .
+docker build -t ace-m5-platform -f agents/m5/platform_agent/Dockerfile .
+docker build -t ace-demand-forecast -f batch/forecast/Dockerfile .
+docker build -t ace-skills-gap -f batch/gap/Dockerfile .
 ```
 
 Docker Desktop Kubernetes sees these images straight away. On kind or minikube, copy them into the cluster first:
 
 ```powershell
-kind load docker-image ace-sink ace-api ace-dashboard
+kind load docker-image ace-sink ace-api ace-dashboard ace-threat ace-m5-platform ace-demand-forecast ace-skills-gap
 ```
 
 ```powershell
-minikube image load ace-sink
-minikube image load ace-api
-minikube image load ace-dashboard
+foreach ($image in 'ace-sink','ace-api','ace-dashboard','ace-threat','ace-m5-platform','ace-demand-forecast','ace-skills-gap') { minikube image load $image }
 ```
 
 ## 2. Start everything
@@ -59,18 +65,18 @@ minikube image load ace-dashboard
 kubectl kustomize --load-restrictor LoadRestrictionsNone deploy/k8s/overlays/local | kubectl apply -f -
 ```
 
-Why not just `kubectl apply -k`: the topic list, the topic script and the Cassandra schema stay in their own folders, so Kubernetes uses exactly the same files as `docker-compose.yml`. Kustomize only reads files outside the `deploy/k8s` folder when you allow it with `--load-restrictor LoadRestrictionsNone`, and `kubectl apply -k` has no such option. The command above builds the manifests first and then applies them.
+Why not just `kubectl apply -k`: the topic list, the topic script, the Cassandra schema and the batch CronJobs stay in their own folders, so Kubernetes uses exactly the same files as `docker-compose.yml`. Kustomize only reads files outside the `deploy/k8s` folder when you allow it with `--load-restrictor LoadRestrictionsNone`, and `kubectl apply -k` has no such option. The command above builds the manifests first and then applies them.
 
 ## 3. Check that it runs
 
 ```powershell
 kubectl -n ace get pods
-kubectl -n ace wait --for=condition=complete job/kafka-init job/cassandra-init --timeout=10m
+kubectl -n ace wait --for=condition=complete job/kafka-init job/cassandra-init job/m5-platform --timeout=10m
 kubectl -n ace logs job/kafka-init
 kubectl -n ace logs job/cassandra-init
 ```
 
-After a few minutes every pod is `Running` and the two setup jobs are `Completed`. Cassandra takes 1–2 minutes per node. The sink restarts a few times until the tables exist; that is expected, because it stops on any Cassandra error and Kubernetes starts it again.
+After a few minutes every pod is `Running` and the three Jobs are `Completed`. Cassandra takes 1–2 minutes per node. The sink restarts a few times until the tables exist; that is expected, because it stops on any Cassandra error and Kubernetes starts it again.
 
 ## 4. Open the services
 
@@ -112,13 +118,39 @@ The values are in `base/kustomization.yaml`; the laptop changes are in `overlays
 kubectl -n ace create secret generic ace-api-keys --from-literal=OTX_API_KEY=YOUR_KEY --from-literal=ABUSEIPDB_API_KEY=YOUR_KEY --from-literal=ADZUNA_APP_ID=YOUR_ID --from-literal=ADZUNA_APP_KEY=YOUR_KEY --from-literal=LLM_API_KEY=YOUR_KEY --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-No pod reads the keys yet: they are for the agents and the hosted LLM fallback, which are still to come. Their Deployments load the keys with `envFrom` and `secretRef: {name: ace-api-keys, optional: true}`, so they also start when a key is missing.
+The threat agent reads `OTX_API_KEY` and `ABUSEIPDB_API_KEY`; the other keys are for the agents and the hosted LLM fallback that are still to come. Pods load the keys with `envFrom` and `secretRef: {name: ace-api-keys, optional: true}`, so Kubernetes starts them even without the Secret; whether an agent can work without a key is up to the agent.
 
 **Changing `topics.csv`, `schema.cql`, `kafka-config` or `cassandra-config`:** the setup jobs use these, and a finished Job cannot be changed (apply reports `field is immutable`). Delete the two setup jobs and apply again. Both are safe to run twice: they only create what is missing.
 
 ```powershell
 kubectl -n ace delete job kafka-init cassandra-init
 ```
+
+## Agents
+
+**Threat agent.** It polls OTX and AbuseIPDB every six hours and answers collection tasks from `tasks.collect`. Without both keys it stops at start-up (`OTX_API_KEY is required`), so the laptop layout runs no copy of it. After creating the Secret `ace-api-keys` (see [Settings](#settings)), switch it on:
+
+```powershell
+kubectl -n ace scale deployment threat-agent --replicas=1
+kubectl -n ace logs deployment/threat-agent
+```
+
+Applying the laptop layout again sets it back to 0; to keep it on, change `threat-agent` to `count: 1` in `overlays/local/kustomization.yaml`. Its state (poll times and messages not yet sent) stays on the volume `threat-agent-state` across restarts.
+
+**M5 platform agent.** The Job `m5-platform` publishes the reviewed platform comparison once and ends with `Processed and published 4 platform evidence rows`. To publish it again, `kubectl -n ace delete job m5-platform` and apply again.
+
+## Batch jobs
+
+The forecast and gap CronJobs live next to their code in `batch/*/k8s/` and are included from there. To run one now instead of waiting for its schedule:
+
+```powershell
+kubectl -n ace create job forecast-now --from=cronjob/ace-demand-forecast
+kubectl -n ace create job gap-now --from=cronjob/ace-skills-gap
+kubectl -n ace logs job/gap-now
+kubectl -n ace delete job forecast-now gap-now
+```
+
+With no data in Cassandra both finish without writing rows (`forecast_no_output`, `gap_no_input`).
 
 ## Stream stages on Flink
 
