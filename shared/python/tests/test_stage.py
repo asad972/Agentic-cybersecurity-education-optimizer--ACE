@@ -129,8 +129,71 @@ def test_record_stage_keeps_memory_per_key_and_rejects_invalid_input():
     assert len(result.invalid) == 1
 
 
+class OpenedFirstSeen(FirstSeen):
+    """Forwards nothing unless open() was called, and counts what it forwards in a Flink metric."""
+
+    name = "test-opened-first-seen"
+    forwarded = None
+
+    def open(self, runtime_context):
+        self.forwarded = runtime_context.get_metrics_group().counter("test_forwarded_total")
+
+    def process(self, topic, record, memory):
+        if self.forwarded is None:
+            return
+        for out in super().process(topic, record, memory):
+            self.forwarded.inc()
+            yield out
+
+
+class OpenedThreats(WindowedStage):
+    """Publishes a valid hourly count per country, but only if open() was called."""
+
+    name = "test-opened-threats"
+    input = "threats.events"
+    output = "agg.threats_hourly"
+    time_field = "observed_at"
+    window = timedelta(hours=1)
+    grace = timedelta(minutes=15)
+    windows = None
+
+    def open(self, runtime_context):
+        self.windows = runtime_context.get_metrics_group().counter("test_windows_total")
+
+    def new(self):
+        return 0
+
+    def add(self, count, record):
+        return count + 1
+
+    def result(self, key, window, count, memory):
+        if self.windows is None:
+            return []
+        self.windows.inc()
+        return [{"country": key, "day": window.day, "hour": window.start.hour,
+                 "counts": {"malware": count}}]
+
+
+def test_open_does_nothing_by_default_and_run_local_never_calls_it():
+    assert RecordStage().open(object()) is None
+    assert WindowedStage().open(object()) is None
+    assert run_local(OpenedFirstSeen(), JOBS).published("jobs.clean") == []
+
+
+# Keep this file at two Flink tests: a third local Flink job in the same pytest
+# process hangs. Each test below therefore checks two things.
+
 @pytest.mark.flink
-def test_record_stage_on_flink_matches_local():
-    flink = run_flink_local(FirstSeen(), JOBS)
+def test_record_stage_on_flink_matches_local_and_flink_calls_open():
+    # OpenedFirstSeen forwards nothing unless Flink called open(), so matching
+    # the plain stage run locally proves both.
+    flink = run_flink_local(OpenedFirstSeen(), JOBS)
     local = run_local(FirstSeen(), JOBS)
     assert sorted((o.topic, o.key) for o in flink) == sorted((o.topic, o.key) for o in local.outputs)
+
+
+@pytest.mark.flink
+def test_flink_calls_open_on_a_windowed_stage():
+    records = [threat("DE", "2026-10-01T10:05:00Z"), threat("FR", "2026-10-01T10:10:00Z")]
+    flink = run_flink_local(OpenedThreats(), records)
+    assert sorted(o.key for o in flink if o.topic == "agg.threats_hourly") == ["DE", "FR"]
