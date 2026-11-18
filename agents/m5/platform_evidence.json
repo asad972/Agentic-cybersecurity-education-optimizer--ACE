@@ -1,0 +1,26 @@
+[
+  {
+    "platform": "cyberseek",
+    "feature": "workforce_labor_market_metrics",
+    "supported": true,
+    "notes": "CyberSeek describes actionable cybersecurity workforce metrics and job-opening insights for the United States. Source: https://www.cyberseek.org/"
+  },
+  {
+    "platform": "cyberseek",
+    "feature": "career_pathways",
+    "supported": true,
+    "notes": "CyberSeek describes career pathways based on cybersecurity jobs and transitions. Source: https://www.cyberseek.org/"
+  },
+  {
+    "platform": "enisa_ecsf",
+    "feature": "cybersecurity_role_profiles",
+    "supported": true,
+    "notes": "ENISA ECSF defines 12 cybersecurity role profiles and describes their tasks, skills, knowledge and competences. Source: https://www.enisa.europa.eu/publications/european-cybersecurity-skills-framework-role-profiles"
+  },
+  {
+    "platform": "isc2_workforce_study",
+    "feature": "workforce_size_and_shortages",
+    "supported": true,
+    "notes": "The annual ISC2 Workforce Study assesses workforce size, shortages, skills gaps and workforce trends using survey evidence. Source: https://www.isc2.org/Insights/2024/10/ISC2-2024-Cybersecurity-Workforce-Study"
+  }
+]

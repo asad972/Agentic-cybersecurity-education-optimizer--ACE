@@ -3,19 +3,24 @@ from collections.abc import Sequence
 from contextlib import asynccontextmanager
 import logging
 
-from fastapi import APIRouter, FastAPI, HTTPException, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
 
 from .config import Settings
 from .database import CassandraConnection
+from .live import AlertHub
+from .routers import discover_routers
 
 log = logging.getLogger(__name__)
 
 
 def create_app(settings: Settings | None = None, database=None,
-               extra_routers: Sequence[APIRouter] = ()) -> FastAPI:
+               extra_routers: Sequence[APIRouter] = (), alerts=None) -> FastAPI:
     settings = settings or Settings.from_env()
     database = database if database is not None else CassandraConnection(settings)
+    # Connects to Kafka only once a browser opens WS /live.
+    alerts = alerts if alerts is not None else AlertHub(settings)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -27,12 +32,14 @@ def create_app(settings: Settings | None = None, database=None,
         try:
             yield
         finally:
+            await alerts.stop()
             await asyncio.to_thread(database.close)
 
     app = FastAPI(title="ACE API", version="0.1.0", lifespan=lifespan,
                   description="Service skeleton. Dashboard owners register their own routers.")
     app.state.database = database
     app.state.settings = settings
+    app.state.alerts = alerts
     app.add_middleware(CORSMiddleware, allow_origins=list(settings.cors_origins),
                        allow_methods=["GET"], allow_headers=["Accept", "Content-Type"])
 
@@ -47,8 +54,26 @@ def create_app(settings: Settings | None = None, database=None,
             raise HTTPException(status_code=503, detail="Cassandra is unavailable")
         return {"status": "ready", "database": "connected"}
 
-    for router in extra_routers:
-        app.include_router(router)
+    @app.websocket("/live")
+    async def live(websocket: WebSocket):
+        """New drift and threat-burst alerts as they arrive (see api/README.md)."""
+        await alerts.serve(websocket)
+
+    reserved_paths = {route.path for route in app.routes}
+    registered = set()
+    for router in [*discover_routers(), *extra_routers]:
+        if id(router) in registered:
+            continue
+        registered.add(id(router))
+        try:
+            # get_openapi expands nested routers across supported FastAPI versions.
+            paths = get_openapi(title="Router validation", version="0", routes=router.routes)["paths"]
+            clashes = reserved_paths.intersection(paths)
+            if clashes:
+                raise ValueError(f"Router clashes with built-in paths: {sorted(clashes)}")
+            app.include_router(router)
+        except Exception:
+            log.exception("Skipping invalid router %r", router)
     return app
 
 

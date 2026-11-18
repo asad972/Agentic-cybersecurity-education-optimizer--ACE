@@ -1,0 +1,1 @@
+"""CYBERHEAD education programme publisher."""
