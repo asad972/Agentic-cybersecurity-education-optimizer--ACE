@@ -13,14 +13,16 @@ dependencies = [
 
 [project.optional-dependencies]
 # Stream stages run on Apache Flink (PyFlink). Agents and the sink only need the contracts.
-flink = ["apache-flink==2.3.0"]
+stages = ["river==0.23.0"]
+flink = ["apache-flink==2.3.0", "ace[stages]"]
 llm = [
     "pydantic==2.14.1",
     "httpx==0.28.1",
     "anthropic==1.17.0",
     "cassandra-driver==3.30.1",
 ]
-dev = ["pytest==9.1.1"]
+# Existing setup and CI install dev; collecting stage tests requires River.
+dev = ["pytest==9.1.1", "ace[stages]"]
 
 [tool.setuptools.packages.find]
 include = ["ace*"]

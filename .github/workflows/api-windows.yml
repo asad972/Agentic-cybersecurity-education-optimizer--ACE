@@ -6,10 +6,15 @@ on:
     paths:
       - 'api/**'
       - '.github/workflows/api-windows.yml'
+      # api/tests/test_live.py checks WS /live against these shared contracts.
+      - 'shared/schemas/alert.schema.json'
+      - 'shared/schemas/topics.csv'
   pull_request:
     paths:
       - 'api/**'
       - '.github/workflows/api-windows.yml'
+      - 'shared/schemas/alert.schema.json'
+      - 'shared/schemas/topics.csv'
   workflow_dispatch:
 
 permissions:
