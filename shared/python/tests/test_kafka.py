@@ -4,6 +4,7 @@ import hashlib
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -58,6 +59,50 @@ def test_a_damaged_cached_jar_is_downloaded_again(jars, pinned):
     download = fake_download(pinned)
     assert kafka.connector_jar(download).read_bytes() == pinned
     assert len(download.calls) == 1
+
+
+def test_a_failed_download_leaves_no_partial_file(jars, pinned):
+    def broken(url, target):
+        target.write_bytes(b"half")
+        raise OSError("connection reset")
+
+    with pytest.raises(OSError, match="connection reset"):
+        kafka.connector_jar(broken)
+    assert list(jars.iterdir()) == []
+
+
+def test_stages_starting_together_each_download_to_their_own_file(jars, pinned):
+    """Eight callers download at the same moment; all get the checked JAR and nothing is left over."""
+    callers = 8
+    together = threading.Barrier(callers)
+    targets = []
+
+    def slow_download(url, target):
+        targets.append(target)
+        together.wait(timeout=10)            # every caller is mid-download at once
+        with open(target, "wb") as f:
+            for byte in pinned:              # written in small pieces, so writes would interleave
+                f.write(bytes([byte]))
+                f.flush()
+
+    results, errors = [], []
+
+    def start():
+        try:
+            results.append(kafka.connector_jar(slow_download))
+        except Exception as error:           # collected, so the test shows it
+            errors.append(error)
+
+    threads = [threading.Thread(target=start) for _ in range(callers)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=30)
+    assert errors == []
+    assert results == [jars / kafka.CONNECTOR_JAR] * callers
+    assert len(set(targets)) == callers      # no two callers shared a temporary file
+    assert (jars / kafka.CONNECTOR_JAR).read_bytes() == pinned
+    assert [p.name for p in jars.iterdir()] == [kafka.CONNECTOR_JAR]
 
 
 def test_default_folder_is_in_the_home_cache(monkeypatch, tmp_path):

@@ -53,7 +53,7 @@ Subclass `WindowedStage` (counts per Country and window) or `RecordStage` (one r
 
 ## Running a stage on Kafka
 
-`ace.kafka` runs any stage between Kafka topics: it reads the stage's input topics, runs `build_flink`, and writes every result and `errors.invalid` record to its topic. The Flink Kafka connector JAR is downloaded once from Maven Central into `ACE_FLINK_JARS` (default `~/.cache/ace/flink-jars`) and checked against its SHA-1.
+`ace.kafka` runs any stage between Kafka topics: it reads the stage's input topics, runs `build_flink`, and writes every result and `errors.invalid` record to its topic. The Flink Kafka connector JAR is downloaded once from Maven Central into `ACE_FLINK_JARS` (default `~/.cache/ace/flink-jars`) and checked against its SHA-1. Stages that start at the same time each download to their own temporary file and swap in the checked JAR in one step, so they never overwrite each other.
 
 From the repository root (the same commands also work from `streaming/`):
 

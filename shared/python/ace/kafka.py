@@ -28,6 +28,7 @@ import hashlib
 import importlib
 import os
 import sys
+import tempfile
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -72,22 +73,45 @@ def connector_jar(download: Callable[[str, Path], None] = _download) -> Path:
     A file that is already there is used only if its SHA-1 matches; otherwise it
     is downloaded again. A download with the wrong SHA-1 is deleted and raises,
     so a broken or tampered JAR never reaches Flink.
+
+    Several stages may start at once. Each download goes to its own temporary
+    file in the same folder, is checked there, and only then replaces the JAR in
+    one step, so no caller ever sees a half-written or unchecked file. The
+    temporary file is removed whatever happens.
     """
     folder = jars_dir()
     jar = folder / CONNECTOR_JAR
-    if jar.exists() and _sha1(jar) == CONNECTOR_SHA1:
+    if _is_checked(jar):
         return jar
     folder.mkdir(parents=True, exist_ok=True)
-    partial = jar.with_name(jar.name + ".part")
-    download(CONNECTOR_URL, partial)
-    actual = _sha1(partial)
-    if actual != CONNECTOR_SHA1:
-        partial.unlink()
-        raise RuntimeError(
-            f"{CONNECTOR_JAR} from {CONNECTOR_URL} has SHA-1 {actual}, expected {CONNECTOR_SHA1}"
-        )
-    partial.replace(jar)
+    handle, name = tempfile.mkstemp(prefix=f"{CONNECTOR_JAR}.", suffix=".part", dir=folder)
+    os.close(handle)
+    partial = Path(name)
+    try:
+        download(CONNECTOR_URL, partial)
+        actual = _sha1(partial)
+        if actual != CONNECTOR_SHA1:
+            raise RuntimeError(
+                f"{CONNECTOR_JAR} from {CONNECTOR_URL} has SHA-1 {actual}, expected {CONNECTOR_SHA1}"
+            )
+        try:
+            os.replace(partial, jar)
+        except PermissionError:
+            # Windows refuses to replace a file another process has open. That
+            # only happens when another stage has just put a JAR there: use it
+            # if it checks out.
+            if not _is_checked(jar):
+                raise
+    finally:
+        partial.unlink(missing_ok=True)
     return jar
+
+
+def _is_checked(jar: Path) -> bool:
+    try:
+        return _sha1(jar) == CONNECTOR_SHA1
+    except FileNotFoundError:
+        return False
 
 
 def add_connector(env: Any) -> None:
