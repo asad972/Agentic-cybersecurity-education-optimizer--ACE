@@ -75,9 +75,9 @@ class M5SchemaContractTests(unittest.TestCase):
         assert_contract_shape(self, "raw_workforce.schema.json", message)
         contracts.validate("raw.workforce", message)
 
-    def test_isc2_2024_source_records_preserve_published_geography(self) -> None:
+    def test_isc2_source_records_preserve_published_geography_and_year(self) -> None:
         records = read_records(
-            ROOT / "agents" / "m5" / "sources" / "isc2_2024_global.json"
+            ROOT / "agents" / "m5" / "sources" / "isc2_workforce_studies.json"
         )
         messages = [normalize_workforce_record(record) for record in records]
 
@@ -85,13 +85,35 @@ class M5SchemaContractTests(unittest.TestCase):
             assert_contract_shape(self, "raw_workforce.schema.json", message)
             contracts.validate("raw.workforce", message)
 
-        self.assertEqual(len(messages), 6)
+        self.assertEqual(len(messages), 26)
         europe = next(
-            message for message in messages if message["geography"] == "Europe"
+            message
+            for message in messages
+            if message["geography_level"] == "region"
+            and message["geography"] == "Europe"
         )
         self.assertEqual(europe["workforce_size"], 1_300_023)
         self.assertEqual(europe["workforce_gap"], 392_320)
-        self.assertTrue(all("country" not in message for message in messages))
+        germany = next(
+            message
+            for message in messages
+            if message["geography_level"] == "country"
+            and message["geography"] == "DE"
+        )
+        self.assertEqual(germany["year"], 2023)
+        self.assertEqual(germany["workforce_size"], 455_951)
+        self.assertEqual(germany["workforce_gap"], 104_660)
+        self.assertEqual(
+            germany["source"], "ISC2 Cybersecurity Workforce Study 2023"
+        )
+        china = next(
+            message
+            for message in messages
+            if message["geography_level"] == "country"
+            and message["geography"] == "CN"
+        )
+        self.assertNotIn("workforce_size", china)
+        self.assertEqual(china["workforce_gap"], 1_720_941)
 
     def test_platform_output_matches_platform_analysis_contract(self) -> None:
         message = normalize_feature_evidence(

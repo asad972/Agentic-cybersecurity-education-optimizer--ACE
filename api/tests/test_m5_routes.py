@@ -25,6 +25,20 @@ class CassandraSession:
                 )
             ]
         if "workforce_baseline_by_geography" in query:
+            if parameters[:2] == ("country", "CN"):
+                return [
+                    SimpleNamespace(
+                        year=2023,
+                        workforce_size=None,
+                        workforce_gap=1_720_941,
+                        workforce_growth_percent=None,
+                        workforce_gap_growth_percent=None,
+                        source="ISC2 Cybersecurity Workforce Study 2023",
+                        source_reference="Figure 2-B, p. 12",
+                    )
+                ]
+            if parameters[:2] != ("region", "Europe"):
+                return []
             return [
                 SimpleNamespace(
                     year=2024,
@@ -209,3 +223,18 @@ def test_workforce_endpoint_rejects_invalid_geography():
     assert lowercase_country.status_code == 422
     assert eu_as_country.status_code == 422
     assert invalid_global.status_code == 422
+
+
+def test_workforce_endpoint_does_not_fill_missing_country_metrics():
+    with TestClient(create_app(database=Database())) as client:
+        china = client.get("/workforce?geography_level=country&geography=CN")
+        austria = client.get("/workforce?geography_level=country&geography=AT")
+
+    assert china.status_code == 200
+    item = china.json()["items"][0]
+    assert item["year"] == 2023
+    assert item["source"] == "ISC2 Cybersecurity Workforce Study 2023"
+    assert item["workforce_size"] is None
+    assert item["workforce_gap"] == 1_720_941
+    assert austria.status_code == 200
+    assert austria.json()["items"] == []

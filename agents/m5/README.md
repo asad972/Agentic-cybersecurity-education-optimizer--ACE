@@ -120,15 +120,19 @@ are routed by `ace.contracts` to `errors.invalid`.
   category map. These files validate import and normalization only; they are
   not official CYBERHEAD data and must not be used as production evidence.
 - **Workforce:** the default source file is
-  `sources/isc2_2024_global.json`. Its 2024 estimates and year-over-year
-  changes come from Figures 2 and 3 of the ISC2 global study. Records use
-  `geography_level` (`global` or `region`) and the figure's published label;
-  none are distributed to countries. The report's figure totals differ
-  slightly from totals in its narrative, so this dataset consistently uses
-  the values printed in the figures and records their figure references.
-  Regional figures may also differ slightly from their global totals. ISC2
-  defines the workforce gap as required staff minus active cybersecurity
-  professionals, not current job openings.
+  `sources/isc2_workforce_studies.json`. It combines global and regional
+  estimates from the ISC2 2024 report with the country figures in the 2023
+  report. The 2023 country values come from Figures 1-B and 2-B (pages 10 and
+  12); China and India have a published gap but no workforce-size value in
+  those figures, so those fields remain absent. The 2023 report is the latest
+  ISC2 edition with country-level workforce and gap figures. The 2025 edition
+  no longer publishes a workforce-gap estimate or country-level figures.
+  Countries not listed in the 2023 figures have no country estimate and must
+  display “Not enough data”; regional 2024 values are never distributed to
+  countries. Each record keeps its study year, source title, original
+  geography, and figure/page reference. The report's figure totals can differ
+  slightly from totals in its narrative, so the dataset consistently uses
+  figure values and preserves those references.
   Supply a reviewed JSON, JSONL, or CSV file with `--input` to publish a
   different report. The agent does not perform OCR or infer table values.
 - **Platform analysis:** the agent republishes the hand-curated
@@ -193,6 +197,8 @@ python -m unittest discover -s streaming\s10_hiring_companies -t streaming -p "t
 
 ## Remaining source-specific work
 
+ISC2 defines workforce gaps according to the methodology of each study; avoid
+comparing gap values across editions without accounting for those definitions.
 Review the live CYBERHEAD source and LLM-generated role mappings before
 treating them as verified data. Additional workforce source files must preserve
 the report's original geography; do not publish regional ISC2 figures as

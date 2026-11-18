@@ -26,6 +26,18 @@ observations, but regional findings are not country-level counts. ACE
 preserves each report's geography, metric definition and year, and does not
 allocate regional aggregates among individual countries.
 
+The 2023 ISC2 study is the latest edition with country-level workforce and
+workforce-gap figures. Figures 1-B and 2-B list country estimates including
+Germany, France, the United Kingdom, Spain, the Netherlands and Ireland [5].
+The 2025 edition dropped the workforce-gap estimate and did not publish
+country-level workforce estimates; its country percentages describe survey
+respondents, not national workforces. ACE therefore uses the 2023 edition
+for country comparisons and shows “not
+enough data” when a country is absent rather than inferring a value from a
+regional total [6]. The 2023 report's workforce gap estimates the difference
+between demand over the next 12 months and available supply; this methodology
+is not interchangeable with later editions.
+
 The 2024 global report's narrative totals differ slightly from the totals
 printed in Figures 2 and 3. ACE's curated source records use the figure values
 consistently and retain the figure references so the chosen source values are
@@ -41,14 +53,14 @@ summarizes frequent items with bounded memory. ACE applies it to unmapped
 skill mentions, groups sketches by country and event-time day, and combines
 the retained estimates and error bounds over a rolling 30-day period. The
 results are taxonomy candidates, not automatically approved taxonomy entries
-[4].
+[7].
 
 For S10, HyperLogLog estimates the number of distinct values using a compact
 register sketch that can be merged. ACE uses one daily sketch per country and
 merges the sketches for the rolling 30-day estimate. This is appropriate for
 counting distinct hiring organizations without retaining company-level
 membership in the aggregate; the output is an estimate, not an exact census
-[5].
+[8].
 
 These methods make daily aggregation practical for a stream, but their output
 has different semantics from source data: S9 counts approximate mention
@@ -84,11 +96,16 @@ organizations, not a list of employers or an exact company count.
 4. ISC2 and Digital Skills and Jobs Platform. “2024 Cybersecurity Workforce
    Survey - Focus on the E.U.” 2025.
    <https://digital-skills-jobs.europa.eu/system/files/2025-03/ISC2_2024_EU_WFS_DSJP.pdf>
-5. G. S. Manku and R. Motwani. “Approximate Frequency Counts over Data
+5. ISC2. “ISC2 Cybersecurity Workforce Study, 2023.” 2023.
+   <https://ismg-cdn.nyc3.cdn.digitaloceanspaces.com/asset_files/external/isc2cybersecurityworkforcestudy2023.pdf>
+6. ISC2. “2025 ISC2 Cybersecurity Workforce Study.” 2025, Research Note and
+   Appendix.
+   <https://www.isc2.org/insights/2025/12/2025-ISC2-Cybersecurity-Workforce-Study>
+7. G. S. Manku and R. Motwani. “Approximate Frequency Counts over Data
    Streams.” Proceedings of the 28th International Conference on Very Large
    Data Bases (VLDB), 2002, pp. 346–357.
    <https://www.vldb.org/conf/2002/S10P03.pdf>
-6. P. Flajolet, É. Fusy, O. Gandouet and F. Meunier. “HyperLogLog: the
+8. P. Flajolet, É. Fusy, O. Gandouet and F. Meunier. “HyperLogLog: the
    analysis of a near-optimal cardinality estimation algorithm.” Discrete
    Mathematics & Theoretical Computer Science Proceedings, 2007.
    <https://algo.inria.fr/flajolet/Publications/FlFuGaMe07.pdf>

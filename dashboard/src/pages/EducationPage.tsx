@@ -14,19 +14,25 @@ type WorkforceRecord = {
   workforce_size: number | null;
   workforce_gap: number | null;
   source: string;
+  source_reference: string | null;
 };
 
 type EducationData = {
   country: string;
   day: string | null;
   programmes: Programme[];
-  workforce: WorkforceRecord[];
   demand_available: boolean;
   role_comparison: {
     role: string;
     programme_count: number;
     demand_count: number | null;
   }[];
+};
+
+type WorkforceData = {
+  geography_level: 'country' | 'region' | 'global';
+  geography: string;
+  items: WorkforceRecord[];
 };
 
 type EmergingData = {
@@ -64,6 +70,8 @@ class ApiError extends Error {
 
 // Use a configured API URL in deployments and the local API by default.
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
+const ISC2_COUNTRY_EDITION = 2023;
+const ISC2_COUNTRY_SOURCE = `ISC2 Cybersecurity Workforce Study ${ISC2_COUNTRY_EDITION}`;
 
 async function getJson<T>(path: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -79,16 +87,23 @@ async function getJson<T>(path: string, signal: AbortSignal): Promise<T> {
 function BarChart({
   title,
   items,
+  emptyMessage,
+  caption,
 }: {
   title: string;
   items: { label: string; value: number; detail?: string }[];
+  emptyMessage?: string;
+  caption?: string;
 }) {
   const maximum = Math.max(1, ...items.map(item => item.value));
   return (
     <section className="m5-card" aria-label={title}>
       <h2>{title}</h2>
+      {caption && <p className="m5-empty">{caption}</p>}
       {items.length === 0 ? (
-        <p className="m5-empty">No observations are available for this selection.</p>
+        <p className="m5-empty">
+          {emptyMessage ?? 'No observations are available for this selection.'}
+        </p>
       ) : (
         <ul className="m5-bars">
           {items.map(item => (
@@ -126,6 +141,7 @@ export function EducationPage() {
     return yesterday.toISOString().slice(0, 10);
   });
   const [education, setEducation] = useState<EducationData | null>(null);
+  const [workforce, setWorkforce] = useState<WorkforceData | null>(null);
   const [emerging, setEmerging] = useState<EmergingData | null>(null);
   const [companies, setCompanies] = useState<CompaniesData | null>(null);
   const [platforms, setPlatforms] = useState<PlatformData | null>(null);
@@ -135,11 +151,16 @@ export function EducationPage() {
   useEffect(() => {
     const controller = new AbortController();
     const query = `country=${encodeURIComponent(country)}&day=${encodeURIComponent(day)}`;
+    const workforceCountry = country === 'UK' ? 'GB' : country;
     setLoading(true);
     setError(null);
 
     Promise.all([
       getJson<EducationData>(`/education?${query}`, controller.signal),
+      getJson<WorkforceData>(
+        `/workforce?geography_level=country&geography=${encodeURIComponent(workforceCountry)}`,
+        controller.signal,
+      ),
       getJson<EmergingData>(`/emerging?${query}`, controller.signal),
       getJson<PlatformData>('/platforms', controller.signal),
       getJson<CompaniesData>(`/companies?${query}`, controller.signal).catch(error => {
@@ -147,8 +168,9 @@ export function EducationPage() {
         throw error;
       }),
     ])
-      .then(([educationResult, emergingResult, platformResult, companyResult]) => {
+      .then(([educationResult, workforceResult, emergingResult, platformResult, companyResult]) => {
         setEducation(educationResult);
+        setWorkforce(workforceResult);
         setEmerging(emergingResult);
         setPlatforms(platformResult);
         setCompanies(companyResult);
@@ -164,7 +186,10 @@ export function EducationPage() {
     return () => controller.abort();
   }, [country, day]);
 
-  const workforceBars = (education?.workforce ?? []).flatMap(record => [
+  const isc2CountryRecord = workforce?.items.find(
+    record => record.year === ISC2_COUNTRY_EDITION && record.source === ISC2_COUNTRY_SOURCE,
+  );
+  const workforceBars = (isc2CountryRecord ? [isc2CountryRecord] : []).flatMap(record => [
     ...(record.workforce_size === null
       ? []
       : [{ label: `${record.year} workforce`, value: record.workforce_size }]),
@@ -243,7 +268,14 @@ export function EducationPage() {
           </section>
 
           <section className="m5-charts" aria-label="Education and workforce charts">
-            <BarChart title="Workforce by year" items={workforceBars} />
+            <BarChart
+              title="Country workforce estimates"
+              items={workforceBars}
+              caption={`${ISC2_COUNTRY_SOURCE} · latest edition with country figures${
+                isc2CountryRecord?.source_reference ? ` · ${isc2CountryRecord.source_reference}` : ''
+              }${isc2CountryRecord?.workforce_size === null ? ' · Workforce size: not enough data' : ''}`}
+              emptyMessage={`Not enough data: no country estimates available for ${country}.`}
+            />
             <BarChart title="Emerging skill candidates" items={emergingBars} />
           </section>
 

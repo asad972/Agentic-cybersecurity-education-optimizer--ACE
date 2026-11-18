@@ -16,7 +16,7 @@ PRODUCER = "m5-workforce"
 DEFAULT_INPUT = (
     Path(__file__).resolve().parents[1]
     / "sources"
-    / "isc2_2024_global.json"
+    / "isc2_workforce_studies.json"
 )
 
 

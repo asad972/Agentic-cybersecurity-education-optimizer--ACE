@@ -226,13 +226,13 @@ class M5RuntimeTests(unittest.TestCase):
             producer,
         )
 
-        self.assertEqual(sent, 6)
+        self.assertEqual(sent, 26)
         self.assertEqual(
             [message[0] for message in producer.sent],
-            ["raw.workforce"] * 6,
+            ["raw.workforce"] * 26,
         )
         self.assertEqual(
-            [message[1] for message in producer.sent],
+            [message[1] for message in producer.sent[:6]],
             [
                 b"GLOBAL",
                 b"North America",
@@ -242,6 +242,20 @@ class M5RuntimeTests(unittest.TestCase):
                 b"Latin America",
             ],
         )
+        countries = {
+            key.decode("ascii"): json.loads(value)
+            for _, key, value in producer.sent[6:]
+        }
+        self.assertEqual(set(countries), {
+            "AE", "AU", "BR", "CA", "CN", "DE", "ES", "FR", "GB", "IE",
+            "IN", "JP", "KR", "MX", "NG", "NL", "SA", "SG", "US", "ZA",
+        })
+        self.assertEqual(countries["GB"]["year"], 2023)
+        self.assertEqual(
+            countries["GB"]["source"], "ISC2 Cybersecurity Workforce Study 2023"
+        )
+        self.assertEqual(countries["GB"]["workforce_gap"], 73_439)
+        self.assertNotIn("workforce_size", countries["IN"])
         first_record = json.loads(producer.sent[0][2])
         self.assertEqual(first_record["geography_level"], "global")
         self.assertEqual(first_record["workforce_size"], 5_457_173)
