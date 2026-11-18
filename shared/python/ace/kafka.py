@@ -1,6 +1,7 @@
 """Kafka for stream stages: the connector JAR, the Kafka source and sink, and running a stage on Kafka.
 
-Run a stage on the Kafka stack, e.g. S4 against the local Compose Kafka:
+Run a stage on the Kafka stack, e.g. S4 against the local Compose Kafka, from
+the repository root or from streaming/:
 
     python -m ace.kafka s4_demand_frequency.stage:DemandFrequency
 
@@ -26,6 +27,7 @@ import argparse
 import hashlib
 import importlib
 import os
+import sys
 import urllib.request
 from pathlib import Path
 from typing import Any, Callable, Iterable
@@ -206,10 +208,17 @@ def run_on_kafka(stage: Any, bootstrap_servers: str | None = None, bounded: bool
 
 
 def load_stage(spec: str) -> Any:
-    """'module:Class' -> a stage instance, e.g. 's4_demand_frequency.stage:DemandFrequency'."""
+    """'module:Class' -> a stage instance, e.g. 's4_demand_frequency.stage:DemandFrequency'.
+
+    Stage packages live in streaming/. Run from the repository root, that folder
+    is searched as well, so the same command works from the root and from streaming/.
+    """
     module_name, sep, class_name = spec.partition(":")
     if not sep or not module_name or not class_name:
         raise ValueError(f"expected module:Class, got {spec!r}")
+    streaming = str(Path.cwd() / "streaming")
+    if Path(streaming).is_dir() and streaming not in sys.path:
+        sys.path.append(streaming)
     return getattr(importlib.import_module(module_name), class_name)()
 
 

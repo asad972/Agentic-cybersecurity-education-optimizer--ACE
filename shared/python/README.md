@@ -55,6 +55,8 @@ Subclass `WindowedStage` (counts per Country and window) or `RecordStage` (one r
 
 `ace.kafka` runs any stage between Kafka topics: it reads the stage's input topics, runs `build_flink`, and writes every result and `errors.invalid` record to its topic. The Flink Kafka connector JAR is downloaded once from Maven Central into `ACE_FLINK_JARS` (default `~/.cache/ace/flink-jars`) and checked against its SHA-1.
 
+From the repository root (the same commands also work from `streaming/`):
+
 ```powershell
 docker compose up -d                                  # local Kafka and Cassandra
 $env:KAFKA_BOOTSTRAP_SERVERS = 'localhost:9092'       # the default

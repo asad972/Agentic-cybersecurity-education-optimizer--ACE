@@ -1,6 +1,10 @@
 """The Kafka connector JAR is downloaded once, checked, and reused. No network in these tests."""
 
 import hashlib
+import os
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
@@ -128,6 +132,22 @@ def test_load_stage_imports_module_and_class():
     for bad in ("no_colon", ":Counts", f"{__name__}:"):
         with pytest.raises(ValueError, match="module:Class"):
             kafka.load_stage(bad)
+
+
+REPO = Path(__file__).resolve().parents[3]
+LOAD_S4 = ("from ace.kafka import load_stage; "
+           "print(type(load_stage('s4_demand_frequency.stage:DemandFrequency')).__name__)")
+
+
+@pytest.mark.parametrize("folder", [".", "streaming"])
+def test_load_stage_finds_a_real_stage_from_the_root_and_from_streaming(folder):
+    """The README command works from both folders. A fresh Python, so pytest's own paths don't help."""
+    env = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+    env["PYTHONPATH"] = str(REPO / "shared" / "python")   # ace itself, as pip install -e gives it
+    result = subprocess.run([sys.executable, "-c", LOAD_S4], cwd=REPO / folder, env=env,
+                            capture_output=True, text=True, timeout=120)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "DemandFrequency"
 
 
 @pytest.mark.flink
