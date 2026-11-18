@@ -41,6 +41,15 @@ Subclass `WindowedStage` (counts per Country and window) or `RecordStage` (one r
 - Test with `run_local(stage, records)` on a list of fake records. It follows Flink's event-time rules exactly (watermark = latest event time − grace period), so late records can be tested too.
 - Add one test marked `@pytest.mark.flink` that runs the same records through `run_flink_local` and compares the result. Flink only moves its watermark every 200 ms, so that test uses on-time records only.
 - Window state and the per-key `memory` dict must be picklable: Flink saves them in checkpoints. `run_local` fails if they are not.
+- Keep at most two `flink` tests per test file: a third local Flink job in the same pytest process hangs.
+- **Own metrics.** Override `open(runtime_context)`; Flink calls it once in each task before the first record. Register counters there and keep them on the stage:
+
+  ```python
+  def open(self, runtime_context):
+      self.removed = runtime_context.get_metrics_group().counter("duplicates_removed_total")
+  ```
+
+  `run_local` never calls `open()`, so the stage must also work without it (e.g. `if self.removed is not None: self.removed.inc()`). Counts that must survive a restart belong in `memory`, not in the counter. Late records are already counted in `late_records_total` for every windowed stage.
 
 Rules for everyone:
 

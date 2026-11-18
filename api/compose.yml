@@ -12,3 +12,7 @@ services:
       CASSANDRA_KEYSPACE: ${CASSANDRA_KEYSPACE:-ace}
       CASSANDRA_LOCAL_DC: ${CASSANDRA_LOCAL_DC:-datacenter1}
       API_CORS_ORIGINS: ${API_CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      # WS /live only. See "Live alert feed" in api/README.md for the Docker network.
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:29092}
+      API_LIVE_ALERTS: ${API_LIVE_ALERTS:-true}
+      API_LIVE_RETRY_SECONDS: ${API_LIVE_RETRY_SECONDS:-5}

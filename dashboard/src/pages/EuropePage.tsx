@@ -5,6 +5,7 @@ import { useQuery } from '../hooks/useQuery';
 import { countLabel, formatDate, isDay, yesterday } from '../services/dates';
 import { CountryMap } from '../components/CountryMap';
 import { CountryPanel } from '../components/CountryPanel';
+import { LiveAlerts } from '../components/LiveAlerts';
 import { ErrorState, Loading } from '../components/Status';
 
 export function EuropePage() {
@@ -113,5 +114,7 @@ function EuropeMap({ meta }: { meta: MapMeta }) {
       </section>
       {country && <CountryPanel code={country} name={countryName(country)} date={date} panel={panel} onSkill={showSkill} />}
     </div>
+
+    <LiveAlerts countries={meta.countries} onCountry={setCountry} />
   </>;
 }

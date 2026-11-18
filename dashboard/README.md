@@ -29,7 +29,8 @@ pnpm dev
 
 Open the Local URL printed by Vite. Run `pnpm build` for TypeScript checking and a production build,
 and `pnpm test` for the unit tests of the request and date helpers.
-The Europe overview requests `/map/meta`, `/map` and `/map/country`.
+The Europe overview requests `/map/meta`, `/map` and `/map/country`, and opens
+the `WS /live` alert feed.
 The M5 page requests `/education`, `/emerging`, `/companies` and `/platforms`
 from `http://localhost:8000` by default. Set `VITE_API_BASE_URL` before the
 build or Vite startup to use another API origin. Start the API and Cassandra
@@ -53,6 +54,18 @@ skills and certifications, the latest workforce baseline and that day's drift
 and threat-burst alerts. Countries with no stored value stay grey; a missing
 value is never shown as zero.
 
+Below the map, the **Live alerts** panel lists drift and threat-burst alerts
+as they are raised (`WS /live`, #39), latest arrival first, up to 50. It shows
+what happened since the page was opened; earlier alerts of a day are in the
+country panel. The badge shows the feed's state: Live, Feed unavailable (the
+API cannot reach Kafka), Reconnecting (the browser lost the API and retries
+after 1 to 30 seconds), Switched off (`API_LIVE_ALERTS=false`) or Not allowed
+(the page's address is missing from the API's `API_CORS_ORIGINS`; the panel
+does not retry). If the page falls behind and the API skips alerts for it, a
+note says so until the page is reloaded. Clicking a country name selects it on
+the map.
+Reusable pieces: `src/hooks/useLiveAlerts.ts` and `components/LiveAlerts.tsx`.
+
 The map is drawn with ECharts from `public/countries.geojson` (Natural Earth,
 public domain; see `public/MAP-LICENSE.txt`). Shared pieces other pages may
 reuse: `src/services/api.ts` (`getJSON`), `src/hooks/useQuery.ts`,
@@ -74,4 +87,4 @@ Replace your own placeholder component with your dashboard. Preserve other membe
 
 Direct hash links, browser Back/Forward and unknown-route fallback work without a server router. At narrow widths use the menu button; Escape closes the navigation. The skip link focuses the main content.
 
-The FastAPI skeleton is delivered separately under #33. Domain endpoints and dashboard requirements remain in `docs/ARCHITECTURE.md`. The threat landscape dashboard (#40) and the live alert feed (#39) are later releases.
+The FastAPI skeleton is delivered separately under #33. Domain endpoints and dashboard requirements remain in `docs/ARCHITECTURE.md`. The threat landscape dashboard (#40) is a later release.
