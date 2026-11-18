@@ -1,0 +1,36 @@
+# Prometheus on Kubernetes (namespace ace). The Docker Compose version is
+# deploy/monitoring/prometheus/prometheus.yml; both load the same recording rules.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Records per source, duplicates, extraction, Unmapped Skills, invalid
+  # messages, orchestrator tasks and LLM spend.
+  - job_name: pipeline-exporter
+    static_configs:
+      - targets: ["pipeline-exporter:9400"]
+
+  # Kafka brokers, topic offsets and consumer lag per group (e.g. ace-sink).
+  - job_name: kafka-exporter
+    static_configs:
+      - targets: ["kafka-exporter:9308"]
+
+  # Flink's Prometheus reporter (late records and job health). The JobManager
+  # has one pod; the TaskManagers sit behind the headless Service
+  # flink-taskmanager, whose DNS name returns every pod, so each one is scraped.
+  - job_name: flink
+    static_configs:
+      - targets: ["flink-jobmanager:9249"]
+    dns_sd_configs:
+      - names: ["flink-taskmanager.ace.svc.cluster.local"]
+        type: A
+        port: 9249
+        refresh_interval: 30s
