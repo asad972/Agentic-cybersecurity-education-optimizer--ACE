@@ -55,7 +55,7 @@ Discovery loads public `.py` modules directly inside `routers/` in alphabetical 
 
 Inside a route, use `request.app.state.database.session` for prepared, bounded Cassandra reads. The session is opened and closed by the service. Use synchronous `def` routes for blocking driver operations (FastAPI runs these in its worker thread pool), or explicitly offload reads in async routes. Handle connection failures with a suitable 503 response. Do not execute unrestricted scans or introduce database writes in browser-facing endpoints.
 
-Domain endpoints remain with their owners, as listed in `docs/ARCHITECTURE.md`. Hourly threat and WebSocket features are later releases.
+Domain endpoints remain with their owners, as listed in `docs/ARCHITECTURE.md`. The hourly threat endpoint is a later release.
 
 ### M4 Europe map endpoints (#37)
 
@@ -71,6 +71,37 @@ partition key and a row limit; a partition larger than the limit is answered
 with 503 rather than a truncated count. Storage problems are also 503, and
 there is no sample-data fallback. The module is `routers/europe_map.py`, with
 the queries in `map_data.py`.
+
+### Live alert feed (#39)
+
+`WS /live` pushes new drift (S6) and threat-burst (S8) alerts to browsers as they are raised. It is a WebSocket, so it is not listed in `/docs`. Every message is one JSON object:
+
+```json
+{"type": "status", "state": "connected", "message": "Connected. New alerts appear as they are raised."}
+{"type": "alert", "alert": {"country": "HU", "day": "2026-11-15", "created_at": "2026-11-15T13:00:00Z",
+                            "alert_type": "threat_burst", "subject": "phishing", "score": 0.91, "details": "..."}}
+{"type": "skipped", "message": "Some alerts were skipped because this connection fell behind."}
+```
+
+- `state` is `connecting`, `connected`, `unavailable` (Kafka cannot be reached; the API keeps retrying) or `disabled`. A status is sent on connect, on every change, and every 25 seconds as a heartbeat.
+- `alert` has the fields of `shared/schemas/alert.schema.json`; `details` is `""` when the producer left it out. Messages that do not fit the schema are skipped and logged, never forwarded. The API image does not install the shared `ace` package, so `live.py` writes out the alert topics and the schema check; `tests/test_live.py` compares them with `shared/schemas/topics.csv` and `alert.schema.json` (using the validator `ace.contracts` uses), and CI runs the API tests when either file changes.
+- The feed starts now: it does not replay earlier alerts. Earlier alerts of a day are in `GET /map/country`.
+- A browser that falls more than 100 alerts behind gets a `skipped` message followed by the current status, instead of unbounded buffering. Browsers send nothing; anything they send is ignored.
+- **`API_CORS_ORIGINS` must include the address the dashboard is opened at** (scheme, host and port, for example `http://localhost:5173` or `https://ace.example.org`). This also applies when a proxy serves the dashboard and the API from one address, where REST needs no CORS: the browser still sends that address as `Origin` on `/live`. For any other origin the API completes the handshake, sends nothing and closes with code 1008 (`Origin not allowed`); the dashboard then shows "Not allowed" and stops retrying. Clients that send no `Origin`, such as scripts, are not affected.
+
+The API reads the `alerts.drift` and `alerts.threats` topics from Kafka, as `docs/ARCHITECTURE.md` lists. Each API process follows every partition from its end, without joining a consumer group or committing offsets, so every replica broadcasts every alert and the sink's offsets are untouched. It connects to Kafka only when the first browser opens the feed; REST endpoints and `/ready` never depend on Kafka. During a broker outage the consumer keeps its position and the feed reports `unavailable` until the broker answers again.
+
+S6 and S8 each publish to their own topic, so one topic may not exist yet (for example before `kafka-init` has run). The feed follows the topics that exist and looks for a missing one every `API_LIVE_RETRY_SECONDS`; it also looks for partitions added to an alert topic once a minute. A topic or partition found later is read from the first alert published after the feed connected, so nothing raised in between is skipped.
+
+Settings: `KAFKA_BOOTSTRAP_SERVERS` (default `localhost:9092`, which suits `uvicorn` on the host next to the root stack), `API_LIVE_ALERTS=false` to switch the feed off, and `API_LIVE_RETRY_SECONDS` (default `5`, more than 0 and at most 300): how long to wait before reconnecting after Kafka failed, and how often to look for an alert topic that does not exist yet.
+
+**In Docker**, `api/compose.yml` sets `KAFKA_BOOTSTRAP_SERVERS=kafka:29092`, the broker's address inside the root stack's network. The standalone API container is not on that network, so the feed reports `unavailable` until you connect it (REST keeps working either way):
+
+```bash
+docker network connect "$(docker inspect ace-kafka --format '{{range $name, $_ := .NetworkSettings.Networks}}{{$name}}{{end}}')" "$(docker compose -f api/compose.yml ps -q api)"
+```
+
+The feed connects within a few seconds. `host.docker.internal:9092` does not work for Kafka, because the broker tells host clients to continue on `localhost:9092`.
 
 ### M5 endpoints
 
