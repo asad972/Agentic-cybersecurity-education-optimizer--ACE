@@ -264,7 +264,7 @@ jobs:
         run: python -m pytest -q -c api/pyproject.toml api/tests
 
   dashboard:
-    name: Dashboard build
+    name: Dashboard tests and build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -293,6 +293,8 @@ jobs:
           restore-keys: pnpm-store-${{ runner.os }}-
       - name: Install packages
         run: pnpm install --frozen-lockfile
+      - name: Unit tests
+        run: pnpm test
       - name: Type-check and build
         run: pnpm build
 

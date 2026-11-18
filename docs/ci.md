@@ -17,12 +17,12 @@ A new push to a pull request cancels the run that is still going for the older c
 | M5 agents | Installs `shared/python` and runs the tests in `agents/m5` | Python 3.11, as in the M5 agent images |
 | Threat agent | Installs `shared/python` and `agents/threat/requirements-dev.txt`, runs `agents/threat/tests` | Python 3.12, as in `agents/threat/Dockerfile` |
 | API | Installs `api/` and runs `api/tests` | Python 3.12, as in `api/Dockerfile` |
-| Dashboard build | `pnpm install --frozen-lockfile` and `pnpm build` (type check and production build) | Node 22, pnpm from `package.json` |
+| Dashboard tests and build | `pnpm install --frozen-lockfile`, `pnpm test` (Vitest unit tests) and `pnpm build` (type check and production build) | Node 22, pnpm from `package.json` |
 | Docker images and Compose files | Checks `docker-compose.yml`, `api/compose.yml` and `dashboard/compose.yml`, then builds the API, dashboard, sink, monitoring exporter, three M5 agent, threat agent, forecast, gap, S7, S8, S3 and S4 images (built only, never pushed) | Docker |
 | Setup script (bash) | `bash -n` and ShellCheck on `setup.sh` | Ubuntu |
 | Setup script (Windows PowerShell 5.1) | Parses `setup.ps1` and checks it is ASCII-only, since PowerShell 5.1 misreads other characters | Windows PowerShell 5.1 |
 
-New tests are picked up without changing the workflow: a stage's tests in `streaming/<stage>/tests/`, new tests in `agents/m5`, `agents/threat/tests` or `batch/*/tests`, new API tests in `api/tests/`, new dashboard pages under `dashboard/src/`. A stage that needs a package beyond the shared one (such as `river` or `datasketch`) lists it, pinned exactly, in `streaming/<stage>/requirements.txt`; both stage jobs install every such file. Only a new image, a new agent folder or a new Python package with its own `pyproject.toml` needs a new step in `ci.yml`.
+New tests are picked up without changing the workflow: a stage's tests in `streaming/<stage>/tests/`, new tests in `agents/m5`, `agents/threat/tests` or `batch/*/tests`, new API tests in `api/tests/`, new dashboard pages under `dashboard/src/`. A stage that needs a package beyond the shared one adds it, pinned exactly, to the `stages` extra in `shared/python/pyproject.toml`, as River is, so the stage images and Flink get it too. Both stage jobs also install any `streaming/<stage>/requirements.txt`. Only a new image, a new agent folder or a new Python package with its own `pyproject.toml` needs a new step in `ci.yml`.
 
 Each stage folder and its `tests/` folder need an empty `__init__.py`, as in `streaming/s4_demand_frequency/`. Without them, two test files with the same name in different folders (for example two `test_stage.py`) stop the whole test run.
 
@@ -30,8 +30,8 @@ All jobs must pass before a pull request is merged. The Flink job is the slowest
 
 ### What is not checked yet
 
-- Some jobs check parts that arrive with their own pull requests: the monitoring exporter, the Prometheus rules, the S3 and S4 images (#82, #90) and the setup scripts. While a part is not on the branch, its steps are skipped and the job still shows a green tick. The job's summary then shows a notice such as "deploy/monitoring/exporter is not on this branch". A green tick on those jobs only means "passed or not there yet".
-- Only the images that have a Dockerfile and a step in the `docker` job are built: the API, the dashboard, the sink, the three M5 agents, the threat agent, the forecast and gap jobs, S7 and S8, plus the exporter, S3 and S4 once they are on the branch. The images are built but never started, so CI does not check that a container runs. A new Dockerfile (another agent or stage) needs its own `docker build` step.
+- Some jobs check parts that arrive with their own pull requests: the monitoring exporter, the Prometheus rules and the setup scripts. While a part is not on the branch, its steps are skipped and the job still shows a green tick. The job's summary then shows a notice such as "deploy/monitoring/exporter is not on this branch". A green tick on those jobs only means "passed or not there yet".
+- Only the images that have a Dockerfile and a step in the `docker` job are built: the API, the dashboard, the sink, the three M5 agents, the threat agent, the forecast and gap jobs, S7 and S8, S3 and S4, plus the exporter once it is on the branch. The images are built but never started, so CI does not check that a container runs. A new Dockerfile (another agent or stage) needs its own `docker build` step.
 - No job runs against a real Kafka or Cassandra. Tests that need a live Cassandra (such as `shared/python/tests/test_llm_cassandra.py`) are skipped.
 
 ### Making the checks required
@@ -108,7 +108,13 @@ pip install -r agents/threat/requirements-dev.txt
 python -m pytest agents/threat/tests
 ```
 
-Dashboard, Docker images and Compose files (Docker Desktop running). Building the dashboard image runs the same `pnpm install --frozen-lockfile` and `pnpm build` as CI, so no local Node.js is needed:
+Dashboard unit tests and build, without a local Node.js (Docker Desktop running):
+
+```powershell
+docker run --rm -v "${PWD}\dashboard:/app" -w /app node:22-alpine sh -c "corepack enable && corepack install && pnpm install --frozen-lockfile --store-dir /tmp/pnpm-store && pnpm test && pnpm build"
+```
+
+This leaves `node_modules` in `dashboard/`, which git ignores. Docker images and Compose files:
 
 ```powershell
 docker compose config -q
