@@ -2,10 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "ace/raw_workforce",
   "title": "raw.workforce message",
-  "description": "Produced by the workforce agent from ISC2 annual workforce reports.",
+  "description": "Produced by the workforce agent from ISC2 reports at their published geographic scope.",
   "type": "object",
   "required": [
-    "country",
     "year",
     "source"
   ],
@@ -13,7 +12,16 @@
     "country": {
       "type": "string",
       "pattern": "^[A-Z]{2}$",
-      "description": "ISO 3166-1 alpha-2; also the Kafka message key"
+      "description": "Country code in legacy messages"
+    },
+    "geography_level": {
+      "type": "string",
+      "enum": ["country", "region", "global"]
+    },
+    "geography": {
+      "type": "string",
+      "minLength": 1,
+      "description": "ISO alpha-2 code for country rows; published name for regions; GLOBAL for global rows"
     },
     "year": {
       "type": "integer"
@@ -26,12 +34,59 @@
       "type": "integer",
       "minimum": 0
     },
+    "workforce_growth_percent": {
+      "type": "number"
+    },
+    "workforce_gap_growth_percent": {
+      "type": "number"
+    },
     "source": {
       "type": "string",
       "examples": [
-        "isc2_2024"
+        "https://www.isc2.org/Insights/2024/10/ISC2-2024-Cybersecurity-Workforce-Study"
       ]
+    },
+    "source_reference": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Figure, table, or page reference in the source"
     }
   },
+  "oneOf": [
+    {
+      "required": ["country"],
+      "not": {"anyOf": [{"required": ["geography_level"]}, {"required": ["geography"]}]}
+    },
+    {
+      "required": ["geography_level", "geography"],
+      "not": {"required": ["country"]},
+      "properties": {"year": {"minimum": 1900}, "source": {"minLength": 1}}
+    }
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {"geography_level": {"const": "country"}},
+        "required": ["geography_level"]
+      },
+      "then": {
+        "properties": {
+          "geography": {
+            "pattern": "^[A-Z]{2}$",
+            "not": {"const": "EU"}
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {"geography_level": {"const": "global"}},
+        "required": ["geography_level"]
+      },
+      "then": {
+        "properties": {"geography": {"const": "GLOBAL"}}
+      }
+    }
+  ],
   "additionalProperties": false
 }

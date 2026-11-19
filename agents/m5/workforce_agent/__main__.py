@@ -1,32 +1,24 @@
 """CLI entry point for publishing canonical ISC2 workforce records."""
 
-import argparse
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
+from ace.contracts import topic_for_schema
 from m5_runtime import (
-    KafkaUnavailable,
     parse_integer,
-    publish_normalized_file,
-    read_records,
+    parse_number,
+    run_agent,
 )
-from workforce import normalize_workforce_record, normalize_workforce_records
+from workforce import normalize_workforce_record
 
-
-def normalize_input(records: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Normalize canonical workforce rows, including integer CSV cells."""
-    parsed = [
-        {
-            **record,
-            **{
-                field: parse_integer(record.get(field), field)
-                for field in ("year", "workforce_size", "workforce_gap")
-                if field in record
-            },
-        }
-        for record in records
-    ]
-    return normalize_workforce_records(parsed)
+TOPIC = topic_for_schema("raw_workforce").name
+PRODUCER = "m5-workforce"
+DEFAULT_INPUT = (
+    Path(__file__).resolve().parents[1]
+    / "sources"
+    / "isc2_workforce_studies.json"
+)
 
 
 def normalize_record(record: Mapping[str, Any]) -> dict[str, Any]:
@@ -38,22 +30,28 @@ def normalize_record(record: Mapping[str, Any]) -> dict[str, Any]:
             for field in ("year", "workforce_size", "workforce_gap")
             if field in record
         },
+        **{
+            field: parse_number(record.get(field), field)
+            for field in (
+                "workforce_growth_percent",
+                "workforce_gap_growth_percent",
+            )
+            if field in record
+        },
     }
     return normalize_workforce_record(parsed)
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", required=True, help="Canonical JSON, JSONL, or CSV file")
-    args = parser.parse_args()
-    records = read_records(args.input)
-    try:
-        count = publish_normalized_file(
-            "raw.workforce", "m5-workforce", records, normalize_record
-        )
-    except KafkaUnavailable as error:
-        parser.exit(2, f"{parser.prog}: error: {error}\n")
-    print(f"Processed and published {count} workforce rows")
+    run_agent(
+        topic=TOPIC,
+        producer_name=PRODUCER,
+        normalizer_factory=lambda: normalize_record,
+        input_help="Canonical JSON, JSONL, or CSV file",
+        output_label="workforce",
+        description=__doc__,
+        input_default=DEFAULT_INPUT,
+    )
 
 
 if __name__ == "__main__":

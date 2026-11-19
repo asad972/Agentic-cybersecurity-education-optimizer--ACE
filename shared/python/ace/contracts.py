@@ -86,6 +86,14 @@ def topic(name: str) -> Topic:
     return known[name]
 
 
+def topic_for_schema(schema: str) -> Topic:
+    """Resolve the topic for a schema that has exactly one registered topic."""
+    matches = [entry for entry in topics().values() if entry.schema == schema]
+    if len(matches) != 1:
+        raise UnknownTopic(f"expected one topic for schema {schema!r}, found {len(matches)}")
+    return matches[0]
+
+
 @cache
 def _validator(schema: str) -> Draft202012Validator:
     path = schemas_dir() / f"{schema}.schema.json"
@@ -114,7 +122,10 @@ def validate(topic_name: str, message: Any) -> None:
 
 def key_of(topic_name: str, message: dict[str, Any]) -> str:
     """The Kafka key of a valid message, e.g. its country."""
-    return str(message[topic(topic_name).key_field])
+    entry = topic(topic_name)
+    if entry.schema == "raw_workforce" and "geography" not in message:
+        return str(message["country"])
+    return str(message[entry.key_field])
 
 
 def invalid_record(
