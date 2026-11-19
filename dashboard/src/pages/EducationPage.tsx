@@ -22,6 +22,7 @@ type EducationData = {
   day: string | null;
   programmes: Programme[];
   demand_available: boolean;
+  role_demand_available: boolean;
   role_comparison: {
     role: string;
     programme_count: number;
@@ -70,8 +71,6 @@ class ApiError extends Error {
 
 // Use a configured API URL in deployments and the local API by default.
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
-const ISC2_COUNTRY_EDITION = 2023;
-const ISC2_COUNTRY_SOURCE = `ISC2 Cybersecurity Workforce Study ${ISC2_COUNTRY_EDITION}`;
 
 async function getJson<T>(path: string, signal: AbortSignal): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, {
@@ -145,20 +144,19 @@ export function EducationPage() {
   const [emerging, setEmerging] = useState<EmergingData | null>(null);
   const [companies, setCompanies] = useState<CompaniesData | null>(null);
   const [platforms, setPlatforms] = useState<PlatformData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [result, setResult] = useState<{ query: string; error: string | null } | null>(null);
+  const query = `country=${encodeURIComponent(country)}&day=${encodeURIComponent(day)}`;
+  const loading = result?.query !== query;
+  const error = loading ? null : result?.error;
 
   useEffect(() => {
     const controller = new AbortController();
-    const query = `country=${encodeURIComponent(country)}&day=${encodeURIComponent(day)}`;
-    const workforceCountry = country === 'UK' ? 'GB' : country;
-    setLoading(true);
-    setError(null);
+    setResult(null);
 
     Promise.all([
       getJson<EducationData>(`/education?${query}`, controller.signal),
       getJson<WorkforceData>(
-        `/workforce?geography_level=country&geography=${encodeURIComponent(workforceCountry)}`,
+        `/workforce?geography_level=country&geography=${encodeURIComponent(country)}`,
         controller.signal,
       ),
       getJson<EmergingData>(`/emerging?${query}`, controller.signal),
@@ -169,27 +167,31 @@ export function EducationPage() {
       }),
     ])
       .then(([educationResult, workforceResult, emergingResult, platformResult, companyResult]) => {
+        if (controller.signal.aborted) return;
         setEducation(educationResult);
         setWorkforce(workforceResult);
         setEmerging(emergingResult);
         setPlatforms(platformResult);
         setCompanies(companyResult);
+        setResult({ query, error: null });
       })
       .catch(error => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
-        setError(error instanceof Error ? error.message : 'Unable to load dashboard data.');
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (controller.signal.aborted) return;
+        setResult({
+          query,
+          error: error instanceof Error ? error.message : 'Unable to load dashboard data.',
+        });
       });
 
     return () => controller.abort();
-  }, [country, day]);
+  }, [country, query]);
 
-  const isc2CountryRecord = workforce?.items.find(
-    record => record.year === ISC2_COUNTRY_EDITION && record.source === ISC2_COUNTRY_SOURCE,
+  const countryRecord = workforce?.items.reduce<WorkforceRecord | undefined>(
+    (latest, record) => (record.workforce_size !== null || record.workforce_gap !== null) &&
+      (!latest || record.year > latest.year) ? record : latest,
+    undefined,
   );
-  const workforceBars = (isc2CountryRecord ? [isc2CountryRecord] : []).flatMap(record => [
+  const workforceBars = (countryRecord ? [countryRecord] : []).flatMap(record => [
     ...(record.workforce_size === null
       ? []
       : [{ label: `${record.year} workforce`, value: record.workforce_size }]),
@@ -271,9 +273,9 @@ export function EducationPage() {
             <BarChart
               title="Country workforce estimates"
               items={workforceBars}
-              caption={`${ISC2_COUNTRY_SOURCE} · latest edition with country figures${
-                isc2CountryRecord?.source_reference ? ` · ${isc2CountryRecord.source_reference}` : ''
-              }${isc2CountryRecord?.workforce_size === null ? ' · Workforce size: not enough data' : ''}`}
+              caption={countryRecord ? `${countryRecord.source} · latest edition with country figures${
+                countryRecord.source_reference ? ` · ${countryRecord.source_reference}` : ''
+              }${countryRecord.workforce_size === null ? ' · Workforce size: not enough data' : ''}` : undefined}
               emptyMessage={`Not enough data: no country estimates available for ${country}.`}
             />
             <BarChart title="Emerging skill candidates" items={emergingBars} />
@@ -285,9 +287,11 @@ export function EducationPage() {
               ECSF role counts for {country} on {education?.day ?? day}. Demand is
               based on the selected daily snapshot.
             </p>
-            {education && !education.demand_available && (
+            {education && !education.role_demand_available && (
               <p className="m5-empty">
-                Demand data has not been stored for this date yet.
+                {education.demand_available
+                  ? 'Demand is stored for this date, but no ECSF role counts are available.'
+                  : 'Demand data has not been stored for this date yet.'}
               </p>
             )}
             {!education?.role_comparison.length ? (

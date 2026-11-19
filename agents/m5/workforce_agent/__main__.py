@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from ace.contracts import topic_for_schema
 from m5_runtime import (
     parse_integer,
     parse_number,
@@ -11,7 +12,7 @@ from m5_runtime import (
 )
 from workforce import normalize_workforce_record
 
-TOPIC = "raw.workforce"
+TOPIC = topic_for_schema("raw_workforce").name
 PRODUCER = "m5-workforce"
 DEFAULT_INPUT = (
     Path(__file__).resolve().parents[1]

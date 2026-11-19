@@ -6,6 +6,7 @@ from pathlib import Path
 import sys
 from typing import Any
 
+from ace.contracts import topic_for_schema
 from cyberhead import fetch_public_programmes
 from education import ECSF_ROLES, normalize_programme
 from m5_runtime import (
@@ -16,7 +17,7 @@ from m5_runtime import (
     run_agent,
 )
 
-TOPIC = "raw.programmes"
+TOPIC = topic_for_schema("raw_programme").name
 PRODUCER = "m5-education"
 _SAMPLE_COUNTRY_CODES = {
     "austria": "AT",

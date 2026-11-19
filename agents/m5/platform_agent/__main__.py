@@ -5,10 +5,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from ace import contracts
 from m5_runtime import run_agent
 from platform_analysis import normalize_feature_evidence
 
-TOPIC = "analysis.platforms"
+TOPIC = contracts.topic_for_schema("platform_analysis").name
 PRODUCER = "m5-platform-analysis"
 
 

@@ -3,24 +3,10 @@
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
+from ace.ecsf import ECSF_ROLES
+
 _REQUIRED_FIELDS = ("programme_id", "country", "name", "institution")
 _LEVELS = {"bachelor", "master", "phd", "other"}
-ECSF_ROLES = frozenset(
-    {
-        "Chief Information Security Officer (CISO)",
-        "Cyber Incident Responder",
-        "Cyber Legal, Policy and Compliance Officer",
-        "Cyber Threat Intelligence Specialist",
-        "Cybersecurity Architect",
-        "Cybersecurity Auditor",
-        "Cybersecurity Educator",
-        "Cybersecurity Implementer",
-        "Cybersecurity Researcher",
-        "Cybersecurity Risk Manager",
-        "Digital Forensics Investigator",
-        "Penetration Tester",
-    }
-)
 
 
 def normalize_programme(record: Mapping[str, Any]) -> dict[str, Any]:

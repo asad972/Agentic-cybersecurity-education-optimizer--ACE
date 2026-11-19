@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+# Also needs the shared `ace` package (shared/python), installed first; it is not
+# listed here because it is not on PyPI, where another project uses the name.
+[project]
+name = "ace-sink"
+version = "0.1.0"
+description = "ACE sink: writes Kafka topics to their Cassandra tables (M2, WBS 4.5)"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "cassandra-driver==3.30.1",
+    # Deprecated 3.x (a cassandra-driver dependency) fails to import on Python 3.11.
+    "Deprecated==1.3.1",
+    "confluent-kafka==2.16.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest==9.1.1"]
+
+[tool.setuptools.packages.find]
+include = ["ace_sink*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

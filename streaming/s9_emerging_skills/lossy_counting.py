@@ -18,13 +18,16 @@ class Estimate:
     max_error: int
 
 
+def _validate_epsilon(epsilon: float) -> None:
+    if not 0 < epsilon < 1:
+        raise ValueError("epsilon must be greater than 0 and less than 1")
+
+
 class LossyCounting:
     """A single-stream summary that bounds memory with an error parameter."""
 
     def __init__(self, epsilon: float = 0.01) -> None:
-        # Reject invalid accuracy settings before allocating any state.
-        if not 0 < epsilon < 1:
-            raise ValueError("epsilon must be greater than 0 and less than 1")
+        _validate_epsilon(epsilon)
         # Store the tolerated error fraction for later calculations.
         self.epsilon = epsilon
         # Each bucket contains approximately 1 / epsilon input items.
@@ -79,8 +82,7 @@ class EmergingSkillsCounter:
     """Keep one daily sketch per country and produce schema-shaped output."""
 
     def __init__(self, epsilon: float = 0.01, limit: int = 50) -> None:
-        # Validate the sketch accuracy now, not only after the first event.
-        LossyCounting(epsilon=epsilon)
+        _validate_epsilon(epsilon)
         # The schema permits no more than 50 candidates in one output message.
         if limit < 1:
             raise ValueError("limit must be at least 1")
@@ -97,11 +99,11 @@ class EmergingSkillsCounter:
         # Accept either a date object or the wire-format ISO date string.
         day = self._parse_day(day)
         # Reuse the country's sketch for this day or create it on first sight.
-        counter = self._daily[country].setdefault(
-            day, LossyCounting(epsilon=self.epsilon)
-        )
+        daily = self._daily[country]
+        if day not in daily:
+            daily[day] = LossyCounting(epsilon=self.epsilon)
         # Add this unmapped mention to that day's bounded-memory summary.
-        counter.add(mention)
+        daily[day].add(mention)
 
     def add_daily_sketch(
         self, country: str, day: date | str, sketch: LossyCounting

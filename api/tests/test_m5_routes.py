@@ -7,12 +7,18 @@ from ace_api.main import create_app
 
 
 class CassandraSession:
-    def __init__(self, include_demand=True):
+    def __init__(self, include_demand=True, include_job_ads=False):
         self.calls = []
         self.include_demand = include_demand
+        self.include_job_ads = include_job_ads
 
     def execute(self, query, parameters):
         self.calls.append((query, parameters))
+        if query.startswith("SELECT ecsf_roles"):
+            return [
+                SimpleNamespace(ecsf_roles={"Cybersecurity Implementer"}),
+                SimpleNamespace(ecsf_roles={"cybersecurity implementer", "Cybersecurity Implementer", "Penetration Tester"}),
+            ]
         if "education_programmes" in query:
             return [
                 SimpleNamespace(
@@ -20,7 +26,7 @@ class CassandraSession:
                     name="Security MSc",
                     institution="Example University",
                     level="master",
-                    ecsf_roles={"Cybersecurity Implementer"},
+                    ecsf_roles={"Cybersecurity Implementer", "Cybersecurity Educator"},
                     url="https://example.test/course",
                 )
             ]
@@ -63,9 +69,13 @@ class CassandraSession:
             if not self.include_demand:
                 return []
             return [
-                SimpleNamespace(item="Cybersecurity Implementer", count=12),
+                SimpleNamespace(item="Cybersecurity Implementer", count=10),
+                SimpleNamespace(item="cybersecurity implementer", count=2),
+                SimpleNamespace(item="Penetration tester", count=0),
                 SimpleNamespace(item="Security Architect", count=4),
             ]
+        if "job_ads_by_day" in query:
+            return [SimpleNamespace(count=20)] if self.include_job_ads else []
         if "emerging_skills" in query:
             return [SimpleNamespace(mention="zero trust", count=4, max_error=1)]
         if "companies_by_day" in query:
@@ -101,8 +111,8 @@ class CassandraSession:
 
 
 class Database:
-    def __init__(self, include_demand=True):
-        self.session = CassandraSession(include_demand=include_demand)
+    def __init__(self, include_demand=True, include_job_ads=False):
+        self.session = CassandraSession(include_demand, include_job_ads)
 
     def open(self):
         pass
@@ -123,14 +133,16 @@ def test_education_endpoint_reads_country_and_day_role_demand():
     assert response.json()["programmes"][0]["name"] == "Security MSc"
     assert response.json()["workforce"][0]["workforce_gap"] == 100
     assert response.json()["role_comparison"] == [
+        {"role": "Cybersecurity Educator", "programme_count": 1, "demand_count": None},
         {
             "role": "Cybersecurity Implementer",
             "programme_count": 1,
             "demand_count": 12,
         },
-        {"role": "Security Architect", "programme_count": 0, "demand_count": 4},
+        {"role": "Penetration Tester", "programme_count": 0, "demand_count": 0},
     ]
     assert response.json()["demand_available"] is True
+    assert response.json()["role_demand_available"] is True
     assert all(call[1][0] == "DE" for call in database.session.calls)
     demand_call = next(
         call for call in database.session.calls if "demand_by_day" in call[0]
@@ -145,6 +157,31 @@ def test_education_endpoint_without_demand_keeps_counts_unknown():
 
     assert response.status_code == 200
     assert response.json()["demand_available"] is False
+    assert response.json()["role_demand_available"] is False
+    assert response.json()["role_comparison"][0]["demand_count"] is None
+
+
+def test_education_counts_programmes_beyond_the_list_limit():
+    with TestClient(create_app(database=Database())) as client:
+        response = client.get("/education?country=DE&limit=1")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["programmes"]) == 1
+    assert body["role_comparison"] == [
+        {"role": "Cybersecurity Implementer", "programme_count": 2, "demand_count": None},
+        {"role": "Penetration Tester", "programme_count": 1, "demand_count": None},
+    ]
+
+
+def test_education_distinguishes_snapshot_without_roles_from_no_snapshot():
+    database = Database(include_demand=False, include_job_ads=True)
+    with TestClient(create_app(database=database)) as client:
+        response = client.get("/education?country=DE&day=2026-11-02")
+
+    assert response.status_code == 200
+    assert response.json()["demand_available"] is True
+    assert response.json()["role_demand_available"] is False
     assert response.json()["role_comparison"][0]["demand_count"] is None
 
 

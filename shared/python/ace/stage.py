@@ -70,6 +70,14 @@ class WindowedStage:
         """Which group a record belongs to; by default its Kafka key (the country)."""
         return contracts.key_of(self.input, record)
 
+    def open(self, runtime_context: Any) -> None:
+        """Called once in each Flink task before result(); register metrics here.
+
+        runtime_context is Flink's RuntimeContext, e.g.
+        runtime_context.get_metrics_group().counter("name"). run_local never
+        calls it, so a stage must also work when open() was not called.
+        """
+
     def new(self) -> Any:
         """Empty state for a new window."""
         raise NotImplementedError
@@ -94,6 +102,14 @@ class RecordStage:
 
     def key(self, topic: str, record: dict[str, Any]) -> str:
         return contracts.key_of(topic, record)
+
+    def open(self, runtime_context: Any) -> None:
+        """Called once in each Flink task before process(); register metrics here.
+
+        runtime_context is Flink's RuntimeContext, e.g.
+        runtime_context.get_metrics_group().counter("name"). run_local never
+        calls it, so a stage must also work when open() was not called.
+        """
 
     def process(
         self, topic: str, record: dict[str, Any], memory: dict
@@ -314,6 +330,7 @@ def build_flink(stage: WindowedStage | RecordStage, stream):
         class Process(KeyedProcessFunction):
             def open(self, runtime_context):
                 self.memory = runtime_context.get_state(ValueStateDescriptor("memory", Types.PICKLED_BYTE_ARRAY()))
+                stage.open(runtime_context)
 
             def process_element(self, item, ctx):
                 topic, record = item
@@ -352,6 +369,7 @@ def build_flink(stage: WindowedStage | RecordStage, stream):
     class Publish(KeyedProcessFunction):
         def open(self, runtime_context):
             self.memory = runtime_context.get_state(ValueStateDescriptor("memory", Types.PICKLED_BYTE_ARRAY()))
+            stage.open(runtime_context)
 
         def process_element(self, closed, ctx):
             key, start, end, state = closed

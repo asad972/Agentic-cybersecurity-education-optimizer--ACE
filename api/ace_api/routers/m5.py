@@ -1,14 +1,18 @@
 """Read-only API endpoints for the M5 education and workforce dashboard."""
 
 import logging
+from collections import Counter
 from datetime import date
 from typing import Any, Literal
 
 from cassandra import DriverException
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from ace.ecsf import ECSF_ROLES
+
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["M5 education and workforce"])
+_ROLES_BY_NAME = {role.casefold(): role for role in ECSF_ROLES}
 
 def _session(request: Request):
     """Return the connected Cassandra session or report service unavailability."""
@@ -38,11 +42,14 @@ def get_education(
     day: date | None = Query(default=None),
 ) -> dict[str, Any]:
     """Return programme, workforce, and optional role-demand rows for a country."""
-    programmes = _read(
+    programmes = list(_read(
         request,
         "SELECT programme_id, name, institution, level, ecsf_roles, url "
         "FROM education_programmes WHERE country = %s LIMIT %s",
         (country, limit),
+    ))
+    role_rows = programmes if len(programmes) < limit else _read(
+        request, "SELECT ecsf_roles FROM education_programmes WHERE country = %s", (country,)
     )
     workforce = _read(
         request,
@@ -50,7 +57,8 @@ def get_education(
         "FROM workforce_baseline WHERE country = %s LIMIT %s",
         (country, limit),
     )
-    demand_by_role: dict[str, int] = {}
+    demand_by_role: Counter[str] = Counter()
+    demand_available = False
     if day is not None:
         demand = _read(
             request,
@@ -58,29 +66,34 @@ def get_education(
             "WHERE country = %s AND day = %s AND kind = %s LIMIT 500",
             (country, day, "role"),
         )
-        demand_by_role = {row.item: row.count for row in demand}
-    else:
-        demand = []
+        demand_available = bool(demand) or bool(_read(
+            request, "SELECT count FROM job_ads_by_day WHERE day = %s AND country = %s",
+            (day, country),
+        ))
+        for row in demand:
+            if role := _ROLES_BY_NAME.get(row.item.strip().casefold()):
+                demand_by_role[role] += row.count
 
-    programme_counts: dict[str, int] = {}
-    for row in programmes:
-        for role in set(row.ecsf_roles or []):
-            programme_counts[role] = programme_counts.get(role, 0) + 1
+    programme_counts: Counter[str] = Counter()
+    for row in role_rows:
+        programme_counts.update({
+            canonical for name in row.ecsf_roles or []
+            if (canonical := _ROLES_BY_NAME.get(name.strip().casefold()))
+        })
 
     role_comparison = [
         {
             "role": role,
             "programme_count": programme_counts.get(role, 0),
-            "demand_count": (
-                demand_by_role.get(role, 0) if demand else None
-            ),
+            "demand_count": demand_by_role.get(role),
         }
         for role in sorted(programme_counts.keys() | demand_by_role.keys())
     ]
     return {
         "country": country,
         "day": day.isoformat() if day is not None else None,
-        "demand_available": bool(demand),
+        "demand_available": demand_available,
+        "role_demand_available": bool(demand_by_role),
         "programmes": [
             {
                 "programme_id": row.programme_id,

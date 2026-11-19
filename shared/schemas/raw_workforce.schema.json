@@ -5,12 +5,15 @@
   "description": "Produced by the workforce agent from ISC2 reports at their published geographic scope.",
   "type": "object",
   "required": [
-    "geography_level",
-    "geography",
     "year",
     "source"
   ],
   "properties": {
+    "country": {
+      "type": "string",
+      "pattern": "^[A-Z]{2}$",
+      "description": "Country code in legacy messages"
+    },
     "geography_level": {
       "type": "string",
       "enum": ["country", "region", "global"]
@@ -21,8 +24,7 @@
       "description": "ISO alpha-2 code for country rows; published name for regions; GLOBAL for global rows"
     },
     "year": {
-      "type": "integer",
-      "minimum": 1900
+      "type": "integer"
     },
     "workforce_size": {
       "type": "integer",
@@ -40,7 +42,6 @@
     },
     "source": {
       "type": "string",
-      "minLength": 1,
       "examples": [
         "https://www.isc2.org/Insights/2024/10/ISC2-2024-Cybersecurity-Workforce-Study"
       ]
@@ -51,6 +52,17 @@
       "description": "Figure, table, or page reference in the source"
     }
   },
+  "oneOf": [
+    {
+      "required": ["country"],
+      "not": {"anyOf": [{"required": ["geography_level"]}, {"required": ["geography"]}]}
+    },
+    {
+      "required": ["geography_level", "geography"],
+      "not": {"required": ["country"]},
+      "properties": {"year": {"minimum": 1900}, "source": {"minLength": 1}}
+    }
+  ],
   "allOf": [
     {
       "if": {
