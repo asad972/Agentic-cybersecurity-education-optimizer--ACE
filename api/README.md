@@ -55,7 +55,7 @@ Discovery loads public `.py` modules directly inside `routers/` in alphabetical 
 
 Inside a route, use `request.app.state.database.session` for prepared, bounded Cassandra reads. The session is opened and closed by the service. Use synchronous `def` routes for blocking driver operations (FastAPI runs these in its worker thread pool), or explicitly offload reads in async routes. Handle connection failures with a suitable 503 response. Do not execute unrestricted scans or introduce database writes in browser-facing endpoints.
 
-Domain endpoints remain with their owners, as listed in `docs/ARCHITECTURE.md`. The hourly threat endpoint is a later release.
+Domain endpoints remain with their owners, as listed in `docs/ARCHITECTURE.md`.
 
 ### M4 Europe map endpoints (#37)
 
@@ -71,6 +71,12 @@ partition key and a row limit; a partition larger than the limit is answered
 with 503 rather than a truncated count. Storage problems are also 503, and
 there is no sample-data fallback. The module is `routers/europe_map.py`, with
 the queries in `map_data.py`.
+
+### M4 threat landscape endpoint (#40)
+
+- `GET /threats/hourly?country=HU&from=2026-11-02&to=2026-11-08` — observations per UTC hour for one country, from S7's `threats_by_hour`, with S8's bursts from `alerts`. `from` and `to` are UTC days and both are included; `to` defaults to `from`, and at most 31 days are read. Threats are measured worldwide, so any ISO 3166-1 alpha-2 code is accepted.
+
+The answer has `hours` (the start of each UTC hour with its `total` and `counts` per threat type), `total`, `by_type` (largest first), `bursts` and a `note`. A burst has `created_at` (the hour S8 marked), `threat_type`, `score` and `details`; drift alerts stored in the same partition are left out. Hours without stored observations are left out too, which is not the same as zero. Each day is read with its complete partition key, a row limit and a 5-second timeout. An hourly partition over the limit is a 503 rather than an incomplete count, and a day with more than 200 alerts sets `bursts_truncated`. Storage problems are 503, with no sample-data fallback. The world map itself uses `GET /map?metric=threats`. The module is `routers/threats.py`, with the queries in `threat_data.py`.
 
 ### Live alert feed (#39)
 

@@ -71,6 +71,27 @@ public domain; see `public/MAP-LICENSE.txt`). Shared pieces other pages may
 reuse: `src/services/api.ts` (`getJSON`), `src/hooks/useQuery.ts`,
 `src/components/Chart.tsx`, `CountryMap.tsx` and `Status.tsx`.
 
+## Threat landscape (M4, #40)
+
+`#threats` shows threat observations from public feeds, by the country the
+feeds report, worldwide:
+
+- a world map of one day's observations (`GET /map?metric=threats`). A time
+  slider covers 30 days, with previous and next buttons and a play button that
+  steps through the days up to today. The date field reaches any earlier day,
+  and the slider moves so that day is in its middle;
+- observations per UTC hour for one country (`GET /threats/hourly`), for the
+  selected day or the 7 days ending on it, with gold pins on the hours of S8
+  bursts. Hours without stored observations are gaps, not zero;
+- the threat types behind those observations, and the list of S8 bursts.
+
+Click a country on the map or pick it in the Country list; until you do, the
+country with the most observations on the first day shown is selected. The
+map, the hourly values and the bursts can also be read as tables. Country names
+come from the map outline (`useWorldCountries` in `CountryMap.tsx`). The page
+lives in `pages/ThreatLandscape.tsx` and loads only when it is opened, together
+with the ECharts line and bar charts, so other pages stay light.
+
 ## Teammate extension points
 
 Each page is a separate component in `src/pages/`, registered in `src/pages.ts`.
@@ -87,4 +108,4 @@ Replace your own placeholder component with your dashboard. Preserve other membe
 
 Direct hash links, browser Back/Forward and unknown-route fallback work without a server router. At narrow widths use the menu button; Escape closes the navigation. The skip link focuses the main content.
 
-The FastAPI skeleton is delivered separately under #33. Domain endpoints and dashboard requirements remain in `docs/ARCHITECTURE.md`. The threat landscape dashboard (#40) is a later release.
+The FastAPI skeleton is delivered separately under #33. Domain endpoints and dashboard requirements remain in `docs/ARCHITECTURE.md`.
