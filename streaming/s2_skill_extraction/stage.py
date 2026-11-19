@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any
 
@@ -24,9 +24,9 @@ class S2SkillExtractionStage(RecordStage):
     """Extract canonical Skills, Certifications, and ECSF role from job ads and profiles.
 
     Consumes ``jobs.clean`` -> ``skills.demand`` and ``raw.profiles`` -> ``skills.supply``.
-    Matches mentions by exact name and alias against ``ace.taxonomy`` (with an optional
-    extractor hook for LLM-assisted candidate extraction). Records with no matched
-    taxonomy skills are skipped because downstream schemas require at least one skill.
+    This initial version matches mentions by exact name and alias against ``ace.taxonomy``
+    (with an optional extractor hook for LLM-assisted candidate extraction). Records with
+    no matched taxonomy skills are skipped because downstream schemas require at least one skill.
     """
 
     name = "s2-skill-extraction"
@@ -42,7 +42,6 @@ class S2SkillExtractionStage(RecordStage):
         else:
             self.taxonomy = load_taxonomy(taxonomy)
         self.extractor = extractor
-        self.unmapped_count = 0
         self._unmapped_counter: Any = None
 
     def open(self, runtime_context: Any) -> None:
@@ -51,14 +50,9 @@ class S2SkillExtractionStage(RecordStage):
             UNMAPPED_METRIC
         )
 
-    def _record_unmapped(self, count: int, memory: dict[str, Any]) -> None:
-        if count <= 0:
-            return
-        memory["unmapped_count"] = int(memory.get("unmapped_count", 0)) + count
-        self.unmapped_count += count
-        if self._unmapped_counter is not None:
-            for _ in range(count):
-                self._unmapped_counter.inc()
+    def _record_unmapped(self, count: int) -> None:
+        if count > 0 and self._unmapped_counter is not None:
+            self._unmapped_counter.inc(count)
 
     def _extract(self, topic: str, record: dict[str, Any]) -> ExtractionResult:
         if self.extractor is not None:
@@ -80,7 +74,7 @@ class S2SkillExtractionStage(RecordStage):
     ) -> Iterator[tuple[str, dict[str, Any]]]:
         """Extract taxonomy items and emit a skills.demand or skills.supply message."""
         extraction = self._extract(topic, record)
-        self._record_unmapped(len(extraction.unmapped), memory)
+        self._record_unmapped(len(extraction.unmapped))
 
         # Both skills.demand and skills.supply require skills minItems >= 1
         if not extraction.skills:

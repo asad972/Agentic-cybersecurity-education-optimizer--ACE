@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from ace import contracts
 from ace.stage import run_flink_local, run_local
-
-from ..stage import (
+from s2_skill_extraction.stage import (
     JOBS_CLEAN,
     RAW_PROFILES,
     SKILLS_DEMAND,
@@ -81,6 +79,13 @@ def test_s2_extracts_demand_and_supply_and_skips_empty_skills() -> None:
 
 
 def test_s2_custom_extractor_tracks_unmapped_mentions() -> None:
+    class _FakeCounter:
+        def __init__(self) -> None:
+            self.value = 0
+
+        def inc(self, n: int = 1) -> None:
+            self.value += n
+
     def fake_extractor(topic, record, taxonomy):
         return taxonomy.classify_mentions(
             ["Suricata", "BTL2", "NewZeroDayFramework"],
@@ -88,6 +93,9 @@ def test_s2_custom_extractor_tracks_unmapped_mentions() -> None:
         )
 
     stage = S2SkillExtractionStage(extractor=fake_extractor)
+    counter = _FakeCounter()
+    stage._unmapped_counter = counter
+
     job_ad = _sample_inputs()[0][1]
     res = run_local(stage, [(JOBS_CLEAN, job_ad)])
 
@@ -96,7 +104,7 @@ def test_s2_custom_extractor_tracks_unmapped_mentions() -> None:
     assert demand[0]["skills"] == ["Intrusion Detection"]
     assert demand[0]["certifications"] == ["BTL2"]
     assert demand[0]["unmapped"] == ["NewZeroDayFramework"]
-    assert stage.unmapped_count == 1
+    assert counter.value == 1
 
 
 @pytest.mark.flink
