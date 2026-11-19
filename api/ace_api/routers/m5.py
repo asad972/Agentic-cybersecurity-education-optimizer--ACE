@@ -8,11 +8,26 @@ from typing import Any, Literal
 from cassandra import DriverException
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from ace.ecsf import ECSF_ROLES
-
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["M5 education and workforce"])
-_ROLES_BY_NAME = {role.casefold(): role for role in ECSF_ROLES}
+# The standalone API package does not install the shared agent package.
+_ROLES_BY_NAME = {
+    role.casefold(): role
+    for role in (
+        "Chief Information Security Officer (CISO)",
+        "Cyber Incident Responder",
+        "Cyber Legal, Policy and Compliance Officer",
+        "Cyber Threat Intelligence Specialist",
+        "Cybersecurity Architect",
+        "Cybersecurity Auditor",
+        "Cybersecurity Educator",
+        "Cybersecurity Implementer",
+        "Cybersecurity Researcher",
+        "Cybersecurity Risk Manager",
+        "Digital Forensics Investigator",
+        "Penetration Tester",
+    )
+}
 
 def _session(request: Request):
     """Return the connected Cassandra session or report service unavailability."""

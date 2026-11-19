@@ -1,4 +1,6 @@
 from datetime import date, datetime, timezone
+from pathlib import Path
+from runpy import run_path
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -159,6 +161,25 @@ def test_education_endpoint_without_demand_keeps_counts_unknown():
     assert response.json()["demand_available"] is False
     assert response.json()["role_demand_available"] is False
     assert response.json()["role_comparison"][0]["demand_count"] is None
+
+
+def test_education_normalizes_demand_for_every_agent_role(monkeypatch):
+    repo = Path(__file__).resolve().parents[2]
+    roles = run_path(str(repo / "shared" / "python" / "ace" / "ecsf.py"))["ECSF_ROLES"]
+    database = Database()
+    execute = database.session.execute
+
+    def execute_all_roles(query, parameters):
+        if "demand_by_day" in query:
+            return [SimpleNamespace(item=role.swapcase(), count=1) for role in roles]
+        return execute(query, parameters)
+
+    monkeypatch.setattr(database.session, "execute", execute_all_roles)
+    with TestClient(create_app(database=database)) as client:
+        response = client.get("/education?country=DE&day=2026-11-02")
+
+    assert response.status_code == 200
+    assert {row["role"]: row["demand_count"] for row in response.json()["role_comparison"]} == dict.fromkeys(roles, 1)
 
 
 def test_education_counts_programmes_beyond_the_list_limit():
