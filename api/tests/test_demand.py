@@ -29,14 +29,16 @@ class Session:
         self.replay_days = []
         self.prepared = []
         self.reads = []
+        self.timeouts = []
         self.fail = None
 
     def prepare(self, cql):
         self.prepared.append(cql)
         return cql
 
-    def execute(self, statement, values):
+    def execute(self, statement, values, timeout=None):
         assert statement in CQL.values(), "only prepared statements from CQL are executed"
+        self.timeouts.append(timeout)
         if self.fail:
             raise self.fail
         values = tuple(values)
@@ -143,6 +145,15 @@ def test_demand_items_warns_when_a_partition_hits_the_limit(client, session, mon
     assert response.status_code == 200
     warnings = [record.getMessage() for record in caplog.records]
     assert len(warnings) == 1 and "DE" in warnings[0] and "2-row limit" in warnings[0]
+
+
+def test_every_read_has_a_timeout(client, session):
+    client.get("/top10", params={"country": "DE", "kind": "skill", "date": "2026-10-01"})
+    client.get("/demand/map", params={"kind": "skill", "item": "SIEM", "date": "2026-10-01"})
+    client.get("/demand/items", params={"kind": "skill", "date": "2026-10-01"})
+    client.get("/demand/latest-day")
+    assert len(session.timeouts) > 4
+    assert set(session.timeouts) == {demand.READ_TIMEOUT}
 
 
 def test_statements_are_prepared_once_per_session(client, session):

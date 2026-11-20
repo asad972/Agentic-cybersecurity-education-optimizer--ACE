@@ -30,6 +30,9 @@ LATEST_DAY_LOOKBACK = 31
 TOP10_LOOKBACK = 30
 # Most items read from one demand_by_day partition (one Country, day and kind).
 ITEMS_LIMIT = 5000
+# Seconds one read may take, as in map_data. Some endpoints read up to 32 partitions,
+# so the driver's default of 10 s could keep a worker busy long after nginx gave up.
+READ_TIMEOUT = 5
 
 CQL = {
     "top10": "SELECT rank, item, count FROM top10 WHERE country = ? AND day = ? AND kind = ? LIMIT 10",
@@ -129,7 +132,7 @@ def _read(request: Request, reads):
         session = _session(request)
 
         def query(name, *values):
-            return list(session.execute(_statement(session, name), values))
+            return list(session.execute(_statement(session, name), values, timeout=READ_TIMEOUT))
 
         return reads(query)
     except HTTPException:
