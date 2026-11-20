@@ -1,0 +1,40 @@
+# M5 platform agent (agents/m5/platform_agent/): publishes the reviewed
+# platform comparison in agents/m5/platform_evidence.json to analysis.platforms
+# once, then stops. Run it again with:
+#   kubectl -n ace delete job m5-platform   (then apply the manifests again)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: m5-platform
+  labels:
+    app.kubernetes.io/name: m5-platform
+    app.kubernetes.io/component: agent
+spec:
+  backoffLimit: 10                # retries while Kafka and the topics are still being set up
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: m5-platform
+        app.kubernetes.io/component: agent
+    spec:
+      restartPolicy: OnFailure
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: m5-platform
+          image: ace-m5-platform    # built locally: docker build -t ace-m5-platform -f agents/m5/platform_agent/Dockerfile .
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: ace-config    # KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+          securityContext:
+            allowPrivilegeEscalation: false
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

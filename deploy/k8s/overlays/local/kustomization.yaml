@@ -1,0 +1,46 @@
+# Single-node cluster on a laptop (Docker Desktop Kubernetes, kind or minikube):
+# one copy of everything, replication factor 1, and the web app and API on
+# NodePorts (http://localhost:30080 and http://localhost:30800 on Docker Desktop).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+replicas:
+  - name: kafka
+    count: 1
+  - name: cassandra
+    count: 1
+  - name: sink
+    count: 1
+  - name: api
+    count: 1
+  - name: dashboard
+    count: 1
+  - name: flink-taskmanager
+    count: 1
+  - name: threat-agent
+    count: 0                            # needs the API keys; see README.md
+
+configMapGenerator:
+  - name: kafka-config
+    behavior: merge
+    literals:
+      - BROKERS=1                       # must match the kafka replicas above
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=1
+      - KAFKA_MIN_INSYNC_REPLICAS=1
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+  - name: cassandra-config
+    behavior: merge
+    literals:
+      - REPLICATION_FACTOR=1
+  - name: flink-config
+    behavior: merge
+    literals:
+      - TASK_MANAGER_NUMBER_OF_TASK_SLOTS=10   # one slot per stage on the single TaskManager
+
+patches:
+  - path: nodeports.yaml

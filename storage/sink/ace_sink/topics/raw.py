@@ -58,10 +58,27 @@ def programme(message, received_at):
 
 @rows_for("raw.workforce")
 def workforce(message, received_at):
-    return [Row("workforce_baseline", {
-        "country": message["country"],
+    level = message.get("geography_level", "country")
+    geography = message["geography"] if "geography" in message else message["country"]
+    estimates = {
         "year": message["year"],
         "workforce_size": message.get("workforce_size"),
         "workforce_gap": message.get("workforce_gap"),
         "source": message["source"],
+    }
+    rows = [Row("workforce_baseline_by_geography", {
+        "geography_level": level,
+        "geography": geography,
+        **estimates,
+        "workforce_growth_percent": _optional_double(message, "workforce_growth_percent"),
+        "workforce_gap_growth_percent": _optional_double(message, "workforce_gap_growth_percent"),
+        "source_reference": message.get("source_reference"),
     })]
+    if level == "country":
+        rows.append(Row("workforce_baseline", {"country": geography, **estimates}))
+    return rows
+
+
+def _optional_double(message, field):
+    value = message.get(field)
+    return None if value is None else float(value)

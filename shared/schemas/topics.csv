@@ -2,7 +2,7 @@ topic,schema,key
 raw.jobs,raw_job,country
 raw.profiles,raw_profile,country
 raw.programmes,raw_programme,country
-raw.workforce,raw_workforce,country
+raw.workforce,raw_workforce,geography
 jobs.clean,raw_job,country
 skills.demand,skills_demand,country
 skills.supply,skills_supply,country
