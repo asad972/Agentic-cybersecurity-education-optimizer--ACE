@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ace import contracts
+from platform_agent.__main__ import normalize_record
 from platform_analysis import normalize_platform_evidence
 
 
@@ -19,7 +20,7 @@ class PlatformEvidenceTests(unittest.TestCase):
 
         messages = normalize_platform_evidence(evidence, analysed_at=timestamp)
 
-        self.assertEqual(len(messages), 4)
+        self.assertEqual(len(messages), 5)
         self.assertEqual(
             {message["platform"] for message in messages},
             {"cyberseek", "enisa_ecsf", "isc2_workforce_study"},
@@ -28,12 +29,34 @@ class PlatformEvidenceTests(unittest.TestCase):
         self.assertTrue(
             all("Source:" in message.get("notes", "") for message in messages)
         )
+        eu_workforce = next(
+            message
+            for message in messages
+            if message["feature"] == "eu_workforce_survey"
+        )
+        self.assertIn("country-by-country", eu_workforce["notes"])
         self.assertEqual(
             {message["analysed_at"] for message in messages},
             {"2026-11-02T00:00:00+00:00"},
         )
         for message in messages:
             contracts.validate("analysis.platforms", message)
+
+    def test_csv_decision_is_normalized_without_changing_reviewed_evidence(self) -> None:
+        evidence = {
+            "platform": "CyberSeek",
+            "feature": "career_pathway",
+            "supported": "false",
+            "notes": "CyberSeek describes career pathways. Source: https://cyberseek.org/",
+        }
+        message = normalize_record(
+            evidence,
+            datetime(2026, 11, 2, tzinfo=timezone.utc),
+        )
+
+        self.assertFalse(message["supported"])
+        self.assertEqual(message["notes"], evidence["notes"])
+        contracts.validate("analysis.platforms", message)
 
 
 if __name__ == "__main__":

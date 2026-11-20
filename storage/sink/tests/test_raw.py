@@ -1,6 +1,9 @@
 from datetime import date, datetime, timezone
 from uuid import UUID
 
+import pytest
+
+from ace import contracts
 from ace_sink.rows import Row
 
 RECEIVED = datetime(2026, 10, 2, 8, 0, tzinfo=timezone.utc)
@@ -75,15 +78,51 @@ def test_programme_roles_become_a_set(stored):
     assert row.values["updated_at"] == RECEIVED
 
 
-def test_workforce_figures_per_country_and_year(stored):
-    message = {"country": "DE", "year": 2025, "workforce_size": 120000, "source": "ISC2 2025"}
-    assert stored("raw.workforce", message, RECEIVED) == [Row("workforce_baseline", {
-        "country": "DE",
-        "year": 2025,
+@pytest.mark.parametrize("scope", [
+    {"country": "DE"},
+    {"geography_level": "country", "geography": "DE"},
+])
+def test_workforce_country_messages_write_both_tables(stored, scope):
+    message = {**scope, "year": 2023, "workforce_size": 120000, "source": "ISC2 2023"}
+    estimates = {
+        "year": 2023,
         "workforce_size": 120000,
         "workforce_gap": None,
-        "source": "ISC2 2025",
-    })]
+        "source": "ISC2 2023",
+    }
+    assert contracts.route("raw.workforce", message, producer="test").key == "DE"
+    assert stored("raw.workforce", message, RECEIVED) == [
+        Row("workforce_baseline_by_geography", {
+            "geography_level": "country",
+            "geography": "DE",
+            **estimates,
+            "workforce_growth_percent": None,
+            "workforce_gap_growth_percent": None,
+            "source_reference": None,
+        }),
+        Row("workforce_baseline", {"country": "DE", **estimates}),
+    ]
+
+
+@pytest.mark.parametrize(("level", "geography"), [("region", "Europe"), ("global", "GLOBAL")])
+def test_workforce_non_country_messages_do_not_pollute_country_table(stored, level, geography):
+    message = {
+        "geography_level": level,
+        "geography": geography,
+        "year": 2024,
+        "workforce_gap": 392320,
+        "workforce_gap_growth_percent": 12,
+        "source": "ISC2 2024",
+        "source_reference": "Figure 3",
+    }
+    assert stored("raw.workforce", message, RECEIVED) == [
+        Row("workforce_baseline_by_geography", {
+            **message,
+            "workforce_size": None,
+            "workforce_growth_percent": None,
+            "workforce_gap_growth_percent": 12.0,
+        }),
+    ]
 
 
 def test_same_message_gives_the_same_rows(stored):

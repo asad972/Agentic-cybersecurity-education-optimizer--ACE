@@ -14,12 +14,26 @@ type WorkforceRecord = {
   workforce_size: number | null;
   workforce_gap: number | null;
   source: string;
+  source_reference: string | null;
 };
 
 type EducationData = {
   country: string;
+  day: string | null;
   programmes: Programme[];
-  workforce: WorkforceRecord[];
+  demand_available: boolean;
+  role_demand_available: boolean;
+  role_comparison: {
+    role: string;
+    programme_count: number;
+    demand_count: number | null;
+  }[];
+};
+
+type WorkforceData = {
+  geography_level: 'country' | 'region' | 'global';
+  geography: string;
+  items: WorkforceRecord[];
 };
 
 type EmergingData = {
@@ -72,16 +86,23 @@ async function getJson<T>(path: string, signal: AbortSignal): Promise<T> {
 function BarChart({
   title,
   items,
+  emptyMessage,
+  caption,
 }: {
   title: string;
   items: { label: string; value: number; detail?: string }[];
+  emptyMessage?: string;
+  caption?: string;
 }) {
   const maximum = Math.max(1, ...items.map(item => item.value));
   return (
     <section className="m5-card" aria-label={title}>
       <h2>{title}</h2>
+      {caption && <p className="m5-empty">{caption}</p>}
       {items.length === 0 ? (
-        <p className="m5-empty">No observations are available for this selection.</p>
+        <p className="m5-empty">
+          {emptyMessage ?? 'No observations are available for this selection.'}
+        </p>
       ) : (
         <ul className="m5-bars">
           {items.map(item => (
@@ -119,20 +140,25 @@ export function EducationPage() {
     return yesterday.toISOString().slice(0, 10);
   });
   const [education, setEducation] = useState<EducationData | null>(null);
+  const [workforce, setWorkforce] = useState<WorkforceData | null>(null);
   const [emerging, setEmerging] = useState<EmergingData | null>(null);
   const [companies, setCompanies] = useState<CompaniesData | null>(null);
   const [platforms, setPlatforms] = useState<PlatformData | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [result, setResult] = useState<{ query: string; error: string | null } | null>(null);
+  const query = `country=${encodeURIComponent(country)}&day=${encodeURIComponent(day)}`;
+  const loading = result?.query !== query;
+  const error = loading ? null : result?.error;
 
   useEffect(() => {
     const controller = new AbortController();
-    const query = `country=${encodeURIComponent(country)}&day=${encodeURIComponent(day)}`;
-    setLoading(true);
-    setError(null);
+    setResult(null);
 
     Promise.all([
-      getJson<EducationData>(`/education?country=${encodeURIComponent(country)}`, controller.signal),
+      getJson<EducationData>(`/education?${query}`, controller.signal),
+      getJson<WorkforceData>(
+        `/workforce?geography_level=country&geography=${encodeURIComponent(country)}`,
+        controller.signal,
+      ),
       getJson<EmergingData>(`/emerging?${query}`, controller.signal),
       getJson<PlatformData>('/platforms', controller.signal),
       getJson<CompaniesData>(`/companies?${query}`, controller.signal).catch(error => {
@@ -140,24 +166,32 @@ export function EducationPage() {
         throw error;
       }),
     ])
-      .then(([educationResult, emergingResult, platformResult, companyResult]) => {
+      .then(([educationResult, workforceResult, emergingResult, platformResult, companyResult]) => {
+        if (controller.signal.aborted) return;
         setEducation(educationResult);
+        setWorkforce(workforceResult);
         setEmerging(emergingResult);
         setPlatforms(platformResult);
         setCompanies(companyResult);
+        setResult({ query, error: null });
       })
       .catch(error => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
-        setError(error instanceof Error ? error.message : 'Unable to load dashboard data.');
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (controller.signal.aborted) return;
+        setResult({
+          query,
+          error: error instanceof Error ? error.message : 'Unable to load dashboard data.',
+        });
       });
 
     return () => controller.abort();
-  }, [country, day]);
+  }, [country, query]);
 
-  const workforceBars = (education?.workforce ?? []).flatMap(record => [
+  const countryRecord = workforce?.items.reduce<WorkforceRecord | undefined>(
+    (latest, record) => (record.workforce_size !== null || record.workforce_gap !== null) &&
+      (!latest || record.year > latest.year) ? record : latest,
+    undefined,
+  );
+  const workforceBars = (countryRecord ? [countryRecord] : []).flatMap(record => [
     ...(record.workforce_size === null
       ? []
       : [{ label: `${record.year} workforce`, value: record.workforce_size }]),
@@ -236,8 +270,56 @@ export function EducationPage() {
           </section>
 
           <section className="m5-charts" aria-label="Education and workforce charts">
-            <BarChart title="Workforce by year" items={workforceBars} />
+            <BarChart
+              title="Country workforce estimates"
+              items={workforceBars}
+              caption={countryRecord ? `${countryRecord.source} · latest edition with country figures${
+                countryRecord.source_reference ? ` · ${countryRecord.source_reference}` : ''
+              }${countryRecord.workforce_size === null ? ' · Workforce size: not enough data' : ''}` : undefined}
+              emptyMessage={`Not enough data: no country estimates available for ${country}.`}
+            />
             <BarChart title="Emerging skill candidates" items={emergingBars} />
+          </section>
+
+          <section className="m5-card m5-section">
+            <h2>Education programmes vs role demand</h2>
+            <p className="m5-empty">
+              ECSF role counts for {country} on {education?.day ?? day}. Demand is
+              based on the selected daily snapshot.
+            </p>
+            {education && !education.role_demand_available && (
+              <p className="m5-empty">
+                {education.demand_available
+                  ? 'Demand is stored for this date, but no ECSF role counts are available.'
+                  : 'Demand data has not been stored for this date yet.'}
+              </p>
+            )}
+            {!education?.role_comparison.length ? (
+              <p className="m5-empty">
+                No programme or demand data is available for this country and date.
+              </p>
+            ) : (
+              <div className="m5-table-wrap">
+                <table className="m5-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">ECSF role</th>
+                      <th scope="col">Programmes</th>
+                      <th scope="col">Job-ad demand</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {education.role_comparison.map(item => (
+                      <tr key={item.role}>
+                        <td>{item.role}</td>
+                        <td>{item.programme_count.toLocaleString()}</td>
+                        <td>{item.demand_count?.toLocaleString() ?? 'No data'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </section>
 
           <section className="m5-card m5-section">
