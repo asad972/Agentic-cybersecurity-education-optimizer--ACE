@@ -28,7 +28,7 @@ pnpm dev
 ```
 
 Open the Local URL printed by Vite. Run `pnpm build` for TypeScript checking and a production build,
-and `pnpm test` for the unit tests of the request and date helpers.
+and `pnpm test` for the request, date, transformation, and page-behavior tests.
 The Europe overview requests `/map/meta`, `/map` and `/map/country`, and opens
 the `WS /live` alert feed.
 The M5 page requests `/education`, `/emerging`, `/companies` and `/platforms`
@@ -37,6 +37,33 @@ build or Vite startup to use another API origin. Start the API and Cassandra
 stack separately as documented in `api/README.md`; without them, the M5 page
 shows an explicit connection error instead of sample data. The Europe
 overview does the same, with a retry button.
+
+## Supply, gap and forecast (M3, #31)
+
+The M3 workspace at `#forecast` combines four independent stored-data views:
+
+- `/map?metric=supply&date=&item=` supplies the Skill Supply choropleth for an
+  exact canonical Skill on one event day.
+- `/gap?country=&month=` supplies the Demand-versus-Supply bars and Skill
+  suggestions for a complete month.
+- `/forecast?region=&skill=` supplies the 12-month country or EU forecast and
+  confidence band.
+- `/map/country?country=&date=` supplies stored alerts; this page displays only
+  country-level drift alerts and does not connect to `WS /live`.
+
+The country list and Supply-date bounds come from `/map/meta`. Country defaults
+to `DE`, forecast scope defaults to `EU`, the day defaults to the previous UTC
+day within the advertised bounds, and the month defaults to the previous
+complete UTC month. After the first Gap response, the page initially selects
+the positive-Demand Skill with the largest Demand, using its canonical name to
+break ties. A user's later Skill selection is preserved when other filters
+change.
+
+Panels load and fail independently and each error has its own retry action.
+Missing rows, a null Gap ratio, and grey map countries mean unavailable data,
+not zero. Supply is a sparse event-day snapshot and is not silently carried
+forward from an earlier day. Each chart has an adjacent accessible data table,
+and all filters are keyboard usable.
 
 ## Europe overview (M4, #37)
 
