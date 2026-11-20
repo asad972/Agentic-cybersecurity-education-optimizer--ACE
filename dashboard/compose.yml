@@ -1,6 +1,8 @@
-# Independent shell preview: no API or database required.
+# Shell preview. Runs without an API or database; /api/ reaches an API published on the host's port 8000.
 services:
   dashboard:
     build: .
     ports:
       - "127.0.0.1:${ACE_DASHBOARD_PORT:-5173}:80"
+    environment:
+      ACE_API_URL: ${ACE_API_URL:-http://host.docker.internal:8000}
