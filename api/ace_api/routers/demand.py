@@ -1,8 +1,8 @@
 """Skills demand dashboard endpoints (M2, issue #23).
 
 Every endpoint reads Cassandra with prepared statements, one bounded
-partition per query. Driver classes are never imported here, so the module
-loads on Windows and in tests that use a fake session.
+partition per query. Only the session passed in by the app is used, so the
+endpoints run in tests with a fake session.
 """
 from datetime import date, datetime, timedelta, timezone
 import logging
@@ -13,17 +13,15 @@ import weakref
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
+from ..map_data import COUNTRIES
+
 log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Skills demand"])
 
 # Skills Scope: EU27, the EEA countries outside the EU, the UK and Switzerland.
-SKILLS_SCOPE = (
-    "AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "ES", "FI", "FR", "GR", "HR", "HU",
-    "IE", "IT", "LT", "LU", "LV", "MT", "NL", "PL", "PT", "RO", "SE", "SI", "SK",
-    "IS", "LI", "NO",
-    "GB", "CH",
-)
+# The same list as the Europe map and /map/meta.
+SKILLS_SCOPE = tuple(COUNTRIES)
 # How many days before a starting day /demand/latest-day looks for data.
 LATEST_DAY_LOOKBACK = 31
 # How many days before the requested day /top10 looks for a Top 10.
