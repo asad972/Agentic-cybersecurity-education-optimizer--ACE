@@ -4,8 +4,13 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CountryAlert, ForecastItem, GapItem } from '../services/api';
 
+const chartRender = vi.hoisted(() => vi.fn());
+
 vi.mock('../components/Chart', () => ({
-  Chart: ({ label }: { label: string }) => <div role="img" aria-label={label} />,
+  Chart: ({ label, option }: { label: string; option: unknown }) => {
+    chartRender(label, option);
+    return <div role="img" aria-label={label} />;
+  },
 }));
 vi.mock('../components/CountryMap', () => ({
   CountryMap: ({ onSelect }: { onSelect: (code: string) => void }) => <div role="img" aria-label="Supply map"><button onClick={() => onSelect('FR')}>Choose France on map</button></div>,
@@ -30,16 +35,23 @@ function alert(index: number, type = 'drift'): CountryAlert {
 }
 
 let mapFailures = 0;
+let emptyGapForGermany = false;
 let calls: URL[];
 
 beforeEach(() => {
   calls = [];
   mapFailures = 0;
+  emptyGapForGermany = false;
+  chartRender.mockClear();
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const url = new URL(String(input));
     calls.push(url);
     if (url.pathname === '/map/meta') return Response.json({ countries: [{ code: 'DE', name: 'Germany' }, { code: 'FR', name: 'France' }], metrics: [], date_min: '2020-01-01', date_max: '2026-11-15' });
-    if (url.pathname === '/gap') return Response.json({ country: url.searchParams.get('country'), month: url.searchParams.get('month'), items: gapItems });
+    if (url.pathname === '/gap') {
+      const country = url.searchParams.get('country');
+      const items = emptyGapForGermany && country === 'DE' ? [] : gapItems;
+      return Response.json({ country, month: url.searchParams.get('month'), items });
+    }
     if (url.pathname === '/map') {
       if (mapFailures-- > 0) return Response.json({ detail: 'Supply storage unavailable' }, { status: 503 });
       return Response.json({ metric: 'supply', date: url.searchParams.get('date'), item: url.searchParams.get('item'), unit: 'profiles', period: '365-day stock snapshot', note: 'event day', data: [{ country: 'DE', value: 30 }, { country: 'FR', value: null }] });
@@ -97,6 +109,47 @@ describe('M3 dashboard requests and states', () => {
 
     await waitFor(() => expect(calls.some(url => url.pathname === '/forecast' && url.searchParams.get('region') === 'FR' && url.searchParams.get('skill') === 'Terraform')).toBe(true));
     expect(screen.getByDisplayValue('Terraform')).toBeTruthy();
+  });
+
+  it('keeps chart options stable while editing an unapplied Skill draft', async () => {
+    const user = userEvent.setup();
+    render(<ForecastPage />);
+    const skill = await screen.findByDisplayValue('AWS Security');
+    await screen.findByRole('img', { name: /Twelve-month AWS Security/ });
+
+    const initialGapOption = chartRender.mock.calls.find(([label]) => String(label).startsWith('Demand and Supply'))?.[1];
+    const initialForecastOption = chartRender.mock.calls.find(([label]) => String(label).startsWith('Twelve-month'))?.[1];
+    expect(initialGapOption).toBeTruthy();
+    expect(initialForecastOption).toBeTruthy();
+    chartRender.mockClear();
+
+    await user.type(skill, ' draft');
+
+    const gapOptions = chartRender.mock.calls
+      .filter(([label]) => String(label).startsWith('Demand and Supply'))
+      .map(([, option]) => option);
+    const forecastOptions = chartRender.mock.calls
+      .filter(([label]) => String(label).startsWith('Twelve-month'))
+      .map(([, option]) => option);
+    expect(gapOptions.length).toBeGreaterThan(0);
+    expect(forecastOptions.length).toBeGreaterThan(0);
+    expect(gapOptions.every(option => option === initialGapOption)).toBe(true);
+    expect(forecastOptions.every(option => option === initialForecastOption)).toBe(true);
+  });
+
+  it('chooses an initial Skill after an earlier Gap response was empty', async () => {
+    emptyGapForGermany = true;
+    const user = userEvent.setup();
+    render(<ForecastPage />);
+
+    expect(await screen.findByText('No Skills Gap rows are stored for this country and month.')).toBeTruthy();
+    expect((screen.getByPlaceholderText('Exact Skill name') as HTMLInputElement).value).toBe('');
+
+    await user.selectOptions(screen.getByRole('combobox', { name: /Country/ }), 'FR');
+
+    expect(await screen.findByDisplayValue('AWS Security')).toBeTruthy();
+    await waitFor(() => expect(calls.some(url => url.pathname === '/forecast'
+      && url.searchParams.get('skill') === 'AWS Security')).toBe(true));
   });
 
   it('keeps successful panels visible when Supply fails and retries only that panel', async () => {

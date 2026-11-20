@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { BarChart, LineChart } from 'echarts/charts';
 import { GridComponent, LegendComponent } from 'echarts/components';
@@ -98,16 +98,24 @@ function ForecastDashboard({ meta }: { meta: MapMeta }) {
 
   useEffect(() => {
     if (!gap.data || choseInitialSkill.current) return;
-    choseInitialSkill.current = true;
     const choice = initialSkill(gap.data.items);
-    if (choice) { setSkill(choice); setDraft(choice); }
+    if (choice) {
+      choseInitialSkill.current = true;
+      setSkill(choice);
+      setDraft(choice);
+    }
   }, [gap.data]);
 
   const region = scope === 'EU' ? 'EU' : country;
   const supply = useQuery<MapData>(skill ? '/map' : null, { metric: 'supply', date: day, item: skill });
   const forecast = useQuery<ForecastData>(skill ? '/forecast' : null, { region, skill });
   const countryData = useQuery<CountryData>('/map/country', { country, date: day });
-  const gapRows = rankGap(gap.data?.items ?? []);
+  const gapRows = useMemo(() => rankGap(gap.data?.items ?? []), [gap.data?.items]);
+  const gapChartOption = useMemo(() => gapOption(gapRows), [gapRows]);
+  const forecastChartOption = useMemo(
+    () => forecastOption(forecast.data?.items ?? []),
+    [forecast.data?.items],
+  );
   const selectedGap = gap.data?.items.find(item => item.skill === skill);
   const selectedSupply = supply.data?.data.find(item => item.country === country)?.value;
   const firstForecast = forecast.data?.items[0];
@@ -140,11 +148,11 @@ function ForecastDashboard({ meta }: { meta: MapMeta }) {
       </Panel>
 
       <Panel title="Demand versus Supply" eyebrow={`${countryName(country).toUpperCase()} · ${month}`} pill="TOP 10 BY DEMAND">
-        {gap.loading ? <Loading /> : gap.error ? <ErrorState message={gap.error} retry={gap.retry} /> : !gapRows.length ? <Prompt text="No Skills Gap rows are stored for this country and month." /> : <><Chart option={gapOption(gapRows)} label={`Demand and Supply for the ten highest-Demand Skills in ${countryName(country)}`} className="forecast-bars" /><DataTable summary="View Demand and Supply as a table" headers={['Skill', 'Demand', 'Supply', 'Gap']} rows={gapRows.map(row => [row.skill, countLabel(row.demand), countLabel(row.supply), row.gap_ratio == null ? 'Not enough Supply data' : countLabel(row.gap_ratio)])} /></>}
+        {gap.loading ? <Loading /> : gap.error ? <ErrorState message={gap.error} retry={gap.retry} /> : !gapRows.length ? <Prompt text="No Skills Gap rows are stored for this country and month." /> : <><Chart option={gapChartOption} label={`Demand and Supply for the ten highest-Demand Skills in ${countryName(country)}`} className="forecast-bars" /><DataTable summary="View Demand and Supply as a table" headers={['Skill', 'Demand', 'Supply', 'Gap']} rows={gapRows.map(row => [row.skill, countLabel(row.demand), countLabel(row.supply), row.gap_ratio == null ? 'Not enough Supply data' : countLabel(row.gap_ratio)])} /></>}
       </Panel>
 
       <Panel title="Twelve-month Demand forecast" eyebrow={`${region} · ${skill || 'NO SKILL'}`} pill="95% BAND" className="forecast-line-panel">
-        {!skill ? <Prompt text="Choose an exact Skill to load its Demand forecast." /> : forecast.loading ? <Loading /> : forecast.error ? <ErrorState message={forecast.error} retry={forecast.retry} /> : !forecast.data?.items.length ? <Prompt text="No forecast is stored for this region and Skill." /> : <><Chart option={forecastOption(forecast.data.items)} label={`Twelve-month ${skill} Demand forecast for ${region} with a 95 percent interval`} className="forecast-line" /><p className="forecast-note">The shaded range is the stored model interval. It is uncertainty, not additional Demand.</p><DataTable summary="View forecast values as a table" headers={['Month', 'Prediction', 'Lower', 'Upper', 'Model']} rows={forecast.data.items.map(row => [row.target_month, countLabel(row.predicted), countLabel(row.lower), countLabel(row.upper), row.model.replace('_', ' ')])} /></>}
+        {!skill ? <Prompt text="Choose an exact Skill to load its Demand forecast." /> : forecast.loading ? <Loading /> : forecast.error ? <ErrorState message={forecast.error} retry={forecast.retry} /> : !forecast.data?.items.length ? <Prompt text="No forecast is stored for this region and Skill." /> : <><Chart option={forecastChartOption} label={`Twelve-month ${skill} Demand forecast for ${region} with a 95 percent interval`} className="forecast-line" /><p className="forecast-note">The shaded range is the stored model interval. It is uncertainty, not additional Demand.</p><DataTable summary="View forecast values as a table" headers={['Month', 'Prediction', 'Lower', 'Upper', 'Model']} rows={forecast.data.items.map(row => [row.target_month, countLabel(row.predicted), countLabel(row.lower), countLabel(row.upper), row.model.replace('_', ' ')])} /></>}
       </Panel>
 
       <Panel title="Stored Demand drift alerts" eyebrow={`${countryName(country).toUpperCase()} · ${formatDate(day).toUpperCase()}`} pill={`${alerts.length} SHOWN`}>
