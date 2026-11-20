@@ -1,0 +1,17 @@
+# Used by deploy/k8s/monitoring, not applied on its own: turns the files that
+# Docker Compose mounts into ConfigMaps, so Kubernetes runs the same recording
+# rules, Grafana data source and dashboard.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+configMapGenerator:
+  - name: prometheus-rules
+    files:
+      - prometheus/rules/pipeline-health.yml
+  - name: grafana-provisioning
+    files:
+      - datasource.yml=grafana/provisioning/datasources/prometheus.yml
+      - dashboards.yml=grafana/provisioning/dashboards/ace.yml
+  - name: grafana-dashboards
+    files:
+      - grafana/dashboards/pipeline-health.json

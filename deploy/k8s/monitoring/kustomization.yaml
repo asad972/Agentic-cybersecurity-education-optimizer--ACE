@@ -1,0 +1,35 @@
+# Monitoring on Kubernetes: Prometheus, Grafana, the pipeline metrics exporter
+# and the Kafka exporter, in namespace ace. Applied on its own, after the rest
+# of the stack:
+#
+#   kubectl apply -k deploy/k8s/monitoring
+#
+# See deploy/monitoring/README.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ace
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: ace
+    includeSelectors: false
+
+resources:
+  - ../../monitoring            # recording rules, Grafana data source and dashboard (shared with Docker Compose)
+  - prometheus.yaml
+  - grafana.yaml
+  - pipeline-exporter.yaml
+  - kafka-exporter.yaml
+
+configMapGenerator:
+  - name: prometheus-config
+    files:
+      - prometheus.yml
+
+# The exporter image is built from deploy/monitoring/exporter/Dockerfile.
+# Point it at the registry the cluster pulls from with:
+#   kustomize edit set image ace-pipeline-exporter=<registry>/ace-pipeline-exporter:<tag>
+images:
+  - name: ace-pipeline-exporter
+    newTag: "0.1.0"
