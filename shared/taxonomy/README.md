@@ -13,3 +13,8 @@ Planned files:
 `aliases` lists other spellings S2 should map to the entry (e.g. `SIEM` ← `Security Information and Event Management`).
 
 Changes are agreed by the whole team: renaming an entry changes the keys in every count table.
+
+Member proposals are stored in `contributions/` before M1 reconciles them into
+the canonical files. M5's education and training proposal is in
+`contributions/m5_skills.csv`; its source and mapping notes are in
+`contributions/m5_sources.md`.

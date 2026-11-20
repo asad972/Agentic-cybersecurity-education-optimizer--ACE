@@ -1,0 +1,176 @@
+# Flink session cluster for the ten stream stages: one JobManager (schedules the
+# jobs, web UI on 8081) and TaskManagers (run them). Each stage is a PyFlink job
+# submitted to this cluster, not a Deployment of its own.
+#
+# Skeleton: this runs the plain flink:2.3.0 image, so the cluster starts and its
+# web UI works, but it cannot run Python jobs yet. Once the ACE Flink image
+# (Flink + Python 3.11 + PyFlink 2.3 + Kafka connector + the stage code) exists,
+# change the image in kustomization.yaml (images: flink) and submit the stages
+# as described in deploy/k8s/README.md.
+apiVersion: v1
+kind: Service
+metadata:
+  name: flink-jobmanager
+  labels:
+    app.kubernetes.io/name: flink
+    app.kubernetes.io/component: jobmanager
+spec:
+  selector:
+    app.kubernetes.io/name: flink
+    app.kubernetes.io/component: jobmanager
+  ports:
+    - name: rpc
+      port: 6123
+    - name: blob
+      port: 6124
+    - name: webui
+      port: 8081
+    - name: metrics
+      port: 9249
+---
+# Headless, so its DNS name returns every TaskManager (Prometheus scrapes each one)
+apiVersion: v1
+kind: Service
+metadata:
+  name: flink-taskmanager
+  labels:
+    app.kubernetes.io/name: flink
+    app.kubernetes.io/component: taskmanager
+spec:
+  clusterIP: None
+  selector:
+    app.kubernetes.io/name: flink
+    app.kubernetes.io/component: taskmanager
+  ports:
+    - name: metrics
+      port: 9249
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-jobmanager
+  labels:
+    app.kubernetes.io/name: flink
+    app.kubernetes.io/component: jobmanager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flink
+      app.kubernetes.io/component: jobmanager
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: flink
+        app.kubernetes.io/component: jobmanager
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: jobmanager
+          image: flink:2.3.0-java17
+          imagePullPolicy: IfNotPresent
+          args: ["jobmanager"]
+          envFrom:
+            - configMapRef:
+                name: ace-config
+            - configMapRef:
+                name: flink-config
+          env:
+            - name: JOB_MANAGER_RPC_ADDRESS
+              value: flink-jobmanager
+            - name: FLINK_PROPERTIES
+              value: |
+                jobmanager.memory.process.size: $(JOBMANAGER_MEMORY)
+                taskmanager.memory.process.size: $(TASKMANAGER_MEMORY)
+                taskmanager.rpc.port: 6122
+                parallelism.default: 1
+                metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+                metrics.reporter.prom.port: 9249
+          ports:
+            - name: rpc
+              containerPort: 6123
+            - name: blob
+              containerPort: 6124
+            - name: webui
+              containerPort: 8081
+            - name: metrics
+              containerPort: 9249
+          readinessProbe:
+            httpGet:
+              path: /overview
+              port: webui
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: rpc
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 200m
+              memory: 1Gi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: flink-taskmanager
+  labels:
+    app.kubernetes.io/name: flink
+    app.kubernetes.io/component: taskmanager
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: flink
+      app.kubernetes.io/component: taskmanager
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: flink
+        app.kubernetes.io/component: taskmanager
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: taskmanager
+          image: flink:2.3.0-java17
+          imagePullPolicy: IfNotPresent
+          args: ["taskmanager"]
+          envFrom:
+            - configMapRef:
+                name: ace-config
+            - configMapRef:
+                name: flink-config
+          env:
+            - name: JOB_MANAGER_RPC_ADDRESS
+              value: flink-jobmanager
+            - name: FLINK_PROPERTIES
+              value: |
+                jobmanager.memory.process.size: $(JOBMANAGER_MEMORY)
+                taskmanager.memory.process.size: $(TASKMANAGER_MEMORY)
+                taskmanager.rpc.port: 6122
+                parallelism.default: 1
+                metrics.reporter.prom.factory.class: org.apache.flink.metrics.prometheus.PrometheusReporterFactory
+                metrics.reporter.prom.port: 9249
+          ports:
+            - name: rpc
+              containerPort: 6122
+            - name: metrics
+              containerPort: 9249
+          livenessProbe:
+            tcpSocket:
+              port: rpc
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            failureThreshold: 6
+          resources:
+            requests:
+              cpu: 250m
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi

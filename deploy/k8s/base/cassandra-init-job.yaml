@@ -1,0 +1,91 @@
+# One-off Job: creates keyspace ace and every table in storage/cql/schema.cql.
+# schema.cql creates the keyspace with replication factor 1 for development.
+# Here the keyspace is created first with NetworkTopologyStrategy and the
+# replication factor from cassandra-config, so the CREATE KEYSPACE IF NOT EXISTS
+# in schema.cql changes nothing and the file stays the single source of the tables.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cassandra-init
+  labels:
+    app.kubernetes.io/name: cassandra-init
+    app.kubernetes.io/component: setup
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cassandra-init
+        app.kubernetes.io/component: setup
+    spec:
+      restartPolicy: OnFailure
+      enableServiceLinks: false
+      initContainers:
+        - name: wait-for-cassandra
+          image: cassandra:4.1
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              # Wait until as many nodes have joined as the keyspace keeps copies
+              nodes=0
+              until [ "$nodes" -ge "$REPLICATION_FACTOR" ]; do
+                peers=$(cqlsh cassandra --no-color -e "SELECT count(*) FROM system.peers" 2>/dev/null | grep -Eo '^ *[0-9]+ *$' | head -n 1 | tr -d ' ')
+                nodes=$(( ${peers:--1} + 1 ))
+                echo "Cassandra nodes up: $nodes of $REPLICATION_FACTOR"
+                [ "$nodes" -ge "$REPLICATION_FACTOR" ] || sleep 10
+              done
+          env:
+            - name: REPLICATION_FACTOR
+              valueFrom:
+                configMapKeyRef:
+                  name: cassandra-config
+                  key: REPLICATION_FACTOR
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      containers:
+        - name: apply-schema
+          image: cassandra:4.1
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              set -e
+              replication="{'class': 'NetworkTopologyStrategy', '$CASSANDRA_DC': $REPLICATION_FACTOR}"
+              cqlsh cassandra --request-timeout=60 -e "
+                CREATE KEYSPACE IF NOT EXISTS ace WITH replication = $replication;
+                ALTER KEYSPACE ace WITH replication = $replication;"
+              cqlsh cassandra --request-timeout=60 -f /schema/schema.cql
+              cqlsh cassandra -e "DESCRIBE KEYSPACE ace" | head -n 3
+              echo "Schema ready"
+          env:
+            - name: CASSANDRA_DC
+              valueFrom:
+                configMapKeyRef:
+                  name: cassandra-config
+                  key: CASSANDRA_DC
+            - name: REPLICATION_FACTOR
+              valueFrom:
+                configMapKeyRef:
+                  name: cassandra-config
+                  key: REPLICATION_FACTOR
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - name: schema
+              mountPath: /schema
+              readOnly: true
+      volumes:
+        - name: schema
+          configMap:
+            name: cassandra-schema
