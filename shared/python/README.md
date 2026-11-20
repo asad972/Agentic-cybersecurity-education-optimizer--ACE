@@ -51,6 +51,32 @@ Subclass `WindowedStage` (counts per Country and window) or `RecordStage` (one r
 
   `run_local` never calls `open()`, so the stage must also work without it (e.g. `if self.removed is not None: self.removed.inc()`). Counts that must survive a restart belong in `memory`, not in the counter. Late records are already counted in `late_records_total` for every windowed stage.
 
+## Running a stage on Kafka
+
+`ace.kafka` runs any stage between Kafka topics: it reads the stage's input topics, runs `build_flink`, and writes every result and `errors.invalid` record to its topic. The Flink Kafka connector JAR is downloaded once from Maven Central into `ACE_FLINK_JARS` (default `~/.cache/ace/flink-jars`) and checked against its SHA-1. Stages that start at the same time each download to their own temporary file and swap in the checked JAR in one step, so they never overwrite each other.
+
+From the repository root (the same commands also work from `streaming/`):
+
+```powershell
+docker compose up -d                                  # local Kafka and Cassandra
+$env:KAFKA_BOOTSTRAP_SERVERS = 'localhost:9092'       # the default
+python -m ace.kafka s4_demand_frequency.stage:DemandFrequency             # runs until stopped
+python -m ace.kafka s4_demand_frequency.stage:DemandFrequency --bounded   # reads what is there now, then stops
+```
+
+- The consumer group is the stage's `name`, so a restarted job continues where it stopped. An unbounded job saves a checkpoint (state and Kafka offsets) every 60 seconds.
+- Delivery is at least once; the Cassandra sink's upserts absorb a repeated result after a restart.
+- Results are written without a Kafka key: PyFlink can only serialise the whole record as the key. Nothing downstream reads it, because stages group by the record's `country` field and the sink ignores keys.
+- The connector is `flink-sql-connector-kafka` 5.0.0-2.2, built for Flink 2.1 and 2.2 and tested with our PyFlink 2.3.0. There is no release for Flink 2.3 yet.
+
+`streaming/s4_demand_frequency/tests/test_s4_kafka.py` runs S4 end to end on the local Kafka. It writes to the local topics (made-up country `ZZ`, a day decades ahead), so it only runs when asked:
+
+```powershell
+$env:ACE_KAFKA_TESTS = '1'
+python -m pytest streaming/s4_demand_frequency/tests/test_s4_kafka.py
+Remove-Item Env:ACE_KAFKA_TESTS
+```
+
 Rules for everyone:
 
 - Publish to Kafka only through `ace.contracts`, never with a hand-typed topic name.
