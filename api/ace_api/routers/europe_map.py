@@ -3,14 +3,9 @@ from datetime import date as Date, datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from ..map_data import COUNTRIES, ITEM_METRICS, METRICS, WORLD_METRICS, MapReader, MapResponse, Metric
+from ..map_data import COUNTRIES, ITEM_METRICS, METRICS, WORLD_METRICS, MapReader, MapResponse, Metric, check_day as _day
 
 router = APIRouter(tags=["M4 Europe map"])
-
-
-def _day(day: Date):
-    if not Date(2020, 1, 1) <= day <= datetime.now(timezone.utc).date():
-        raise HTTPException(422, "Choose a date from 2020-01-01 through today (UTC)")
 
 
 def _reader(request):
