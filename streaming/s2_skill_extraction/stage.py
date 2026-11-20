@@ -7,8 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from ace import contracts
+from ace.llm import LLMClient
 from ace.stage import RecordStage
 from ace.taxonomy import ExtractionResult, Taxonomy, load_taxonomy
+
+from .llm_extractor import LLMSkillExtractor, llm_enabled_from_env
 
 JOBS_CLEAN = contracts.topic("jobs.clean").name
 RAW_PROFILES = contracts.topic("raw.profiles").name
@@ -24,9 +27,9 @@ class S2SkillExtractionStage(RecordStage):
     """Extract canonical Skills, Certifications, and ECSF role from job ads and profiles.
 
     Consumes ``jobs.clean`` -> ``skills.demand`` and ``raw.profiles`` -> ``skills.supply``.
-    This initial version matches mentions by exact name and alias against ``ace.taxonomy``
-    (with an optional extractor hook for LLM-assisted candidate extraction). Records with
-    no matched taxonomy skills are skipped because downstream schemas require at least one skill.
+    Supports deterministic boundary matching against ``ace.taxonomy`` as well as
+    LLM-assisted extraction via ``ace.llm`` (enabled via ``llm_client``, ``use_llm=True``,
+    or ``ACE_S2_USE_LLM=1``) to surface emerging unmapped terms for S9.
     """
 
     name = "s2-skill-extraction"
@@ -36,12 +39,24 @@ class S2SkillExtractionStage(RecordStage):
         self,
         taxonomy: Taxonomy | Path | str | None = None,
         extractor: ExtractorFn | None = None,
+        *,
+        llm_client: LLMClient | None = None,
+        use_llm: bool | None = None,
     ) -> None:
         if isinstance(taxonomy, Taxonomy):
             self.taxonomy = taxonomy
         else:
             self.taxonomy = load_taxonomy(taxonomy)
-        self.extractor = extractor
+
+        if extractor is not None:
+            self.extractor: ExtractorFn | None = extractor
+        elif llm_client is not None:
+            self.extractor = LLMSkillExtractor(llm_client)
+        elif use_llm is True or (use_llm is None and llm_enabled_from_env()):
+            self.extractor = LLMSkillExtractor.from_env()
+        else:
+            self.extractor = None
+
         self._unmapped_counter: Any = None
 
     def open(self, runtime_context: Any) -> None:
@@ -49,6 +64,12 @@ class S2SkillExtractionStage(RecordStage):
         self._unmapped_counter = runtime_context.get_metrics_group().counter(
             UNMAPPED_METRIC
         )
+
+    def close(self) -> None:
+        """Close any underlying LLM client resources."""
+        closer = getattr(self.extractor, "close", None)
+        if callable(closer):
+            closer()
 
     def _record_unmapped(self, count: int) -> None:
         if count > 0 and self._unmapped_counter is not None:

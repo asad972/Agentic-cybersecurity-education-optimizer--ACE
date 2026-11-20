@@ -1,10 +1,20 @@
-"""Tests for S2 Skill Extraction stage."""
+"""Tests for S2 Skill Extraction stage (taxonomy + ace.llm RecordedProvider)."""
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+from ace.llm import (
+    BudgetExceededError,
+    InMemoryLLMStore,
+    LLMClient,
+    LLMSettings,
+    RecordedProvider,
+)
 from ace.stage import run_flink_local, run_local
+from s2_skill_extraction.llm_extractor import LLMSkillExtractor
 from s2_skill_extraction.stage import (
     JOBS_CLEAN,
     RAW_PROFILES,
@@ -12,6 +22,21 @@ from s2_skill_extraction.stage import (
     SKILLS_SUPPLY,
     S2SkillExtractionStage,
 )
+
+RECORDINGS_PATH = Path(__file__).with_name("recordings") / "s2_skill_extraction.json"
+
+
+def _local_llm_settings() -> LLMSettings:
+    return LLMSettings.from_env(
+        {
+            "LLM_PROVIDER": "local",
+            "LLM_LOCAL_URL": "http://ollama:11434",
+            "LLM_LOCAL_MODEL": "qwen3:4b",
+            "LLM_MAX_TOKENS": "512",
+            "LLM_MAX_ATTEMPTS": "1",
+            "LLM_CACHE_POLL_SECONDS": "0.01",
+        }
+    )
 
 
 def _sample_inputs() -> list[tuple[str, dict[str, str]]]:
@@ -78,7 +103,7 @@ def test_s2_extracts_demand_and_supply_and_skips_empty_skills() -> None:
     assert s_msg["ecsf_role"] == "Penetration Tester"
 
 
-def test_s2_custom_extractor_tracks_unmapped_mentions() -> None:
+def test_s2_recorded_llm_extractor_emits_unmapped_skills_and_uses_cache() -> None:
     class _FakeCounter:
         def __init__(self) -> None:
             self.value = 0
@@ -86,25 +111,61 @@ def test_s2_custom_extractor_tracks_unmapped_mentions() -> None:
         def inc(self, n: int = 1) -> None:
             self.value += n
 
-    def fake_extractor(topic, record, taxonomy):
-        return taxonomy.classify_mentions(
-            ["Suricata", "BTL2", "NewZeroDayFramework"],
-            title=record.get("job_title", ""),
-        )
-
-    stage = S2SkillExtractionStage(extractor=fake_extractor)
+    provider = RecordedProvider(
+        RECORDINGS_PATH, provider="local", model="qwen3:4b"
+    )
+    store = InMemoryLLMStore()
+    client = LLMClient(_local_llm_settings(), store, provider)
+    stage = S2SkillExtractionStage(llm_client=client)
     counter = _FakeCounter()
     stage._unmapped_counter = counter
 
+    records = _sample_inputs()
+    res = run_local(stage, records)
+
+    assert len(res.invalid) == 0
+    demand = res.published(SKILLS_DEMAND)
+    supply = res.published(SKILLS_SUPPLY)
+    assert len(demand) == 1
+    assert len(supply) == 1
+
+    assert "Intrusion Detection" in demand[0]["skills"]
+    assert "Credential Dumping" in demand[0]["skills"]
+    assert demand[0]["certifications"] == ["BTL1"]
+    assert demand[0]["unmapped"] == ["eBPF Runtime Security"]
+    assert demand[0]["ecsf_role"] == "Cyber Incident Responder"
+
+    assert "Lateral Movement" in supply[0]["skills"]
+    assert "Credential Dumping" in supply[0]["skills"]
+    assert supply[0]["certifications"] == ["CRTO"]
+    assert supply[0]["unmapped"] == ["CloudTrail Forensics"]
+    assert counter.value == 2
+    assert provider.calls == 3
+
+    res_cached = run_local(stage, records)
+    assert len(res_cached.published(SKILLS_DEMAND)) == 1
+    assert len(res_cached.published(SKILLS_SUPPLY)) == 1
+    assert provider.calls == 3
+    stage.close()
+
+
+def test_s2_llm_extractor_falls_back_to_taxonomy_on_llm_error() -> None:
+    class _FailingClient:
+        def generate(self, **kwargs):
+            raise BudgetExceededError("daily hosted budget exhausted")
+
+        def close(self) -> None:
+            pass
+
+    extractor = LLMSkillExtractor(_FailingClient(), fallback_to_taxonomy=True)  # type: ignore[arg-type]
+    stage = S2SkillExtractionStage(extractor=extractor)
+
     job_ad = _sample_inputs()[0][1]
     res = run_local(stage, [(JOBS_CLEAN, job_ad)])
-
     demand = res.published(SKILLS_DEMAND)
     assert len(demand) == 1
-    assert demand[0]["skills"] == ["Intrusion Detection"]
-    assert demand[0]["certifications"] == ["BTL2"]
-    assert demand[0]["unmapped"] == ["NewZeroDayFramework"]
-    assert counter.value == 1
+    assert "Intrusion Detection" in demand[0]["skills"]
+    assert demand[0]["unmapped"] == []
 
 
 @pytest.mark.flink
