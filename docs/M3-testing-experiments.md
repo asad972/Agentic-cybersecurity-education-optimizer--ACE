@@ -83,8 +83,8 @@ should not be interpreted as a statistical guarantee.
 
 ## Test evidence and threats to validity
 
-The final non-Flink shared and streaming run produced 304 passes, three skipped
-Cassandra LWT tests, 13 deselected Flink tests, and one expected failure. The
+The final non-Flink shared and streaming run produced 315 passes, three skipped
+Cassandra LWT tests, 16 deselected Flink tests, and one expected failure. The
 forecast suite produced 44 passes and two skips: live Cassandra and host-native
 LightGBM, whose OpenMP library was unavailable on macOS. LightGBM nevertheless
 ran successfully in the canonical Linux experiment image. The experiment image
