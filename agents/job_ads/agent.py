@@ -7,7 +7,7 @@ import json
 import logging
 import tempfile
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -47,8 +47,11 @@ class KafkaJsonProducer:
         return self._producer.flush()
 
     def close(self) -> None:
-        if hasattr(self._producer, "close"):
-            self._producer.close()
+        try:
+            self.flush()
+        finally:
+            if hasattr(self._producer, "close"):
+                self._producer.close()
 
 
 class DryRunProducer:
@@ -90,23 +93,47 @@ def _csv_to_temp_jsonl(csv_path: Path, tmp_dir: Path) -> Path:
     return out_path
 
 
+def _parquet_to_temp_jsonl(parquet_path: Path, tmp_dir: Path) -> Path:
+    """Convert a Parquet dataset file (e.g. Hugging Face dataset) into a temporary JSONL file."""
+    try:
+        import pyarrow.parquet as pq
+    except ImportError as exc:
+        raise RuntimeError(
+            "Reading .parquet files requires the 'pyarrow' package to be installed"
+        ) from exc
+
+    out_path = tmp_dir / f"{parquet_path.stem}.jsonl"
+    parquet_file = pq.ParquetFile(parquet_path)
+    with out_path.open("w", encoding="utf-8", newline="\n") as dst:
+        for batch in parquet_file.iter_batches(batch_size=4096):
+            for row in batch.to_pylist():
+                dst.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+    return out_path
+
+
 @dataclass
 class JobAdsAgent:
     """Replays job advertisement datasets onto Kafka topic ``raw.jobs``."""
 
     default_source: str = "job_ads_dataset"
+    default_country: str | None = None
     enforce_europe_scope: bool = True
     seconds_per_day: float | None = None
     checkpoint_interval: int = 25
     position_store: ReplayPositionStore | None = None
     producer_name: str = "job-ads-agent"
+    last_skipped_count: int = field(default=0, init=False)
 
     def map_row(self, raw_row: dict[str, Any]) -> dict[str, Any] | None:
-        return normalize_job_row(
+        mapped = normalize_job_row(
             raw_row,
             default_source=self.default_source,
+            default_country=self.default_country,
             enforce_europe_scope=self.enforce_europe_scope,
         )
+        if mapped is None:
+            self.last_skipped_count += 1
+        return mapped
 
     def replay_paths(
         self,
@@ -116,7 +143,9 @@ class JobAdsAgent:
         dataset: str = "job_ads",
         on_progress: Callable[[ReplayCheckpoint], None] | None = None,
     ) -> int:
-        """Replay one or more JSONL or CSV dataset files in event-time order."""
+        """Replay one or more JSONL, CSV, or Parquet dataset files in event-time order."""
+        self.last_skipped_count = 0
+
         if isinstance(paths, (str, Path)):
             input_paths = [Path(paths)]
         else:
@@ -134,12 +163,15 @@ class JobAdsAgent:
             tmp_dir = Path(tmp_name)
             jsonl_paths: list[Path] = []
             for path in input_paths:
-                if path.suffix.lower() == ".csv":
+                suffix = path.suffix.lower()
+                if suffix == ".csv":
                     jsonl_paths.append(_csv_to_temp_jsonl(path, tmp_dir))
+                elif suffix == ".parquet":
+                    jsonl_paths.append(_parquet_to_temp_jsonl(path, tmp_dir))
                 else:
                     jsonl_paths.append(path)
 
-            return replayer.replay(
+            last_pos = replayer.replay(
                 file_paths=jsonl_paths,
                 topic=RAW_JOBS_TOPIC,
                 producer=producer,
@@ -147,3 +179,16 @@ class JobAdsAgent:
                 row_to_message=self.map_row,
                 on_progress=on_progress,
             )
+
+        if self.last_skipped_count > 0:
+            logger.warning(
+                "Skipped %d row(s) outside European Skills Scope during replay of dataset=%s",
+                self.last_skipped_count,
+                dataset,
+            )
+        else:
+            logger.info(
+                "Skipped 0 rows outside European Skills Scope during replay of dataset=%s",
+                dataset,
+            )
+        return last_pos

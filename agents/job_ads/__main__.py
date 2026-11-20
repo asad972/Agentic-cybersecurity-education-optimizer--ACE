@@ -37,7 +37,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--input",
         nargs="+",
         default=None,
-        help="Path(s) to .jsonl or .csv job advertisement dataset files.",
+        help="Path(s) to .jsonl, .csv, or .parquet job advertisement dataset files.",
     )
     parser.add_argument(
         "--dataset",
@@ -48,6 +48,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--source",
         default=os.environ.get("JOB_ADS_SOURCE", "job_ads_dataset"),
         help="Fallback source name when rows omit a source column.",
+    )
+    parser.add_argument(
+        "--default-country",
+        default=os.environ.get("JOB_ADS_DEFAULT_COUNTRY") or None,
+        help="Fallback ISO alpha-2 country code when rows omit country and nuts_code (e.g. DE).",
     )
     parser.add_argument(
         "--seconds-per-day",
@@ -116,6 +121,7 @@ def main(argv: list[str] | None = None) -> int:
 
         agent = JobAdsAgent(
             default_source=args.source,
+            default_country=args.default_country,
             seconds_per_day=args.seconds_per_day,
             checkpoint_interval=args.checkpoint_interval,
             position_store=store,
@@ -126,14 +132,18 @@ def main(argv: list[str] | None = None) -> int:
             dataset=args.dataset,
         )
         logging.info(
-            "Job ads replay finished: dataset=%s, last_position=%d",
+            "Job ads replay finished: dataset=%s, last_position=%d, skipped_rows=%d",
             args.dataset,
             total,
+            agent.last_skipped_count,
         )
         if isinstance(producer, DryRunProducer):
             valid_count = sum(1 for topic, _, _ in producer.sent if topic == RAW_JOBS_TOPIC)
             invalid_count = len(producer.sent) - valid_count
-            print(f"Dry-run complete: {valid_count} valid raw.jobs, {invalid_count} invalid")
+            print(
+                f"Dry-run complete: {valid_count} valid raw.jobs, "
+                f"{invalid_count} invalid, {agent.last_skipped_count} skipped"
+            )
         return 0
     finally:
         if kafka_producer is not None:

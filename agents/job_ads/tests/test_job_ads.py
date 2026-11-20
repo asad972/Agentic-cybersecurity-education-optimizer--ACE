@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-import json
+import logging
 from datetime import date
 from pathlib import Path
+
+import pytest
 
 from ace import contracts
 from ace.replay import InMemoryPositionStore, ReplayCheckpoint
 from job_ads.__main__ import main
-from job_ads.agent import RAW_JOBS_TOPIC, DryRunProducer, JobAdsAgent
+from job_ads.agent import RAW_JOBS_TOPIC, DryRunProducer, JobAdsAgent, KafkaJsonProducer
 from job_ads.normalizer import normalize_country, normalize_job_row
 
 
@@ -49,6 +51,75 @@ def test_normalize_external_dataset_row_aliases_and_deterministic_id() -> None:
     contracts.validate("raw.jobs", msg1)
 
 
+def test_normalize_huggingface_german_job_postings_row() -> None:
+    hf_row = {
+        "id": "10001-1003183488-S",
+        "source": "bundesagentur",
+        "source_url": "https://www.arbeitsagentur.de/jobsuche/jobdetail/10001-1003183488-S",
+        "posted_date": "2026-06-06",
+        "title": "IT-Security Analyst (m/w/d)",
+        "employer": "Siemens AG",
+        "description_derived": None,
+        "nuts_code": "DEF",
+        "esco_occupation": {
+            "uri": "http://data.europa.eu/esco/occupation/example",
+            "label": "information security analyst",
+        },
+        "esco_skills": [
+            {"uri": "http://data.europa.eu/esco/skill/1", "label": "intrusion detection"},
+            {"uri": "http://data.europa.eu/esco/skill/2", "label": "incident response"},
+        ],
+    }
+    msg = normalize_job_row(hf_row)
+    assert msg is not None
+    assert msg["country"] == "DE"
+    assert msg["source"] == "bundesagentur"
+    assert msg["company"] == "Siemens AG"
+    assert msg["url"] == "https://www.arbeitsagentur.de/jobsuche/jobdetail/10001-1003183488-S"
+    assert "information security analyst" in msg["description"]
+    assert "intrusion detection" in msg["description"]
+    contracts.validate("raw.jobs", msg)
+
+    # Row without nuts_code falls back to default_country when configured
+    row_no_nuts = dict(hf_row, nuts_code=None)
+    msg_default = normalize_job_row(row_no_nuts, default_country="DE")
+    assert msg_default is not None
+    assert msg_default["country"] == "DE"
+
+
+def test_normalize_rejects_invalid_date_and_distinguishes_ads_without_id_or_url() -> None:
+    with pytest.raises(ValueError, match="invalid posted_date"):
+        normalize_job_row(
+            {
+                "country": "DE",
+                "posted_date": "19.11.2026",
+                "title": "SOC Analyst",
+                "description": "Monitor alerts",
+            }
+        )
+
+    ad1 = normalize_job_row(
+        {
+            "country": "DE",
+            "posted_date": "2026-10-01",
+            "title": "Security Engineer",
+            "company": "Company A",
+            "description": "Cloud security architecture role",
+        }
+    )
+    ad2 = normalize_job_row(
+        {
+            "country": "DE",
+            "posted_date": "2026-10-01",
+            "title": "Security Engineer",
+            "company": "Company B",
+            "description": "Network firewall engineering role",
+        }
+    )
+    assert ad1 is not None and ad2 is not None
+    assert ad1["event_id"] != ad2["event_id"]
+
+
 def test_replay_sample_dataset_in_event_time_order() -> None:
     sample_path = _repo_sample_path()
     producer = DryRunProducer()
@@ -64,8 +135,8 @@ def test_replay_sample_dataset_in_event_time_order() -> None:
     raw_jobs = [val for topic, _, val in producer.sent if topic == RAW_JOBS_TOPIC]
     assert len(raw_jobs) > 0
     assert last_pos == len(raw_jobs)
+    assert agent.last_skipped_count == 0
 
-    # Verify global non-decreasing event-time order and country partitioning key
     dates = [msg["posted_date"] for msg in raw_jobs]
     assert dates == sorted(dates)
     for topic, key, val in producer.sent:
@@ -77,19 +148,21 @@ def test_replay_sample_dataset_in_event_time_order() -> None:
     assert saved.row_number == len(raw_jobs)
 
 
-def test_replay_csv_and_resume_from_checkpoint(tmp_path: Path) -> None:
+def test_replay_csv_logs_skipped_rows_and_resumes_from_checkpoint(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     csv_file = tmp_path / "jobs.csv"
     csv_file.write_text(
         "id,source,country,posted_date,job_title,company,description\n"
         "1,adzuna,DE,2026-10-03,Security Engineer,Siemens,SIEM and SOAR engineering\n"
         "2,adzuna,UK,2026-10-01,SOC Analyst,BT,Incident triage in SOC\n"
         "3,adzuna,US,2026-10-02,US Analyst,Acme,Filtered out non-EU\n"
-        "4,adzuna,FR,2026-10-02,,Orange,Missing title routed to errors.invalid\n",
+        "4,adzuna,Deutchland,2026-10-02,Typo Country,Acme,Filtered out unknown country code\n"
+        "5,adzuna,FR,2026-10-02,,Orange,Missing title routed to errors.invalid\n",
         encoding="utf-8",
     )
 
     store = InMemoryPositionStore()
-    # Simulate an earlier run that already checkpointed the first valid record (2026-10-01)
     first_msg = normalize_job_row(
         {
             "id": "2",
@@ -113,12 +186,34 @@ def test_replay_csv_and_resume_from_checkpoint(tmp_path: Path) -> None:
 
     producer = DryRunProducer()
     agent = JobAdsAgent(seconds_per_day=0.0, position_store=store)
-    agent.replay_paths(csv_file, producer, dataset="eu_jobs")
+    with caplog.at_level(logging.WARNING):
+        agent.replay_paths(csv_file, producer, dataset="eu_jobs")
 
     emitted = [val for topic, _, val in producer.sent if topic == RAW_JOBS_TOPIC]
     assert len(emitted) == 1
     assert emitted[0]["country"] == "DE"
     assert emitted[0]["posted_date"] == "2026-10-03"
+    assert agent.last_skipped_count == 2
+    assert "Skipped 2 row(s) outside European Skills Scope" in caplog.text
+
+
+def test_kafka_json_producer_flushes_before_close() -> None:
+    calls: list[str] = []
+
+    class _FakeKafka:
+        def send(self, topic: str, key: str | None = None, value: object = None) -> None:
+            calls.append("send")
+
+        def flush(self) -> int:
+            calls.append("flush")
+            return 0
+
+        def close(self) -> None:
+            calls.append("close")
+
+    wrapper = KafkaJsonProducer("localhost:9092", producer=_FakeKafka())
+    wrapper.close()
+    assert calls == ["flush", "close"]
 
 
 def test_cli_dry_run_on_sample_dataset(capsys) -> None:
@@ -127,3 +222,4 @@ def test_cli_dry_run_on_sample_dataset(capsys) -> None:
     assert exit_code == 0
     captured = capsys.readouterr()
     assert "Dry-run complete:" in captured.out
+    assert "0 skipped" in captured.out
