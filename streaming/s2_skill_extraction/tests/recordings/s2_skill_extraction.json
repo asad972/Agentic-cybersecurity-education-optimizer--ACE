@@ -1,0 +1,38 @@
+{
+  "recordings": {
+    "801df9a38ab18981fcdd62dfbb19e01a6ffe3196a342657ef28d276757334764": {
+      "answer": {
+        "mentions": [
+          "Suricata",
+          "Pass-the-Hash",
+          "BTL1",
+          "eBPF Runtime Security"
+        ],
+        "ecsf_role": "Cyber Incident Responder"
+      },
+      "input_tokens": 48,
+      "output_tokens": 19
+    },
+    "4b7a9747a2c65bbd73e1fb9629a8a06bcb5cf363d060aac23d46e286b985eee7": {
+      "answer": {
+        "mentions": [
+          "Internal Pivoting",
+          "Credential Harvesting",
+          "CRTO",
+          "CloudTrail Forensics"
+        ],
+        "ecsf_role": "Penetration Tester"
+      },
+      "input_tokens": 41,
+      "output_tokens": 18
+    },
+    "76cfa66f097c3d39e559cefd4c27842bce6e0d072b22feedff5db58194fd9ec1": {
+      "answer": {
+        "mentions": [],
+        "ecsf_role": null
+      },
+      "input_tokens": 34,
+      "output_tokens": 9
+    }
+  }
+}
