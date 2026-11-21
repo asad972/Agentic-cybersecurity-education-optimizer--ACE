@@ -1,5 +1,17 @@
-# Local development stack: single-node Kafka (KRaft), Kafka UI, Cassandra and the sink.
+# Local development stack: single-node Kafka (KRaft), Kafka UI, Cassandra, the sink,
+# the API and the dashboard. `docker compose up -d` starts all of it.
 # The production layout (3 brokers, 3 Cassandra nodes) is in deploy/k8s/.
+
+# The API and the dashboard keep their own compose files so each can still run alone.
+# Here they join this stack's network; the files in deploy/compose/ point them at the
+# other services by name.
+include:
+  - path:
+      - api/compose.yml
+      - deploy/compose/api.full-stack.yml
+  - path:
+      - dashboard/compose.yml
+      - deploy/compose/dashboard.full-stack.yml
 
 services:
   kafka:
