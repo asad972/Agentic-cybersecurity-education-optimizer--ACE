@@ -100,6 +100,54 @@ services:
       CASSANDRA_KEYSPACE: ace
     restart: on-failure
 
+  # Live threat collector (M4). It needs OTX_API_KEY and ABUSEIPDB_API_KEY in .env,
+  # so it is in the "live" profile: add COMPOSE_PROFILES=live to .env to start it with
+  # the rest. It polls both feeds every six hours and follows tasks.collect.
+  threat-agent:
+    build:
+      context: .
+      dockerfile: agents/threat/Dockerfile
+    container_name: ace-threat-agent
+    profiles: [live]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      OTX_API_KEY: ${OTX_API_KEY:-}
+      ABUSEIPDB_API_KEY: ${ABUSEIPDB_API_KEY:-}
+    volumes:
+      - threat-state:/state
+    restart: on-failure
+
+  # Stream stages, each a Flink job on Kafka from the shared image in streaming/Dockerfile.
+  # The consumer group is the stage name, so a restarted stage continues where it stopped.
+  s7-threat-frequency-hourly:
+    &stage
+    build:
+      context: .
+      dockerfile: streaming/Dockerfile
+    image: ace-stage
+    container_name: ace-s7-hourly
+    command: ["s7_threat_frequency.stage:ThreatFrequencyStage", "--arg", "period=hourly"]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    restart: on-failure
+
+  s7-threat-frequency-daily:
+    <<: *stage
+    container_name: ace-s7-daily
+    command: ["s7_threat_frequency.stage:ThreatFrequencyStage", "--arg", "period=daily"]
+
+  s8-threat-bursts:
+    <<: *stage
+    container_name: ace-s8
+    command: ["s8_threat_bursts.stage:ThreatBurstStage"]
+
 volumes:
   kafka-data:
   cassandra-data:
+  threat-state:
