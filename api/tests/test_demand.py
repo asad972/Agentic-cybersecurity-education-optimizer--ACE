@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from ace_api.main import create_app
+from ace_api.map_data import COUNTRIES
 from ace_api.routers import demand
 from ace_api.routers.demand import CQL, router
 
@@ -29,14 +30,16 @@ class Session:
         self.replay_days = []
         self.prepared = []
         self.reads = []
+        self.timeouts = []
         self.fail = None
 
     def prepare(self, cql):
         self.prepared.append(cql)
         return cql
 
-    def execute(self, statement, values):
+    def execute(self, statement, values, timeout=None):
         assert statement in CQL.values(), "only prepared statements from CQL are executed"
+        self.timeouts.append(timeout)
         if self.fail:
             raise self.fail
         values = tuple(values)
@@ -134,6 +137,10 @@ def test_demand_items_sums_the_skills_scope_most_demanded_first(client, session)
     assert countries == list(demand.SKILLS_SCOPE) and len(countries) == 32
 
 
+def test_skills_scope_is_the_europe_map_country_list():
+    assert set(demand.SKILLS_SCOPE) == set(COUNTRIES) and len(demand.SKILLS_SCOPE) == 32
+
+
 def test_demand_items_warns_when_a_partition_hits_the_limit(client, session, monkeypatch, caplog):
     monkeypatch.setattr(demand, "ITEMS_LIMIT", 2)
     session.demand_by_day[("DE", DAY, "skill")] = [ItemRow("SIEM", 5), ItemRow("Python", 2)]
@@ -143,6 +150,15 @@ def test_demand_items_warns_when_a_partition_hits_the_limit(client, session, mon
     assert response.status_code == 200
     warnings = [record.getMessage() for record in caplog.records]
     assert len(warnings) == 1 and "DE" in warnings[0] and "2-row limit" in warnings[0]
+
+
+def test_every_read_has_a_timeout(client, session):
+    client.get("/top10", params={"country": "DE", "kind": "skill", "date": "2026-10-01"})
+    client.get("/demand/map", params={"kind": "skill", "item": "SIEM", "date": "2026-10-01"})
+    client.get("/demand/items", params={"kind": "skill", "date": "2026-10-01"})
+    client.get("/demand/latest-day")
+    assert len(session.timeouts) > 4
+    assert set(session.timeouts) == {demand.READ_TIMEOUT}
 
 
 def test_statements_are_prepared_once_per_session(client, session):
