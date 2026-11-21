@@ -231,8 +231,11 @@ def run_on_kafka(stage: Any, bootstrap_servers: str | None = None, bounded: bool
     build_job(stage, servers, bounded).execute(f"ace {stage.name}")
 
 
-def load_stage(spec: str) -> Any:
+def load_stage(spec: str, kwargs: dict[str, str] | None = None) -> Any:
     """'module:Class' -> a stage instance, e.g. 's4_demand_frequency.stage:DemandFrequency'.
+
+    kwargs are passed to the class, for stages with constructor settings, e.g.
+    {'period': 'daily'} for S7's daily branch.
 
     Stage packages live in streaming/. Run from the repository root, that folder
     is searched as well, so the same command works from the root and from streaming/.
@@ -243,7 +246,14 @@ def load_stage(spec: str) -> Any:
     streaming = str(Path.cwd() / "streaming")
     if Path(streaming).is_dir() and streaming not in sys.path:
         sys.path.append(streaming)
-    return getattr(importlib.import_module(module_name), class_name)()
+    return getattr(importlib.import_module(module_name), class_name)(**(kwargs or {}))
+
+
+def _stage_arg(text: str) -> tuple[str, str]:
+    name, sep, value = text.partition("=")
+    if not sep or not name:
+        raise argparse.ArgumentTypeError(f"expected NAME=VALUE, got {text!r}")
+    return name, value
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -251,8 +261,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("stage", help="module:Class, e.g. s4_demand_frequency.stage:DemandFrequency")
     parser.add_argument("--bounded", action="store_true",
                         help="process what is in the input topics now, then stop")
+    parser.add_argument("--arg", dest="stage_args", type=_stage_arg, action="append", default=[],
+                        metavar="NAME=VALUE",
+                        help="a setting passed to the stage class, e.g. --arg period=daily; repeatable")
     args = parser.parse_args(argv)
-    run_on_kafka(load_stage(args.stage), bounded=args.bounded)
+    run_on_kafka(load_stage(args.stage, dict(args.stage_args)), bounded=args.bounded)
 
 
 if __name__ == "__main__":

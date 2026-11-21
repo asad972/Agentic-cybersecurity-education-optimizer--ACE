@@ -179,6 +179,27 @@ def test_load_stage_imports_module_and_class():
             kafka.load_stage(bad)
 
 
+class Periods(Counts):
+    """A stage with a constructor setting, like S7's period."""
+
+    def __init__(self, period="hourly"):
+        self.period = period
+
+
+def test_load_stage_passes_settings_to_the_class():
+    assert kafka.load_stage(f"{__name__}:Periods").period == "hourly"
+    assert kafka.load_stage(f"{__name__}:Periods", {"period": "daily"}).period == "daily"
+
+
+def test_main_passes_arg_settings_to_the_stage(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(kafka, "run_on_kafka", lambda stage, bounded=False: seen.update(stage=stage))
+    kafka.main([f"{__name__}:Periods", "--arg", "period=daily"])
+    assert seen["stage"].period == "daily"
+    with pytest.raises(SystemExit):
+        kafka.main([f"{__name__}:Periods", "--arg", "no-equals-sign"])
+
+
 REPO = Path(__file__).resolve().parents[3]
 LOAD_S4 = ("from ace.kafka import load_stage; "
            "print(type(load_stage('s4_demand_frequency.stage:DemandFrequency')).__name__)")

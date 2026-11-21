@@ -62,7 +62,10 @@ docker compose up -d                                  # local Kafka and Cassandr
 $env:KAFKA_BOOTSTRAP_SERVERS = 'localhost:9092'       # the default
 python -m ace.kafka s4_demand_frequency.stage:DemandFrequency             # runs until stopped
 python -m ace.kafka s4_demand_frequency.stage:DemandFrequency --bounded   # reads what is there now, then stops
+python -m ace.kafka s7_threat_frequency.stage:ThreatFrequencyStage --arg period=daily   # a stage with a setting
 ```
+
+- `--arg NAME=VALUE` passes a setting to the stage class; repeat it for several. Values arrive as text.
 
 - The consumer group is the stage's `name`, so a restarted job continues where it stopped. An unbounded job saves a checkpoint (state and Kafka offsets) every 60 seconds.
 - Delivery is at least once; the Cassandra sink's upserts absorb a repeated result after a restart.
