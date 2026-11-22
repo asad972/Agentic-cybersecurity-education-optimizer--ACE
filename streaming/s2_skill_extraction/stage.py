@@ -48,22 +48,26 @@ class S2SkillExtractionStage(RecordStage):
         else:
             self.taxonomy = load_taxonomy(taxonomy)
 
+        self._use_llm = llm_enabled_from_env() if use_llm is None else bool(use_llm)
+
         if extractor is not None:
             self.extractor: ExtractorFn | None = extractor
         elif llm_client is not None:
             self.extractor = LLMSkillExtractor(llm_client)
-        elif use_llm is True or (use_llm is None and llm_enabled_from_env()):
-            self.extractor = LLMSkillExtractor.from_env()
         else:
+            # Deferred to open() so the stage stays picklable when Flink ships the job graph.
             self.extractor = None
 
         self._unmapped_counter: Any = None
 
     def open(self, runtime_context: Any) -> None:
-        """Register Flink metric counter for unmapped skill mentions."""
-        self._unmapped_counter = runtime_context.get_metrics_group().counter(
-            UNMAPPED_METRIC
-        )
+        """Initialize runtime metrics and env-configured LLM client inside each Flink task."""
+        if runtime_context is not None:
+            self._unmapped_counter = runtime_context.get_metrics_group().counter(
+                UNMAPPED_METRIC
+            )
+        if self.extractor is None and self._use_llm:
+            self.extractor = LLMSkillExtractor.from_env()
 
     def close(self) -> None:
         """Close any underlying LLM client resources."""
@@ -76,6 +80,10 @@ class S2SkillExtractionStage(RecordStage):
             self._unmapped_counter.inc(count)
 
     def _extract(self, topic: str, record: dict[str, Any]) -> ExtractionResult:
+        # Support run_local() where Flink's open() lifecycle hook is not called.
+        if self.extractor is None and self._use_llm:
+            self.extractor = LLMSkillExtractor.from_env()
+
         if self.extractor is not None:
             custom = self.extractor(topic, record, self.taxonomy)
             if custom is not None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pickle
 from pathlib import Path
 
 import pytest
@@ -147,6 +148,58 @@ def test_s2_recorded_llm_extractor_emits_unmapped_skills_and_uses_cache() -> Non
     assert len(res_cached.published(SKILLS_SUPPLY)) == 1
     assert provider.calls == 3
     stage.close()
+
+
+def test_s2_use_llm_defers_client_creation_to_open_for_flink_pickling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeCounter:
+        def __init__(self) -> None:
+            self.value = 0
+
+        def inc(self, n: int = 1) -> None:
+            self.value += n
+
+    class _FakeMetricsGroup:
+        def __init__(self) -> None:
+            self.counters: dict[str, _FakeCounter] = {}
+
+        def counter(self, name: str) -> _FakeCounter:
+            return self.counters.setdefault(name, _FakeCounter())
+
+    class _FakeRuntimeContext:
+        def __init__(self) -> None:
+            self.metrics = _FakeMetricsGroup()
+
+        def get_metrics_group(self) -> _FakeMetricsGroup:
+            return self.metrics
+
+    monkeypatch.setenv("ACE_S2_USE_LLM", "1")
+    stage = S2SkillExtractionStage()
+
+    # Must not instantiate LLMClient / Cassandra store in __init__ so Flink can pickle the stage.
+    assert stage.extractor is None
+    unpickled = pickle.loads(pickle.dumps(stage))
+    assert unpickled.extractor is None
+
+    provider = RecordedProvider(RECORDINGS_PATH, provider="local", model="qwen3:4b")
+    client = LLMClient(_local_llm_settings(), InMemoryLLMStore(), provider)
+    monkeypatch.setattr(
+        LLMSkillExtractor,
+        "from_env",
+        classmethod(lambda cls, **kwargs: cls(client)),
+    )
+
+    ctx = _FakeRuntimeContext()
+    unpickled.open(ctx)
+    assert unpickled.extractor is not None
+
+    res = run_local(unpickled, _sample_inputs()[:1])
+    demand = res.published(SKILLS_DEMAND)
+    assert len(demand) == 1
+    assert demand[0]["unmapped"] == ["eBPF Runtime Security"]
+    assert ctx.metrics.counters["unmapped_skills_total"].value == 1
+    unpickled.close()
 
 
 def test_s2_llm_extractor_falls_back_to_taxonomy_on_llm_error() -> None:
