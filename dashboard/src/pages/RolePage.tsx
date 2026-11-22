@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
+import { BarChart } from 'echarts/charts';
+import { GridComponent, LegendComponent } from 'echarts/components';
+import { use as registerCharts } from 'echarts/core';
+import type { EChartsOption } from 'echarts';
 import {
   Award,
   Briefcase,
@@ -10,8 +14,13 @@ import {
   ShieldCheck,
   Users,
 } from 'lucide-react';
+import { Chart } from '../components/Chart';
+import { CountryMap } from '../components/CountryMap';
 import { getJSON } from '../services/api';
-import type { Country } from '../services/api';
+import type { Country, MapData } from '../services/api';
+import { countLabel } from '../services/dates';
+
+registerCharts([BarChart, GridComponent, LegendComponent]);
 
 type RoleSummary = {
   role: string;
@@ -85,6 +94,13 @@ type RoleDetailResponse = {
   programmes: RoleProgramme[];
 };
 
+type TopCapabilityRow = {
+  kind: 'Skill' | 'Certification';
+  name: string;
+  demand: number | null;
+  supply: number | null;
+};
+
 function defaultSnapshotDate() {
   const yesterday = new Date();
   yesterday.setUTCDate(yesterday.getUTCDate() - 1);
@@ -99,6 +115,7 @@ export function RolePage() {
   const [day, setDay] = useState(defaultSnapshotDate);
   const [searchQuery, setSearchQuery] = useState('');
   const [detail, setDetail] = useState<RoleDetailResponse | null>(null);
+  const [roleMap, setRoleMap] = useState<MapData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -125,12 +142,22 @@ export function RolePage() {
     setLoading(true);
     setError(null);
 
-    getJSON<RoleDetailResponse>(
-      `/roles/${encodeURIComponent(selectedSlug)}`,
-      { country, day },
-      controller.signal,
-    )
-      .then(data => setDetail(data))
+    Promise.all([
+      getJSON<RoleDetailResponse>(
+        `/roles/${encodeURIComponent(selectedSlug)}`,
+        { country, day },
+        controller.signal,
+      ),
+      getJSON<MapData>(
+        `/roles/${encodeURIComponent(selectedSlug)}/map`,
+        { day },
+        controller.signal,
+      ),
+    ])
+      .then(([detailData, mapData]) => {
+        setDetail(detailData);
+        setRoleMap(mapData);
+      })
       .catch(err => {
         if (err instanceof DOMException && err.name === 'AbortError') return;
         setError(err instanceof Error ? err.message : 'Unable to load role details.');
@@ -159,6 +186,76 @@ export function RolePage() {
       .filter(v => v > 0);
     return Math.max(1, ...values);
   }, [detail]);
+
+  const topCapabilities = useMemo<TopCapabilityRow[]>(() => {
+    if (!detail) return [];
+    const combined: TopCapabilityRow[] = [
+      ...detail.skills.slice(0, 7).map(s => ({
+        kind: 'Skill' as const,
+        name: s.skill,
+        demand: s.demand,
+        supply: s.supply,
+      })),
+      ...detail.certifications.slice(0, 5).map(c => ({
+        kind: 'Certification' as const,
+        name: c.certification,
+        demand: c.demand,
+        supply: c.supply,
+      })),
+    ];
+    return combined
+      .sort(
+        (a, b) =>
+          (b.demand ?? -1) - (a.demand ?? -1) ||
+          (b.supply ?? -1) - (a.supply ?? -1) ||
+          a.name.localeCompare(b.name),
+      )
+      .slice(0, 10);
+  }, [detail]);
+
+  const topCapabilitiesOption = useMemo<EChartsOption>(
+    () => ({
+      animationDurationUpdate: 250,
+      grid: { left: 16, right: 24, top: 36, bottom: 12, containLabel: true },
+      legend: { top: 4, textStyle: { color: '#617580', fontSize: 10 } },
+      tooltip: { trigger: 'axis', confine: true, renderMode: 'richText' },
+      xAxis: {
+        type: 'value',
+        min: 0,
+        axisLabel: { color: '#71827a' },
+        splitLine: { lineStyle: { color: '#edf0ee' } },
+      },
+      yAxis: {
+        type: 'category',
+        inverse: true,
+        data: topCapabilities.map(item => `${item.name} (${item.kind === 'Skill' ? 'Skill' : 'Cert'})`),
+        axisLabel: { color: '#52675f', width: 175, overflow: 'truncate' },
+      },
+      series: [
+        {
+          name: 'Demand',
+          type: 'bar',
+          data: topCapabilities.map(item => item.demand ?? 0),
+          itemStyle: { color: '#297d70' },
+        },
+        {
+          name: 'Supply',
+          type: 'bar',
+          data: topCapabilities.map(item => item.supply ?? 0),
+          itemStyle: { color: '#d4a94f' },
+        },
+      ],
+    }),
+    [topCapabilities],
+  );
+
+  const resolvedCountries = useMemo(
+    () => (countries.length > 0 ? countries : [{ code: 'DE', name: 'Germany' }]),
+    [countries],
+  );
+
+  const countryName = (code: string) =>
+    resolvedCountries.find(item => item.code === code)?.name ?? code;
 
   return (
     <>
@@ -217,10 +314,7 @@ export function RolePage() {
             value={country}
             onChange={event => setCountry(event.target.value)}
           >
-            {(countries.length > 0
-              ? countries
-              : [{ code: 'DE', name: 'Germany' }]
-            ).map(item => (
+            {resolvedCountries.map(item => (
               <option key={item.code} value={item.code}>
                 {item.name} ({item.code})
               </option>
@@ -326,7 +420,110 @@ export function RolePage() {
             </article>
           </section>
 
-          <section className="explore-grid">
+          <section className="explore-grid" aria-label="Role visual analytics">
+            <article className="panel">
+              <div className="panel-heading">
+                <div>
+                  <span className="eyebrow">TOP CAPABILITIES</span>
+                  <h2>Top skills &amp; certifications ({detail.country})</h2>
+                </div>
+                <span className="pill">{detail.country_name}</span>
+              </div>
+              {topCapabilities.length === 0 ? (
+                <div className="panel-section">
+                  <p className="empty-inline">No skills or certifications available for this role.</p>
+                </div>
+              ) : (
+                <>
+                  <Chart
+                    option={topCapabilitiesOption}
+                    label={`Bar chart of top skills and certifications for ${detail.role} in ${detail.country_name}`}
+                    className="role-bar-chart"
+                  />
+                  <details className="data-details">
+                    <summary>View as table</summary>
+                    <div className="table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th scope="col">Type</th>
+                            <th scope="col">Capability</th>
+                            <th scope="col">Demand</th>
+                            <th scope="col">Supply</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {topCapabilities.map(row => (
+                            <tr key={`${row.kind}:${row.name}`}>
+                              <td>{row.kind}</td>
+                              <td>{row.name}</td>
+                              <td>{countLabel(row.demand)}</td>
+                              <td>{countLabel(row.supply)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                </>
+              )}
+            </article>
+
+            <article className="panel map-panel" aria-label="Demand per country map">
+              <div className="panel-heading">
+                <div>
+                  <span className="eyebrow">EUROPEAN ROLE DEMAND</span>
+                  <h2>Demand per country</h2>
+                </div>
+                <span className="pill">{detail.role}</span>
+              </div>
+              {roleMap && (
+                <>
+                  <CountryMap
+                    response={roleMap}
+                    countries={resolvedCountries}
+                    selected={country}
+                    onSelect={setCountry}
+                  />
+                  <div className="map-explanation">
+                    <strong>Click a country to inspect</strong>
+                    <p>{roleMap.note}</p>
+                  </div>
+                  <details className="data-details">
+                    <summary>View as table</summary>
+                    <div className="table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th scope="col">Country</th>
+                            <th scope="col">{roleMap.unit}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {roleMap.data.map(row => (
+                            <tr key={row.country}>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="text-button"
+                                  onClick={() => setCountry(row.country)}
+                                >
+                                  {countryName(row.country)}
+                                </button>
+                              </td>
+                              <td>{countLabel(row.value)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                </>
+              )}
+            </article>
+          </section>
+
+          <section className="explore-grid" style={{ marginTop: 16 }}>
             <div className="role-column">
               <article className="panel">
                 <div className="panel-heading">

@@ -9,7 +9,7 @@ from typing import Any
 from cassandra import DriverException
 from fastapi import APIRouter, HTTPException, Query, Request
 
-from ..map_data import COUNTRIES
+from ..map_data import COUNTRIES, MapResponse
 from ..roles_data import load_role_catalog, resolve_role, taxonomy_related_roles
 
 log = logging.getLogger(__name__)
@@ -34,26 +34,30 @@ def _validate_country(country: str) -> str:
     return code
 
 
-def _session_if_ready(request: Request):
+def _require_session(request: Request):
     database = getattr(request.app.state, "database", None)
     if database is None or not database.ready():
-        return None
+        raise HTTPException(
+            status_code=503,
+            detail="Cassandra is unavailable",
+        )
     try:
         return database.session
-    except RuntimeError:
-        return None
+    except RuntimeError as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Cassandra is unavailable",
+        ) from error
 
 
-def _read_optional(session, query: str, parameters: tuple[Any, ...]) -> list[Any]:
-    if session is None:
-        return []
+def _read_rows(session, query: str, parameters: tuple[Any, ...]) -> list[Any]:
     try:
-        return list(session.execute(query, parameters))
-    except DriverException as error:
+        return list(session.execute(query, parameters, timeout=5))
+    except (DriverException, RuntimeError) as error:
         log.warning("Role Explorer Cassandra read failed (%s)", type(error).__name__)
         raise HTTPException(
             status_code=503,
-            detail="Cassandra read is unavailable",
+            detail="Cassandra is unavailable",
         ) from error
 
 
@@ -63,7 +67,7 @@ def _counts_by_kind(
     country: str,
     day: Date,
 ) -> dict[str, dict[str, int]]:
-    rows = _read_optional(
+    rows = _read_rows(
         session,
         f"SELECT kind, item, count FROM {table} WHERE country = %s AND day = %s",
         (country, day),
@@ -88,12 +92,12 @@ def list_roles(
     if day is not None:
         _validate_day(day)
     country_code = _validate_country(country) if country is not None else None
+    session = _require_session(request)
 
-    session = _session_if_ready(request)
     role_demand: dict[str, int] = {}
     role_supply: dict[str, int] = {}
 
-    if country_code is not None and day is not None and session is not None:
+    if country_code is not None and day is not None:
         role_demand = _counts_by_kind(session, "demand_by_day", country_code, day)["role"]
         role_supply = _counts_by_kind(session, "supply_by_day", country_code, day)["role"]
 
@@ -119,9 +123,49 @@ def list_roles(
     return {
         "country": country_code,
         "day": day.isoformat() if day is not None else None,
-        "cassandra_connected": session is not None,
+        "cassandra_connected": True,
         "countries": [{"code": code, "name": name} for code, name in COUNTRIES.items()],
         "roles": items,
+    }
+
+
+@router.get("/roles/{role_name}/map", response_model=MapResponse)
+def get_role_demand_map(
+    request: Request,
+    role_name: str,
+    day: Date | None = Query(default=None),
+) -> dict[str, Any]:
+    """Return daily demand per country for an ECSF role from demand_map (kind='role')."""
+    profile = resolve_role(role_name)
+    if profile is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown ECSF role {role_name!r}",
+        )
+
+    selected_day = day if day is not None else datetime.now(timezone.utc).date()
+    _validate_day(selected_day)
+    session = _require_session(request)
+
+    rows = _read_rows(
+        session,
+        "SELECT country, count FROM demand_map WHERE kind = %s AND item = %s AND day = %s",
+        ("role", profile.role, selected_day),
+    )
+    counts = {
+        row.country: int(row.count)
+        for row in rows
+        if getattr(row, "country", None) in COUNTRIES and getattr(row, "count", None) is not None
+    }
+    data = [{"country": code, "value": counts.get(code)} for code in COUNTRIES]
+    return {
+        "metric": "demand",
+        "date": selected_day,
+        "item": profile.role,
+        "unit": "job ads",
+        "period": "daily",
+        "note": "Daily estimated job advertisements mapped to this ECSF role per country.",
+        "data": data,
     }
 
 
@@ -144,7 +188,7 @@ def get_role_detail(
     selected_day = day if day is not None else datetime.now(timezone.utc).date()
     _validate_day(selected_day)
 
-    session = _session_if_ready(request)
+    session = _require_session(request)
     demand_counts = _counts_by_kind(session, "demand_by_day", country_code, selected_day)
     supply_counts = _counts_by_kind(session, "supply_by_day", country_code, selected_day)
 
@@ -187,7 +231,7 @@ def get_role_detail(
     )
 
     # Related roles: prefer Cassandra batch role_relations; fall back to taxonomy Jaccard overlap.
-    db_relations = _read_optional(
+    db_relations = _read_rows(
         session,
         "SELECT related_role, overlap FROM role_relations WHERE role = %s LIMIT 25",
         (profile.role,),
@@ -218,7 +262,7 @@ def get_role_detail(
         related_roles = list(taxonomy_overlaps.values())
 
     # Education programmes mapped to this ECSF role in the selected country.
-    programme_rows = _read_optional(
+    programme_rows = _read_rows(
         session,
         "SELECT programme_id, name, institution, level, ecsf_roles, url "
         "FROM education_programmes WHERE country = %s LIMIT 250",
@@ -245,7 +289,7 @@ def get_role_detail(
         "country": country_code,
         "country_name": COUNTRIES[country_code],
         "day": selected_day.isoformat(),
-        "cassandra_connected": session is not None,
+        "cassandra_connected": True,
         "demand": demand_counts["role"].get(profile.role),
         "supply": supply_counts["role"].get(profile.role),
         "skills": skills,

@@ -7,7 +7,7 @@ The only writer of stream data to Cassandra. It reads the topics below from Kafk
 | `jobs.clean` | `job_ads_raw` | `topics/raw.py` |
 | `raw.profiles` | `profiles_raw` | `topics/raw.py` |
 | `raw.programmes` | `education_programmes` | `topics/raw.py` |
-| `raw.workforce` | `workforce_baseline` | `topics/raw.py` |
+| `raw.workforce` | `workforce_baseline_by_geography`; also `workforce_baseline` for country rows (including legacy messages) | `topics/raw.py` |
 | `agg.demand_daily` (S4) | `demand_by_day`, `demand_map`, `demand_trend`, `job_ads_by_day` | `topics/counts.py` |
 | `agg.supply_daily` (S5) | `supply_by_day`, `supply_map` | `topics/counts.py` |
 | `agg.top10_demand` (S3) | `top10` | `topics/counts.py` |
@@ -19,6 +19,10 @@ The only writer of stream data to Cassandra. It reads the topics below from Kafk
 | `tasks.collect` | `orchestrator_decisions` | `topics/events.py` |
 
 ## How it works
+
+For `raw.workforce`, apply `schema.cql` and update the sink before enabling the
+scoped publisher. If older country messages were already consumed and should
+also appear on `/workforce`, replay or republish those messages after upgrading.
 
 - **One function per topic** (`ace_sink/topics/`) turns a message into rows, one per target table. These functions never touch Cassandra, so they are tested with plain messages. The tests also check every row against `schema.cql`: the table exists, the columns exist, the primary key is complete and each value has the right type.
 - **Upserts:** Cassandra's `INSERT` replaces the row with the same primary key, and no table uses counters, so writing a message twice leaves the same rows behind. A missing optional value is written as null, so it clears an old one.

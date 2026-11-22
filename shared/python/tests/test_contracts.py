@@ -21,7 +21,14 @@ def demand_message(**changes):
 def test_every_topic_has_a_valid_schema_that_requires_its_key():
     for t in contracts.topics().values():
         validator = contracts._validator(t.schema)
-        assert t.key_field in validator.schema["required"], t.name
+        validator.check_schema(validator.schema)
+        if t.schema == "raw_workforce":
+            # Scoped records use geography; replayed legacy records use country.
+            required = [set(branch["required"]) for branch in validator.schema["oneOf"]]
+            assert {t.key_field, "geography_level"} in required
+            assert {"country"} in required
+        else:
+            assert t.key_field in validator.schema["required"], t.name
 
 
 def test_topic_names_come_from_topics_csv():

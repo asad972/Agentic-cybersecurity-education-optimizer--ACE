@@ -2,27 +2,61 @@
 
 These modules normalize source records and the containerized agents publish
 them to Kafka through `ace.contracts`. The agents accept canonical JSON,
-JSONL, or CSV inputs. Source-specific extraction is intentionally separate:
-CYBERHEAD export layouts and the exact ISC2 report tables are not part of this
-repository. Do not treat sample or manually estimated values as source data.
+JSONL, or CSV inputs. Source-specific values must retain their published
+geography and citation; do not treat sample or manually estimated values as
+source data.
 
 ## Modules
 
 - `education.py` normalizes one programme record. Supply `programme_id`,
   `country`, `name`, and `institution`; `ecsf_roles`, `level`, and `url` are
-  optional. ECSF role mapping must be done from reviewed source evidence.
-- `workforce.py` normalizes one country/year workforce record. Workforce
-  figures are optional; missing figures remain absent rather than being
-  guessed as zero.
+  optional. Role labels must be reviewed and use one or more of the 12
+  canonical ECSF role names listed below.
+- The education CLI also adapts the fields in the synthetic CYBERHEAD fixtures
+  (`title`, `provider`, and country names) to the canonical message shape.
+  Those country-name conversions cover only the fixture countries; unreviewed
+  skill labels are not converted to ECSF roles.
+- `workforce.py` normalizes a workforce record at country, region, or global
+  scope. Workforce figures and year-over-year percentages are optional;
+  missing values remain absent rather than being guessed as zero. `sources/`
+  contains reviewed regional and global values from the ISC2 2024 study.
 - `platform_analysis.py` formats reviewed platform/feature decisions. The
   caller must provide an explicit boolean decision and evidence notes where
   appropriate; the module does not invent product capabilities.
 - `platform_evidence.json` contains a small, cited comparison of facts verified
-  from CyberSeek, ENISA and ISC2 first-party pages. The platform agent publishes
-  these reviewed rows to `analysis.platforms`; this is evidence input, not a
-  live feed.
+  from CyberSeek, ENISA and ISC2 first-party pages. The platform agent
+  republishes these reviewed rows; this is evidence input, not a live feed.
 
 ## Publishing agents
+
+### Preparing a Word programme list
+
+`prepare_cyberhead.py` reads a DOCX table with the programme, degree,
+programme ID, institution, country, URL, curriculum/skills, and compatible
+roles columns. It writes:
+
+- `cyberhead_review.jsonl`, retaining the source fields and validation notes;
+- `programmes.jsonl`, containing only valid country-specific records for the
+  education agent.
+
+The script maps recognized country names to ISO alpha-2 codes and degree names
+to the accepted M5 levels. Regional entries (such as an EU-wide programme) are
+kept in the review file but excluded from country-level M5 input. Source
+compatible-role labels remain separate from `ecsf_roles`; ECSF roles are left
+empty until they have been mapped and reviewed against programme evidence.
+Provide an actual retrieval date and CYBERHEAD detail-page URL when available;
+the script does not guess either value.
+
+```powershell
+$retrievedOn = '2026-11-16'  # replace with the date you checked the source
+python agents\m5\prepare_cyberhead.py `
+  --input "C:\path\to\Liste CYBERHEAD.docx" `
+  --output-dir "C:\path\to\prepared-cyberhead" `
+  --accessed-on $retrievedOn
+```
+
+Feed the resulting `programmes.jsonl` file to the education agent. Review
+`cyberhead_review.jsonl` for excluded rows, warnings, and source details first.
 
 Build each image from the repository root:
 
@@ -37,26 +71,73 @@ agent containers and mount the canonical input read-only:
 
 ```powershell
 $network = docker inspect ace-kafka --format '{{range $name, $network := .NetworkSettings.Networks}}{{$name}}{{end}}'
-docker run --rm --network $network -v "${PWD}\data\m5:/data:ro" ace-m5-education --input /data/programmes.jsonl
-docker run --rm --network $network -v "${PWD}\data\m5:/data:ro" ace-m5-workforce --input /data/workforce.csv
-docker run --rm --network $network ace-m5-platform
+docker run --rm --env-file .env --network $network -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 -v "${PWD}\data\m5:/data:ro" ace-m5-education --input /data/programmes.jsonl
+docker run --rm --env-file .env --network $network -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 ace-m5-education --enisa
+docker run --rm --env-file .env --network $network -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 ace-m5-workforce
+docker run --rm --env-file .env --network $network -e KAFKA_BOOTSTRAP_SERVERS=kafka:29092 ace-m5-platform
 ```
 
 Set `KAFKA_BOOTSTRAP_SERVERS` when the broker is not reachable as
 `kafka:29092`. CSV `ecsf_roles` cells must contain a JSON array, CSV workforce
-numbers must be integers, and CSV platform decisions must be `true` or
-`false`. Invalid messages are routed by `ace.contracts` to `errors.invalid`.
+counts and years must be integers, and CSV workforce growth values must be
+numbers. CSV platform decisions must be `true` or `false`. Invalid messages
+are routed by `ace.contracts` to `errors.invalid`.
 
 ## Current scope and placeholders
 
-- **Education:** the agent reads ready-made canonical files. CYBERHEAD
-  collection/extraction is not implemented. Input `ecsf_roles` must already be
-  reviewed; LLM role mapping is not implemented because `ace.llm` is not
-  available in this checkout.
-- **Workforce:** the agent reads ready-made canonical files. ISC2 PDF/table
-  extraction is not implemented; figures must come from verified report data.
+- **Education:** the agent reads ready-made CYBERHEAD JSON/JSONL/CSV exports
+  with `--input`, or fetches all currently public and approved programmes
+  directly from ENISA with `--enisa`. The live path maps ECSF roles from each
+  programme description through `ace.llm`, then validates the canonical
+  `raw.programmes` contract before publishing. It requires the shared LLM
+  configuration and Cassandra cache/budget tables.
+  The input adapter accepts `title`/`provider` as aliases for `name`/
+  `institution`; country names are supported only for Austria, Germany, the
+  Netherlands, and Spain in the synthetic fixtures. The live fetch includes
+  all currently public, approved programmes, not just a selected subset. The
+  accepted `ecsf_roles` are:
+  `Chief Information Security Officer (CISO)`, `Cyber Incident Responder`,
+  `Cyber Legal, Policy and Compliance Officer`,
+  `Cyber Threat Intelligence Specialist`, `Cybersecurity Architect`,
+  `Cybersecurity Auditor`, `Cybersecurity Educator`,
+  `Cybersecurity Implementer`, `Cybersecurity Researcher`,
+  `Cybersecurity Risk Manager`, `Digital Forensics Investigator`, and
+  `Penetration Tester`. Each programme may map to zero or more roles; only
+  reviewed roles supported by programme evidence should be supplied. If absent,
+  roles stay empty. Programme skills and the demo categories in `testdata/`
+  are not ECSF role mappings. The normalizer rejects unknown and duplicate
+  role labels. The shared message schema remains permissive; M5 enforces the
+  canonical role list before publishing. The live classifier uses the
+  programme description as evidence, requests no role when evidence is
+  insufficient, and rejects labels outside the canonical list.
+- **LLM mapping:** the live fetch path uses `ace.llm` with task
+  `programme_roles`; it inherits that client's provider switch, validated JSON,
+  retries, shared cache, and hosted daily budget. LLM-generated role mappings
+  should still be reviewed against the source before they are treated as
+  verified labels.
+- **Synthetic education fixtures:** `agents/m5/testdata/` contains JSON,
+  JSONL, and CSV examples marked as mock data, plus a separate demo skill
+  category map. These files validate import and normalization only; they are
+  not official CYBERHEAD data and must not be used as production evidence.
+- **Workforce:** the default source file is
+  `sources/isc2_workforce_studies.json`. It combines global and regional
+  estimates from the ISC2 2024 report with the country figures in the 2023
+  report. The 2023 country values come from Figures 1-B and 2-B (pages 10 and
+  12); China and India have a published gap but no workforce-size value in
+  those figures, so those fields remain absent. The 2023 report is the latest
+  ISC2 edition with country-level workforce and gap figures. The 2025 edition
+  no longer publishes a workforce-gap estimate or country-level figures.
+  Countries not listed in the 2023 figures have no country estimate and must
+  display “Not enough data”; regional 2024 values are never distributed to
+  countries. Each record keeps its study year, source title, original
+  geography, and figure/page reference. The report's figure totals can differ
+  slightly from totals in its narrative, so the dataset consistently uses
+  figure values and preserves those references.
+  Supply a reviewed JSON, JSONL, or CSV file with `--input` to publish a
+  different report. The agent does not perform OCR or infer table values.
 - **Platform analysis:** the agent republishes the hand-curated
-  `platform_evidence.json`; it does not run an automated or LLM comparison.
+  `platform_evidence.json`. This does not discover new facts or refresh source
+  data.
   `analysed_at` records the publication run time, not the date the source fact
   was independently verified.
 
@@ -89,7 +170,7 @@ message = normalize_programme(
 Run the local tests from the repository root:
 
 ```powershell
-python -m pip install -e shared/python
+python -m pip install -e "shared/python[dev]"
 python -m unittest discover -s agents\m5 -p test_*.py -v
 ```
 
@@ -116,9 +197,11 @@ python -m unittest discover -s streaming\s10_hiring_companies -t streaming -p "t
 
 ## Remaining source-specific work
 
-The publishers deliberately do not guess source layouts or values. Production
-collection still needs a CYBERHEAD export adapter and an ISC2 PDF/table
-extractor that are verified against the actual source artifacts. Education
-role mapping also needs the reviewed mapping workflow and the shared `ace.llm`
-interface; this checkout does not contain that module. The platform publisher
-uses cited, curated evidence and does not run an LLM or refresh itself.
+ISC2 defines workforce gaps according to the methodology of each study; avoid
+comparing gap values across editions without accounting for those definitions.
+Review the live CYBERHEAD source and LLM-generated role mappings before
+treating them as verified data. Additional workforce source files must preserve
+the report's original geography; do not publish regional ISC2 figures as
+country-level records. The platform publisher uses cited, curated evidence; an
+automated comparison should wait for reviewed evidence covering the same
+features across each platform rather than infer unsupported capabilities.

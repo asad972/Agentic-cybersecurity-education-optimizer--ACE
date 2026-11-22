@@ -48,6 +48,15 @@ METRICS = {
 }
 
 
+FIRST_DAY = date(2020, 1, 1)
+
+
+def check_day(day: date):
+    """The days the map and threat endpoints accept: 2020-01-01 through today (UTC)."""
+    if not FIRST_DAY <= day <= datetime.now(timezone.utc).date():
+        raise HTTPException(422, "Choose a date from 2020-01-01 through today (UTC)")
+
+
 class MapValue(BaseModel):
     country: str
     value: FiniteFloat | None

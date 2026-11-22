@@ -1,0 +1,52 @@
+{
+  "metadata": {
+    "source": "synthetic_demo_dataset",
+    "description": "Mock CYBERHEAD export for development and testing",
+    "export_date": "2026-11-12",
+    "countries": ["Austria", "Germany", "Netherlands", "Spain"]
+  },
+  "programmes": [
+    {
+      "programme_id": "AT-001",
+      "title": "Introduction to Cyber Security",
+      "provider": "Vienna Cyber Academy",
+      "country": "Austria",
+      "language": "English",
+      "duration_hours": 40,
+      "delivery_mode": "online",
+      "skills": [
+        "network security",
+        "security fundamentals",
+        "risk management"
+      ]
+    },
+    {
+      "programme_id": "DE-001",
+      "title": "Cloud Security Fundamentals",
+      "provider": "Berlin Security Institute",
+      "country": "Germany",
+      "language": "German",
+      "duration_hours": 24,
+      "delivery_mode": "hybrid",
+      "skills": [
+        "cloud security",
+        "identity management",
+        "IAM"
+      ]
+    },
+    {
+      "programme_id": "NL-001",
+      "title": "SOC Analyst Bootcamp",
+      "provider": "Amsterdam Cyber Center",
+      "country": "Netherlands",
+      "language": "English",
+      "duration_hours": 80,
+      "delivery_mode": "onsite",
+      "skills": [
+        "SIEM",
+        "incident response",
+        "threat detection"
+      ]
+    }
+  ]
+}

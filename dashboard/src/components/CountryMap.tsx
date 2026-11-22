@@ -3,6 +3,7 @@ import { registerMap } from 'echarts/core';
 import type { EChartsOption } from 'echarts';
 import type { Country, MapData } from '../services/api';
 import { countLabel } from '../services/dates';
+import { worldCountries } from '../services/threats';
 import { Chart } from './Chart';
 import { ErrorState, Loading } from './Status';
 type MapGeoJSON = Parameters<typeof registerMap>[1];
@@ -10,6 +11,16 @@ let boundaryPromise: Promise<MapGeoJSON> | undefined;
 function boundaries() {
   if (!boundaryPromise) boundaryPromise = fetch('/countries.geojson').then(response => { if (!response.ok) throw new Error('Country boundaries could not be loaded.'); return response.json(); }).catch(error => { boundaryPromise = undefined; throw error; });
   return boundaryPromise;
+}
+/** Every country the outline names, for the world threat map; empty until the outline has loaded. */
+export function useWorldCountries() {
+  const [countries, setCountries] = useState<Country[]>([]);
+  useEffect(() => {
+    let active = true;
+    boundaries().then(data => { if (active) setCountries(worldCountries(data)); }).catch(() => { /* CountryMap shows the error. */ });
+    return () => { active = false; };
+  }, []);
+  return countries;
 }
 export function CountryMap({ response, countries, selected, onSelect, world = false }: { response: MapData; countries: Country[]; selected: string; onSelect: (code: string) => void; world?: boolean }) {
   const [ready, setReady] = useState(false);

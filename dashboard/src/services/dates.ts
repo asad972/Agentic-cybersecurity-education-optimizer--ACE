@@ -5,6 +5,13 @@ export function yesterday(now = Date.now()) {
   return new Date(now - DAY).toISOString().slice(0, 10);
 }
 
+/** The previous complete UTC calendar month as YYYY-MM. */
+export function previousMonth(now = Date.now()) {
+  const current = new Date(now);
+  return new Date(Date.UTC(current.getUTCFullYear(), current.getUTCMonth() - 1, 1))
+    .toISOString().slice(0, 7);
+}
+
 export function formatDate(day: string) {
   return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${day}T00:00:00Z`));
 }
@@ -13,6 +20,12 @@ export function formatTime(timestamp: string) {
   const time = new Date(timestamp);
   if (Number.isNaN(time.getTime())) return timestamp;
   return `${new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' }).format(time)} UTC`;
+}
+
+export function formatTimestamp(timestamp: string) {
+  const time = new Date(timestamp);
+  if (Number.isNaN(time.getTime())) return timestamp;
+  return `${formatDate(time.toISOString().slice(0, 10))}, ${formatTime(timestamp)}`;
 }
 
 export function countLabel(value: number | null | undefined) {

@@ -1,14 +1,33 @@
 """Read-only API endpoints for the M5 education and workforce dashboard."""
 
 import logging
+from collections import Counter
 from datetime import date
-from typing import Any
+from typing import Any, Literal
 
 from cassandra import DriverException
 from fastapi import APIRouter, HTTPException, Query, Request
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["M5 education and workforce"])
+# The standalone API package does not install the shared agent package.
+_ROLES_BY_NAME = {
+    role.casefold(): role
+    for role in (
+        "Chief Information Security Officer (CISO)",
+        "Cyber Incident Responder",
+        "Cyber Legal, Policy and Compliance Officer",
+        "Cyber Threat Intelligence Specialist",
+        "Cybersecurity Architect",
+        "Cybersecurity Auditor",
+        "Cybersecurity Educator",
+        "Cybersecurity Implementer",
+        "Cybersecurity Researcher",
+        "Cybersecurity Risk Manager",
+        "Digital Forensics Investigator",
+        "Penetration Tester",
+    )
+}
 
 def _session(request: Request):
     """Return the connected Cassandra session or report service unavailability."""
@@ -35,13 +54,17 @@ def get_education(
     request: Request,
     country: str = Query(pattern=r"^[A-Z]{2}$"),
     limit: int = Query(default=100, ge=1, le=500),
+    day: date | None = Query(default=None),
 ) -> dict[str, Any]:
-    """Return programme and workforce rows for one country partition."""
-    programmes = _read(
+    """Return programme, workforce, and optional role-demand rows for a country."""
+    programmes = list(_read(
         request,
         "SELECT programme_id, name, institution, level, ecsf_roles, url "
         "FROM education_programmes WHERE country = %s LIMIT %s",
         (country, limit),
+    ))
+    role_rows = programmes if len(programmes) < limit else _read(
+        request, "SELECT ecsf_roles FROM education_programmes WHERE country = %s", (country,)
     )
     workforce = _read(
         request,
@@ -49,8 +72,43 @@ def get_education(
         "FROM workforce_baseline WHERE country = %s LIMIT %s",
         (country, limit),
     )
+    demand_by_role: Counter[str] = Counter()
+    demand_available = False
+    if day is not None:
+        demand = _read(
+            request,
+            "SELECT item, count FROM demand_by_day "
+            "WHERE country = %s AND day = %s AND kind = %s LIMIT 500",
+            (country, day, "role"),
+        )
+        demand_available = bool(demand) or bool(_read(
+            request, "SELECT count FROM job_ads_by_day WHERE day = %s AND country = %s",
+            (day, country),
+        ))
+        for row in demand:
+            if role := _ROLES_BY_NAME.get(row.item.strip().casefold()):
+                demand_by_role[role] += row.count
+
+    programme_counts: Counter[str] = Counter()
+    for row in role_rows:
+        programme_counts.update({
+            canonical for name in row.ecsf_roles or []
+            if (canonical := _ROLES_BY_NAME.get(name.strip().casefold()))
+        })
+
+    role_comparison = [
+        {
+            "role": role,
+            "programme_count": programme_counts.get(role, 0),
+            "demand_count": demand_by_role.get(role),
+        }
+        for role in sorted(programme_counts.keys() | demand_by_role.keys())
+    ]
     return {
         "country": country,
+        "day": day.isoformat() if day is not None else None,
+        "demand_available": demand_available,
+        "role_demand_available": bool(demand_by_role),
         "programmes": [
             {
                 "programme_id": row.programme_id,
@@ -70,6 +128,58 @@ def get_education(
                 "source": row.source,
             }
             for row in workforce
+        ],
+        "role_comparison": role_comparison,
+    }
+
+
+@router.get("/workforce")
+def get_workforce(
+    request: Request,
+    geography_level: Literal["country", "region", "global"],
+    geography: str = Query(min_length=2, max_length=64),
+    limit: int = Query(default=100, ge=1, le=500),
+) -> dict[str, Any]:
+    """Return workforce figures for one published geographic scope."""
+    if geography_level == "country" and (
+        len(geography) != 2
+        or geography != geography.upper()
+        or not geography.isascii()
+        or not geography.isalpha()
+        or geography == "EU"
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail="Country geography must be an uppercase ISO alpha-2 code",
+        )
+    if geography_level == "global" and geography != "GLOBAL":
+        raise HTTPException(
+            status_code=422, detail="Global geography must be GLOBAL"
+        )
+
+    rows = _read(
+        request,
+        "SELECT year, workforce_size, workforce_gap, "
+        "workforce_growth_percent, workforce_gap_growth_percent, "
+        "source, source_reference "
+        "FROM workforce_baseline_by_geography "
+        "WHERE geography_level = %s AND geography = %s LIMIT %s",
+        (geography_level, geography, limit),
+    )
+    return {
+        "geography_level": geography_level,
+        "geography": geography,
+        "items": [
+            {
+                "year": row.year,
+                "workforce_size": row.workforce_size,
+                "workforce_gap": row.workforce_gap,
+                "workforce_growth_percent": row.workforce_growth_percent,
+                "workforce_gap_growth_percent": row.workforce_gap_growth_percent,
+                "source": row.source,
+                "source_reference": row.source_reference,
+            }
+            for row in rows
         ],
     }
 

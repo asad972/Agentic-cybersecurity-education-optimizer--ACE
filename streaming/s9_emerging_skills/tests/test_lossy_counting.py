@@ -1,6 +1,6 @@
 """Tests for Lossy Counting and the S9 emerging-skills aggregation."""
 
-from datetime import date
+from datetime import date, datetime
 import unittest
 
 from ..lossy_counting import EmergingSkillsCounter, LossyCounting
@@ -110,6 +110,19 @@ class LossyCountingTests(unittest.TestCase):
             counter.add("DE", "not-a-date", "siem")
         with self.assertRaises(ValueError):
             counter.emit("DE", "not-a-date")
+        with self.assertRaisesRegex(ValueError, "not a datetime"):
+            counter.emit("DE", datetime(2026, 1, 31, 12))
+
+    def test_rejects_invalid_accuracy_at_counter_creation(self) -> None:
+        with self.assertRaisesRegex(ValueError, "epsilon"):
+            EmergingSkillsCounter(epsilon=1.0)
+
+    def test_rejects_daily_sketch_with_different_accuracy(self) -> None:
+        counter = EmergingSkillsCounter(epsilon=0.1)
+        sketch = LossyCounting(epsilon=0.2)
+
+        with self.assertRaisesRegex(ValueError, "epsilon must match"):
+            counter.add_daily_sketch("DE", "2026-01-31", sketch)
 
     def test_replaces_daily_sketch_when_a_window_is_replayed(self) -> None:
         counter = EmergingSkillsCounter(epsilon=0.1)
