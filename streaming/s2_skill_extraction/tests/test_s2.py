@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import pickle
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -11,20 +11,51 @@ from ace.llm import (
     BudgetExceededError,
     InMemoryLLMStore,
     LLMClient,
+    LLMResult,
     LLMSettings,
     RecordedProvider,
 )
-from ace.stage import run_flink_local, run_local
-from s2_skill_extraction.llm_extractor import LLMSkillExtractor
+from ace.stage import _roundtrip, run_flink_local, run_local
+from s2_skill_extraction.llm_extractor import (
+    ExtractedMentions,
+    LLMSkillExtractor,
+    MAX_MENTIONS,
+)
 from s2_skill_extraction.stage import (
+    FALLBACK_METRIC,
     JOBS_CLEAN,
     RAW_PROFILES,
     SKILLS_DEMAND,
     SKILLS_SUPPLY,
+    UNMAPPED_METRIC,
     S2SkillExtractionStage,
 )
 
 RECORDINGS_PATH = Path(__file__).with_name("recordings") / "s2_skill_extraction.json"
+
+
+class _FakeCounter:
+    def __init__(self) -> None:
+        self.value = 0
+
+    def inc(self, n: int = 1) -> None:
+        self.value += n
+
+
+class _FakeMetricsGroup:
+    def __init__(self) -> None:
+        self.counters: dict[str, _FakeCounter] = {}
+
+    def counter(self, name: str) -> _FakeCounter:
+        return self.counters.setdefault(name, _FakeCounter())
+
+
+class _FakeRuntimeContext:
+    def __init__(self) -> None:
+        self.metrics = _FakeMetricsGroup()
+
+    def get_metrics_group(self) -> _FakeMetricsGroup:
+        return self.metrics
 
 
 def _local_llm_settings() -> LLMSettings:
@@ -50,7 +81,7 @@ def _sample_inputs() -> list[tuple[str, dict[str, str]]]:
         "company": "Siemens",
         "description": (
             "Looking for a responder skilled in Suricata, Pass-the-Hash detection, "
-            "and holding BTL1 (Blue Team Level 1)."
+            "eBPF Runtime Security, and holding BTL1 (Blue Team Level 1)."
         ),
     }
     profile = {
@@ -59,7 +90,10 @@ def _sample_inputs() -> list[tuple[str, dict[str, str]]]:
         "country": "FR",
         "profile_date": "2026-10-02",
         "headline": "Penetration Tester",
-        "text": "Experienced in Internal Pivoting, Credential Harvesting, and CRTO.",
+        "text": (
+            "Experienced in Internal Pivoting, Credential Harvesting, "
+            "CloudTrail Forensics, and CRTO."
+        ),
     }
     unrelated_job = {
         "event_id": "33333333-3333-3333-3333-333333333333",
@@ -105,21 +139,14 @@ def test_s2_extracts_demand_and_supply_and_skips_empty_skills() -> None:
 
 
 def test_s2_recorded_llm_extractor_emits_unmapped_skills_and_uses_cache() -> None:
-    class _FakeCounter:
-        def __init__(self) -> None:
-            self.value = 0
-
-        def inc(self, n: int = 1) -> None:
-            self.value += n
-
     provider = RecordedProvider(
         RECORDINGS_PATH, provider="local", model="qwen3:4b"
     )
     store = InMemoryLLMStore()
     client = LLMClient(_local_llm_settings(), store, provider)
     stage = S2SkillExtractionStage(llm_client=client)
-    counter = _FakeCounter()
-    stage._unmapped_counter = counter
+    ctx = _FakeRuntimeContext()
+    stage.open(ctx)
 
     records = _sample_inputs()
     res = run_local(stage, records)
@@ -140,7 +167,7 @@ def test_s2_recorded_llm_extractor_emits_unmapped_skills_and_uses_cache() -> Non
     assert "Credential Dumping" in supply[0]["skills"]
     assert supply[0]["certifications"] == ["CRTO"]
     assert supply[0]["unmapped"] == ["CloudTrail Forensics"]
-    assert counter.value == 2
+    assert ctx.metrics.counters[UNMAPPED_METRIC].value == 2
     assert provider.calls == 3
 
     res_cached = run_local(stage, records)
@@ -150,37 +177,15 @@ def test_s2_recorded_llm_extractor_emits_unmapped_skills_and_uses_cache() -> Non
     stage.close()
 
 
-def test_s2_use_llm_defers_client_creation_to_open_for_flink_pickling(
+def test_s2_survives_pickle_roundtrip_with_use_llm_and_injected_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    class _FakeCounter:
-        def __init__(self) -> None:
-            self.value = 0
-
-        def inc(self, n: int = 1) -> None:
-            self.value += n
-
-    class _FakeMetricsGroup:
-        def __init__(self) -> None:
-            self.counters: dict[str, _FakeCounter] = {}
-
-        def counter(self, name: str) -> _FakeCounter:
-            return self.counters.setdefault(name, _FakeCounter())
-
-    class _FakeRuntimeContext:
-        def __init__(self) -> None:
-            self.metrics = _FakeMetricsGroup()
-
-        def get_metrics_group(self) -> _FakeMetricsGroup:
-            return self.metrics
-
-    monkeypatch.setenv("ACE_S2_USE_LLM", "1")
-    stage = S2SkillExtractionStage()
-
-    # Must not instantiate LLMClient / Cassandra store in __init__ so Flink can pickle the stage.
-    assert stage.extractor is None
-    unpickled = pickle.loads(pickle.dumps(stage))
-    assert unpickled.extractor is None
+    # 1. Stage configured with use_llm=True survives _roundtrip() before open().
+    unopened = S2SkillExtractionStage(use_llm=True)
+    assert unopened.extractor is None
+    restored = _roundtrip(unopened)
+    assert restored._use_llm is True
+    assert restored.extractor is None
 
     provider = RecordedProvider(RECORDINGS_PATH, provider="local", model="qwen3:4b")
     client = LLMClient(_local_llm_settings(), InMemoryLLMStore(), provider)
@@ -191,18 +196,77 @@ def test_s2_use_llm_defers_client_creation_to_open_for_flink_pickling(
     )
 
     ctx = _FakeRuntimeContext()
-    unpickled.open(ctx)
-    assert unpickled.extractor is not None
+    restored.open(ctx)
+    assert restored.extractor is not None
 
-    res = run_local(unpickled, _sample_inputs()[:1])
+    res = run_local(restored, _sample_inputs()[:1])
     demand = res.published(SKILLS_DEMAND)
     assert len(demand) == 1
     assert demand[0]["unmapped"] == ["eBPF Runtime Security"]
-    assert ctx.metrics.counters["unmapped_skills_total"].value == 1
-    unpickled.close()
+    assert ctx.metrics.counters[UNMAPPED_METRIC].value == 1
+    restored.close()
+
+    # 2. Stage with an injected LLMClient (with InMemoryLLMStore) also survives _roundtrip().
+    injected_provider = RecordedProvider(RECORDINGS_PATH, provider="local", model="qwen3:4b")
+    injected_client = LLMClient(
+        _local_llm_settings(), InMemoryLLMStore(), injected_provider
+    )
+    injected_stage = S2SkillExtractionStage(llm_client=injected_client)
+    restored_injected = _roundtrip(injected_stage)
+    res_injected = run_local(restored_injected, _sample_inputs()[:1])
+    assert res_injected.published(SKILLS_DEMAND)[0]["unmapped"] == ["eBPF Runtime Security"]
+    restored_injected.close()
 
 
-def test_s2_llm_extractor_falls_back_to_taxonomy_on_llm_error() -> None:
+def test_s2_open_falls_back_to_taxonomy_when_llm_setup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Hosted provider without LLM_API_KEY raises LLMConfigurationError inside from_env().
+    monkeypatch.setenv("LLM_PROVIDER", "hosted")
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+
+    stage = S2SkillExtractionStage(use_llm=True)
+    ctx = _FakeRuntimeContext()
+    stage.open(ctx)
+
+    assert stage.extractor is None
+    assert stage._use_llm is False
+    assert ctx.metrics.counters[FALLBACK_METRIC].value == 1
+
+    res = run_local(stage, _sample_inputs()[:1])
+    demand = res.published(SKILLS_DEMAND)
+    assert len(demand) == 1
+    assert "Intrusion Detection" in demand[0]["skills"]
+    assert demand[0]["unmapped"] == []
+
+
+def test_s2_llm_extractor_filters_hallucinations_caps_mentions_and_counts_fallbacks() -> None:
+    class _NoisyClient:
+        def generate(self, **kwargs):
+            mentions = [
+                "Suricata",
+                "Quantum Blockchain AI",  # not in text -> dropped
+                "x" * 120,  # exceeds MAX_MENTION_LENGTH -> dropped
+                "eBPF Runtime Security",
+            ] + [f"ExtraTerm{i}" for i in range(MAX_MENTIONS + 5)]
+            return LLMResult(
+                value=ExtractedMentions(mentions=mentions, ecsf_role=None),
+                provider="local",
+                model="qwen3:4b",
+                cached=False,
+                input_tokens=10,
+                output_tokens=10,
+                cost_eur=Decimal(0),
+            )
+
+        def close(self) -> None:
+            pass
+
+    noisy_stage = S2SkillExtractionStage(llm_client=_NoisyClient())  # type: ignore[arg-type]
+    res = run_local(noisy_stage, _sample_inputs()[:1])
+    demand = res.published(SKILLS_DEMAND)
+    assert demand[0]["unmapped"] == ["eBPF Runtime Security"]
+
     class _FailingClient:
         def generate(self, **kwargs):
             raise BudgetExceededError("daily hosted budget exhausted")
@@ -210,15 +274,14 @@ def test_s2_llm_extractor_falls_back_to_taxonomy_on_llm_error() -> None:
         def close(self) -> None:
             pass
 
-    extractor = LLMSkillExtractor(_FailingClient(), fallback_to_taxonomy=True)  # type: ignore[arg-type]
-    stage = S2SkillExtractionStage(extractor=extractor)
+    failing_stage = S2SkillExtractionStage(llm_client=_FailingClient())  # type: ignore[arg-type]
+    ctx = _FakeRuntimeContext()
+    failing_stage.open(ctx)
 
-    job_ad = _sample_inputs()[0][1]
-    res = run_local(stage, [(JOBS_CLEAN, job_ad)])
-    demand = res.published(SKILLS_DEMAND)
-    assert len(demand) == 1
-    assert "Intrusion Detection" in demand[0]["skills"]
-    assert demand[0]["unmapped"] == []
+    res_fallback = run_local(failing_stage, _sample_inputs()[:1])
+    assert "Intrusion Detection" in res_fallback.published(SKILLS_DEMAND)[0]["skills"]
+    assert res_fallback.published(SKILLS_DEMAND)[0]["unmapped"] == []
+    assert ctx.metrics.counters[FALLBACK_METRIC].value == 1
 
 
 @pytest.mark.flink
