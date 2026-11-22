@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { BarChart } from 'echarts/charts';
 import { GridComponent, LegendComponent } from 'echarts/components';
 import { use as registerCharts } from 'echarts/core';
@@ -16,17 +16,17 @@ import {
 } from 'lucide-react';
 import { Chart } from '../components/Chart';
 import { CountryMap } from '../components/CountryMap';
-import { getJSON } from '../services/api';
+import { ErrorState, Loading } from '../components/Status';
+import { useQuery } from '../hooks/useQuery';
 import type { Country, MapData } from '../services/api';
-import { countLabel } from '../services/dates';
+import { countLabel, yesterday } from '../services/dates';
 
 registerCharts([BarChart, GridComponent, LegendComponent]);
 
 type RoleSummary = {
   role: string;
   slug: string;
-  focus_area: string;
-  summary: string;
+  summary: string | null;
   skills_count: number;
   certifications_count: number;
   top_skills: string[];
@@ -62,7 +62,6 @@ type RoleCertification = {
 type RelatedRole = {
   role: string;
   slug: string;
-  focus_area: string;
   overlap: number;
   shared_skills: string[];
   source: 'cassandra' | 'taxonomy';
@@ -80,8 +79,7 @@ type RoleProgramme = {
 type RoleDetailResponse = {
   role: string;
   slug: string;
-  focus_area: string;
-  summary: string;
+  summary: string | null;
   country: string;
   country_name: string;
   day: string;
@@ -101,73 +99,33 @@ type TopCapabilityRow = {
   supply: number | null;
 };
 
-function defaultSnapshotDate() {
-  const yesterday = new Date();
-  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
-  return yesterday.toISOString().slice(0, 10);
-}
-
 export function RolePage() {
-  const [roles, setRoles] = useState<RoleSummary[]>([]);
-  const [countries, setCountries] = useState<Country[]>([]);
   const [selectedSlug, setSelectedSlug] = useState('cyber-incident-responder');
   const [country, setCountry] = useState('DE');
-  const [day, setDay] = useState(defaultSnapshotDate);
+  const [dayChoice, setDayChoice] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [detail, setDetail] = useState<RoleDetailResponse | null>(null);
-  const [roleMap, setRoleMap] = useState<MapData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    getJSON<RoleListResponse>('/roles', { country, day }, controller.signal)
-      .then(data => {
-        setRoles(data.roles);
-        setCountries(data.countries);
-        if (data.roles.length > 0 && !data.roles.some(r => r.slug === selectedSlug)) {
-          setSelectedSlug(data.roles[0].slug);
-        }
-      })
-      .catch(err => {
-        if (err instanceof DOMException && err.name === 'AbortError') return;
-        setError(err instanceof Error ? err.message : 'Unable to load ECSF roles.');
-      });
-    return () => controller.abort();
-  }, [country, day]);
+  const latestDay = useQuery<{ date: string }>('/demand/latest-day');
+  const day = dayChoice || (latestDay.loading ? '' : (latestDay.data?.date ?? yesterday()));
 
-  useEffect(() => {
-    if (!selectedSlug) return;
-    const controller = new AbortController();
-    setLoading(true);
-    setError(null);
+  const rolesQuery = useQuery<RoleListResponse>(day ? '/roles' : null, { country, day });
+  const roles = rolesQuery.data?.roles ?? [];
+  const resolvedSlug =
+    roles.length > 0 && !roles.some(r => r.slug === selectedSlug)
+      ? roles[0].slug
+      : selectedSlug;
 
-    Promise.all([
-      getJSON<RoleDetailResponse>(
-        `/roles/${encodeURIComponent(selectedSlug)}`,
-        { country, day },
-        controller.signal,
-      ),
-      getJSON<MapData>(
-        `/roles/${encodeURIComponent(selectedSlug)}/map`,
-        { day },
-        controller.signal,
-      ),
-    ])
-      .then(([detailData, mapData]) => {
-        setDetail(detailData);
-        setRoleMap(mapData);
-      })
-      .catch(err => {
-        if (err instanceof DOMException && err.name === 'AbortError') return;
-        setError(err instanceof Error ? err.message : 'Unable to load role details.');
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
+  const detailQuery = useQuery<RoleDetailResponse>(
+    day && resolvedSlug ? `/roles/${encodeURIComponent(resolvedSlug)}` : null,
+    { country, day },
+  );
+  const mapQuery = useQuery<MapData>(
+    day && resolvedSlug ? `/roles/${encodeURIComponent(resolvedSlug)}/map` : null,
+    { day },
+  );
 
-    return () => controller.abort();
-  }, [selectedSlug, country, day]);
+  const detail = detailQuery.data ?? null;
+  const roleMap = mapQuery.data ?? null;
 
   const filteredRoles = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -175,7 +133,6 @@ export function RolePage() {
     return roles.filter(
       item =>
         item.role.toLowerCase().includes(q) ||
-        item.focus_area.toLowerCase().includes(q) ||
         item.top_skills.some(skill => skill.toLowerCase().includes(q)),
     );
   }, [roles, searchQuery]);
@@ -235,13 +192,13 @@ export function RolePage() {
         {
           name: 'Demand',
           type: 'bar',
-          data: topCapabilities.map(item => item.demand ?? 0),
+          data: topCapabilities.map(item => item.demand ?? '-'),
           itemStyle: { color: '#297d70' },
         },
         {
           name: 'Supply',
           type: 'bar',
-          data: topCapabilities.map(item => item.supply ?? 0),
+          data: topCapabilities.map(item => item.supply ?? '-'),
           itemStyle: { color: '#d4a94f' },
         },
       ],
@@ -250,12 +207,28 @@ export function RolePage() {
   );
 
   const resolvedCountries = useMemo(
-    () => (countries.length > 0 ? countries : [{ code: 'DE', name: 'Germany' }]),
-    [countries],
+    () =>
+      rolesQuery.data?.countries && rolesQuery.data.countries.length > 0
+        ? rolesQuery.data.countries
+        : [{ code: 'DE', name: 'Germany' }],
+    [rolesQuery.data],
   );
 
   const countryName = (code: string) =>
     resolvedCountries.find(item => item.code === code)?.name ?? code;
+
+  const activeError = rolesQuery.error ?? detailQuery.error ?? mapQuery.error;
+  const retryAll = () => {
+    latestDay.retry();
+    rolesQuery.retry();
+    detailQuery.retry();
+    mapQuery.retry();
+  };
+
+  const usesTaxonomyRelatedFallback =
+    detail !== null &&
+    detail.related_roles.length > 0 &&
+    detail.related_roles.some(rel => rel.source === 'taxonomy');
 
   return (
     <>
@@ -292,7 +265,7 @@ export function RolePage() {
           </span>
           <select
             aria-label="Selected ECSF role"
-            value={selectedSlug}
+            value={resolvedSlug}
             onChange={event => setSelectedSlug(event.target.value)}
           >
             {(filteredRoles.length > 0 ? filteredRoles : roles).map(item => (
@@ -332,39 +305,31 @@ export function RolePage() {
             aria-label="Snapshot date"
             type="date"
             value={day}
-            onChange={event => setDay(event.target.value)}
+            onChange={event => setDayChoice(event.target.value)}
           />
           <small>Daily demand &amp; 365-day supply window</small>
         </label>
       </section>
 
-      {error && (
-        <div className="panel state-box error-box" role="alert">
-          <strong>Could not load Role Explorer</strong>
-          <p>{error}</p>
-        </div>
+      {activeError && <ErrorState message={activeError} retry={retryAll} />}
+
+      {!activeError && (latestDay.loading || rolesQuery.loading || detailQuery.loading) && !detail && (
+        <Loading text="Loading ECSF role profileâ€¦" />
       )}
 
-      {!error && loading && !detail && (
-        <div className="panel state-box" role="status">
-          <strong>Loading ECSF role profile&hellip;</strong>
-          <p>Fetching taxonomy skills, certifications, and country metrics.</p>
-        </div>
-      )}
-
-      {!error && detail && (
+      {!activeError && detail && (
         <>
           <section className="panel role-hero" aria-label="Selected role summary">
             <div className="role-hero-top">
               <div>
-                <span className="eyebrow">{detail.focus_area.toUpperCase()}</span>
+                <span className="eyebrow">ENISA ECSF PROFILE</span>
                 <h2>{detail.role}</h2>
               </div>
               <span className="pill">
                 {detail.country_name} &middot; {detail.day}
               </span>
             </div>
-            <p className="role-summary">{detail.summary}</p>
+            {detail.summary && <p className="role-summary">{detail.summary}</p>}
           </section>
 
           <section className="stat-grid" aria-label="Role key metrics">
@@ -477,48 +442,52 @@ export function RolePage() {
                 </div>
                 <span className="pill">{detail.role}</span>
               </div>
-              {roleMap && (
-                <>
-                  <CountryMap
-                    response={roleMap}
-                    countries={resolvedCountries}
-                    selected={country}
-                    onSelect={setCountry}
-                  />
-                  <div className="map-explanation">
-                    <strong>Click a country to inspect</strong>
-                    <p>{roleMap.note}</p>
-                  </div>
-                  <details className="data-details">
-                    <summary>View as table</summary>
-                    <div className="table-scroll">
-                      <table>
-                        <thead>
-                          <tr>
-                            <th scope="col">Country</th>
-                            <th scope="col">{roleMap.unit}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {roleMap.data.map(row => (
-                            <tr key={row.country}>
-                              <td>
-                                <button
-                                  type="button"
-                                  className="text-button"
-                                  onClick={() => setCountry(row.country)}
-                                >
-                                  {countryName(row.country)}
-                                </button>
-                              </td>
-                              <td>{countLabel(row.value)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+              {mapQuery.loading && !roleMap ? (
+                <Loading text="Loading European demand mapâ€¦" />
+              ) : (
+                roleMap && (
+                  <>
+                    <CountryMap
+                      response={roleMap}
+                      countries={resolvedCountries}
+                      selected={country}
+                      onSelect={setCountry}
+                    />
+                    <div className="map-explanation">
+                      <strong>Click a country to inspect</strong>
+                      <p>{roleMap.note}</p>
                     </div>
-                  </details>
-                </>
+                    <details className="data-details">
+                      <summary>View as table</summary>
+                      <div className="table-scroll">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th scope="col">Country</th>
+                              <th scope="col">{roleMap.unit}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {roleMap.data.map(row => (
+                              <tr key={row.country}>
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="text-button"
+                                    onClick={() => setCountry(row.country)}
+                                  >
+                                    {countryName(row.country)}
+                                  </button>
+                                </td>
+                                <td>{countLabel(row.value)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </details>
+                  </>
+                )
               )}
             </article>
           </section>
@@ -572,7 +541,7 @@ export function RolePage() {
                           )}
                           {item.aliases.length > 0 && (
                             <p className="role-aliases">
-                              Aliases: {item.aliases.join(' · ')}
+                              Aliases: {item.aliases.join(' Â· ')}
                             </p>
                           )}
                         </li>
@@ -594,6 +563,11 @@ export function RolePage() {
                   </span>
                 </div>
                 <div className="panel-section">
+                  {usesTaxonomyRelatedFallback && (
+                    <p className="role-aliases" style={{ marginBottom: 10 }}>
+                      Computed from shared taxonomy skills (no batch role-relation snapshot stored for this role yet).
+                    </p>
+                  )}
                   {detail.related_roles.length === 0 ? (
                     <p className="empty-inline">
                       No overlapping ECSF roles found for this profile.
@@ -641,13 +615,13 @@ export function RolePage() {
                   </div>
                   <span className="pill">
                     <Award size={11} style={{ display: 'inline', marginRight: 4 }} />
-                    Verified
+                    Taxonomy
                   </span>
                 </div>
                 <div className="panel-section">
                   {detail.certifications.length === 0 ? (
                     <p className="empty-inline">
-                      No specific certifications mapped to this ECSF role.
+                      No specific certifications mapped to this ECSF role in the taxonomy.
                     </p>
                   ) : (
                     <ul className="role-cert-list">
@@ -700,7 +674,7 @@ export function RolePage() {
                             <strong>{prog.name}</strong>
                             <span>
                               {prog.institution}
-                              {prog.level ? ` · ${prog.level}` : ''}
+                              {prog.level ? ` Â· ${prog.level}` : ''}
                             </span>
                           </div>
                           {prog.url && (
@@ -735,9 +709,9 @@ export function RolePage() {
                   }
                   onClick={() => setSelectedSlug(item.slug)}
                 >
-                  <span className="eyebrow">{item.focus_area}</span>
+                  <span className="eyebrow">ENISA ECSF</span>
                   <strong>{item.role}</strong>
-                  <p>{item.summary}</p>
+                  {item.summary && <p>{item.summary}</p>}
                   <div className="role-card-footer">
                     <span>{item.skills_count} skills</span>
                     <span>{item.certifications_count} certs</span>

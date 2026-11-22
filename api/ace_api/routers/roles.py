@@ -1,12 +1,18 @@
-"""M1 issue #14: ECSF Role Explorer endpoints, auto-discovered by the API."""
+"""M1 issue #14: ECSF Role Explorer endpoints, auto-discovered by the API.
+
+Every endpoint reads Cassandra with prepared statements, one bounded
+partition per query. Driver classes are never imported here, so the module
+loads on Windows and in tests that use a fake session.
+"""
 
 from __future__ import annotations
 
-from datetime import date as Date, datetime, timezone
+from datetime import date as Date, datetime, timedelta, timezone
 import logging
+from threading import Lock
 from typing import Any
+import weakref
 
-from cassandra import DriverException
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..map_data import COUNTRIES, MapResponse
@@ -14,6 +20,31 @@ from ..roles_data import load_role_catalog, resolve_role, taxonomy_related_roles
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["M1 Role explorer"])
+
+ITEMS_LIMIT = 5000
+RELATIONS_LIMIT = 25
+PROGRAMMES_LIMIT = 250
+LATEST_DAY_LOOKBACK = 31
+
+CQL = {
+    "demand_day": f"SELECT kind, item, count FROM demand_by_day WHERE country = ? AND day = ? LIMIT {ITEMS_LIMIT}",
+    "supply_day": f"SELECT kind, item, count FROM supply_by_day WHERE country = ? AND day = ? LIMIT {ITEMS_LIMIT}",
+    "role_map": "SELECT country, count FROM demand_map WHERE kind = ? AND item = ? AND day = ? LIMIT 100",
+    "relations": f"SELECT related_role, overlap FROM role_relations WHERE role = ? LIMIT {RELATIONS_LIMIT}",
+    "programmes": (
+        "SELECT programme_id, name, institution, level, ecsf_roles, url "
+        f"FROM education_programmes WHERE country = ? LIMIT {PROGRAMMES_LIMIT}"
+    ),
+    "job_ads_day": "SELECT country FROM job_ads_by_day WHERE day = ? LIMIT 1",
+    "replay_days": "SELECT event_date FROM replay_position LIMIT 50",
+}
+
+_prepared = weakref.WeakKeyDictionary()
+_prepared_lock = Lock()
+
+
+class _Unavailable(Exception):
+    pass
 
 
 def _validate_day(day: Date) -> None:
@@ -34,44 +65,82 @@ def _validate_country(country: str) -> str:
     return code
 
 
-def _require_session(request: Request):
+def _session(request: Request):
     database = getattr(request.app.state, "database", None)
-    if database is None or not database.ready():
-        raise HTTPException(
-            status_code=503,
-            detail="Cassandra is unavailable",
-        )
+    if database is None:
+        raise _Unavailable()
     try:
         return database.session
-    except RuntimeError as error:
-        raise HTTPException(
-            status_code=503,
-            detail="Cassandra is unavailable",
-        ) from error
+    except RuntimeError:
+        if database.ready():
+            return database.session
+        raise _Unavailable() from None
 
 
-def _read_rows(session, query: str, parameters: tuple[Any, ...]) -> list[Any]:
+def _statement(session, name: str):
+    with _prepared_lock:
+        statements = _prepared.setdefault(session, {})
+        if name not in statements:
+            statements[name] = session.prepare(CQL[name])
+        return statements[name]
+
+
+def _read(request: Request, reads):
+    """Run reads(query) with prepared statements and timeout=5; 503 on database errors."""
     try:
-        return list(session.execute(query, parameters, timeout=5))
-    except (DriverException, RuntimeError) as error:
+        session = _session(request)
+
+        def query(name: str, *values: Any) -> list[Any]:
+            return list(session.execute(_statement(session, name), values, timeout=5))
+
+        return reads(query)
+    except HTTPException:
+        raise
+    except Exception as error:
         log.warning("Role Explorer Cassandra read failed (%s)", type(error).__name__)
-        raise HTTPException(
-            status_code=503,
-            detail="Cassandra is unavailable",
-        ) from error
+        raise HTTPException(status_code=503, detail="Cassandra is unavailable") from None
+
+
+def _as_date(value: Any) -> Date:
+    return value if isinstance(value, Date) else value.date()
+
+
+def _resolve_default_day(query) -> Date:
+    """Find the newest day with stored job ads (from today or replay_position), else today UTC."""
+    today = datetime.now(timezone.utc).date()
+    starts = {today}
+    starts.update(
+        _as_date(row.event_date)
+        for row in query("replay_days")
+        if getattr(row, "event_date", None) is not None
+    )
+    checked: set[Date] = set()
+    for start in sorted(starts, reverse=True):
+        for back in range(LATEST_DAY_LOOKBACK + 1):
+            candidate = start - timedelta(days=back)
+            if candidate in checked:
+                continue
+            checked.add(candidate)
+            if query("job_ads_day", candidate):
+                return candidate
+    return today
 
 
 def _counts_by_kind(
-    session,
-    table: str,
+    query,
+    statement_name: str,
     country: str,
     day: Date,
 ) -> dict[str, dict[str, int]]:
-    rows = _read_rows(
-        session,
-        f"SELECT kind, item, count FROM {table} WHERE country = %s AND day = %s",
-        (country, day),
-    )
+    rows = query(statement_name, country, day)
+    if len(rows) >= ITEMS_LIMIT:
+        log.warning(
+            "%s for %s on %s hit the %d-row limit; counts may be truncated",
+            statement_name,
+            country,
+            day,
+            ITEMS_LIMIT,
+        )
     grouped: dict[str, dict[str, int]] = {"role": {}, "skill": {}, "certification": {}}
     for row in rows:
         kind = getattr(row, "kind", None)
@@ -92,15 +161,17 @@ def list_roles(
     if day is not None:
         _validate_day(day)
     country_code = _validate_country(country) if country is not None else None
-    session = _require_session(request)
 
-    role_demand: dict[str, int] = {}
-    role_supply: dict[str, int] = {}
+    def reads(query):
+        if country_code is not None and day is not None:
+            demand = _counts_by_kind(query, "demand_day", country_code, day)["role"]
+            supply = _counts_by_kind(query, "supply_day", country_code, day)["role"]
+            return demand, supply
+        # Still verify Cassandra connectivity when no country/day filter is passed.
+        query("replay_days")
+        return {}, {}
 
-    if country_code is not None and day is not None:
-        role_demand = _counts_by_kind(session, "demand_by_day", country_code, day)["role"]
-        role_supply = _counts_by_kind(session, "supply_by_day", country_code, day)["role"]
-
+    role_demand, role_supply = _read(request, reads)
     catalog = load_role_catalog()
     items: list[dict[str, Any]] = []
     for profile in catalog["profiles"]:
@@ -110,7 +181,6 @@ def list_roles(
             {
                 "role": profile.role,
                 "slug": profile.slug,
-                "focus_area": profile.focus_area,
                 "summary": profile.summary,
                 "skills_count": len(skills),
                 "certifications_count": len(certs),
@@ -142,16 +212,15 @@ def get_role_demand_map(
             status_code=404,
             detail=f"Unknown ECSF role {role_name!r}",
         )
+    if day is not None:
+        _validate_day(day)
 
-    selected_day = day if day is not None else datetime.now(timezone.utc).date()
-    _validate_day(selected_day)
-    session = _require_session(request)
+    def reads(query):
+        selected_day = day if day is not None else _resolve_default_day(query)
+        rows = query("role_map", "role", profile.role, selected_day)
+        return selected_day, rows
 
-    rows = _read_rows(
-        session,
-        "SELECT country, count FROM demand_map WHERE kind = %s AND item = %s AND day = %s",
-        ("role", profile.role, selected_day),
-    )
+    selected_day, rows = _read(request, reads)
     counts = {
         row.country: int(row.count)
         for row in rows
@@ -185,12 +254,26 @@ def get_role_detail(
         )
 
     country_code = _validate_country(country)
-    selected_day = day if day is not None else datetime.now(timezone.utc).date()
-    _validate_day(selected_day)
+    if day is not None:
+        _validate_day(day)
 
-    session = _require_session(request)
-    demand_counts = _counts_by_kind(session, "demand_by_day", country_code, selected_day)
-    supply_counts = _counts_by_kind(session, "supply_by_day", country_code, selected_day)
+    def reads(query):
+        selected_day = day if day is not None else _resolve_default_day(query)
+        demand_counts = _counts_by_kind(query, "demand_day", country_code, selected_day)
+        supply_counts = _counts_by_kind(query, "supply_day", country_code, selected_day)
+        db_relations = query("relations", profile.role)
+        programme_rows = query("programmes", country_code)
+        if len(programme_rows) >= PROGRAMMES_LIMIT:
+            log.warning(
+                "education_programmes for %s hit the %d-row limit; role programmes may be truncated",
+                country_code,
+                PROGRAMMES_LIMIT,
+            )
+        return selected_day, demand_counts, supply_counts, db_relations, programme_rows
+
+    selected_day, demand_counts, supply_counts, db_relations, programme_rows = _read(
+        request, reads
+    )
 
     catalog = load_role_catalog()
     raw_skills = catalog["skills_for_role"].get(profile.role, ())
@@ -230,12 +313,6 @@ def get_role_detail(
         )
     )
 
-    # Related roles: prefer Cassandra batch role_relations; fall back to taxonomy Jaccard overlap.
-    db_relations = _read_rows(
-        session,
-        "SELECT related_role, overlap FROM role_relations WHERE role = %s LIMIT 25",
-        (profile.role,),
-    )
     taxonomy_overlaps = {
         item["role"]: item for item in taxonomy_related_roles(profile.role)
     }
@@ -251,7 +328,6 @@ def get_role_detail(
                 {
                     "role": rel_profile.role if rel_profile else rel_name,
                     "slug": rel_profile.slug if rel_profile else rel_name.lower().replace(" ", "-"),
-                    "focus_area": rel_profile.focus_area if rel_profile else "Cybersecurity Practice",
                     "overlap": round(float(getattr(row, "overlap", 0.0) or 0.0), 4),
                     "shared_skills": tax_info.get("shared_skills", []),
                     "source": "cassandra",
@@ -261,13 +337,6 @@ def get_role_detail(
     else:
         related_roles = list(taxonomy_overlaps.values())
 
-    # Education programmes mapped to this ECSF role in the selected country.
-    programme_rows = _read_rows(
-        session,
-        "SELECT programme_id, name, institution, level, ecsf_roles, url "
-        "FROM education_programmes WHERE country = %s LIMIT 250",
-        (country_code,),
-    )
     programmes = [
         {
             "programme_id": row.programme_id,
@@ -284,7 +353,6 @@ def get_role_detail(
     return {
         "role": profile.role,
         "slug": profile.slug,
-        "focus_area": profile.focus_area,
         "summary": profile.summary,
         "country": country_code,
         "country_name": COUNTRIES[country_code],
