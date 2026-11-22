@@ -24,6 +24,11 @@ _COUNTRY_ALIASES: dict[str, str] = {
     "GREAT BRITAIN": "GB",
     "GERMANY": "DE",
     "DEUTSCHLAND": "DE",
+    "AUSTRIA": "AT",
+    "ÖSTERREICH": "AT",
+    "SWITZERLAND": "CH",
+    "SCHWEIZ": "CH",
+    "SUISSE": "CH",
     "FRANCE": "FR",
     "SPAIN": "ES",
     "ESPAÑA": "ES",
@@ -35,17 +40,72 @@ _COUNTRY_ALIASES: dict[str, str] = {
     "HUNGARY": "HU",
     "CZECHIA": "CZ",
     "CZECH REPUBLIC": "CZ",
-    "AUSTRIA": "AT",
     "BELGIUM": "BE",
     "SWEDEN": "SE",
     "FINLAND": "FI",
     "DENMARK": "DK",
     "NORWAY": "NO",
-    "SWITZERLAND": "CH",
     "IRELAND": "IE",
     "PORTUGAL": "PT",
     "ROMANIA": "RO",
     "GREECE": "GR",
+}
+
+_REGION_TO_COUNTRY: dict[str, str] = {
+    # Austria (9 Bundeslaender)
+    "burgenland": "AT",
+    "kärnten": "AT",
+    "karnten": "AT",
+    "niederösterreich": "AT",
+    "niederosterreich": "AT",
+    "oberösterreich": "AT",
+    "oberosterreich": "AT",
+    "salzburg": "AT",
+    "steiermark": "AT",
+    "tirol": "AT",
+    "vorarlberg": "AT",
+    "wien": "AT",
+    # Switzerland (NUTS-2 / cantons)
+    "zürich": "CH",
+    "zurich": "CH",
+    "nordwestschweiz": "CH",
+    "nordwestschweiz (mit basel)": "CH",
+    "ostschweiz": "CH",
+    "zentralschweiz": "CH",
+    "espace mittelland": "CH",
+    "mittelland": "CH",
+    "région lémanique": "CH",
+    "region lemanique": "CH",
+    "ticino": "CH",
+    "tessin": "CH",
+    "bern": "CH",
+    "genf": "CH",
+    "genève": "CH",
+    "geneve": "CH",
+    "basel": "CH",
+    "basel-stadt": "CH",
+    "basel-landschaft": "CH",
+    "vaud": "CH",
+    "waadt": "CH",
+    # Germany (16 Bundeslaender)
+    "baden-württemberg": "DE",
+    "baden-wurttemberg": "DE",
+    "bayern": "DE",
+    "berlin": "DE",
+    "brandenburg": "DE",
+    "bremen": "DE",
+    "hamburg": "DE",
+    "hessen": "DE",
+    "mecklenburg-vorpommern": "DE",
+    "niedersachsen": "DE",
+    "nordrhein-westfalen": "DE",
+    "rheinland-pfalz": "DE",
+    "saarland": "DE",
+    "sachsen": "DE",
+    "sachsen-anhalt": "DE",
+    "schleswig-holstein": "DE",
+    "thüringen": "DE",
+    "thuringen": "DE",
 }
 
 _UUID_NAMESPACE = uuid.UUID("6ba7b811-9dad-11d1-80b4-00c04fd430c8")
@@ -74,6 +134,16 @@ def _country_from_nuts(raw_nuts: Any) -> str | None:
     if len(text) >= 2 and text[:2].isalpha():
         return normalize_country(text[:2])
     return None
+
+
+def _country_from_region(raw_region: Any) -> str | None:
+    """Map known DACH regional names (e.g. 'Wien', 'Zürich') to an ISO alpha-2 country code."""
+    if raw_region is None:
+        return None
+    text = " ".join(str(raw_region).strip().lower().split())
+    if not text:
+        return None
+    return _REGION_TO_COUNTRY.get(text)
 
 
 def _first_non_empty(row: dict[str, Any], keys: tuple[str, ...]) -> str:
@@ -152,9 +222,10 @@ def normalize_job_row(
     """Map one raw dataset row into a ``raw.jobs`` message dictionary.
 
     Returns ``None`` if the row belongs to a country outside the European Skills
-    Scope (when ``enforce_europe_scope=True``). Raises ``ValueError`` if required
-    fields (``country``, ``posted_date``, ``job_title``, ``description``) are missing
-    or malformed.
+    Scope or has no identifiable country in regional dataset metadata (when
+    ``enforce_europe_scope=True``). Raises ``ValueError`` if required fields
+    (``country``, ``posted_date``, ``job_title``, ``description``) are missing or
+    malformed.
     """
     raw_country = row.get("country")
     if raw_country is None and isinstance(row.get("location"), dict):
@@ -168,11 +239,15 @@ def normalize_job_row(
             raise ValueError(f"unsupported country {raw_country!r}")
     else:
         country = _country_from_nuts(row.get("nuts_code"))
+        if country is None:
+            country = _country_from_region(row.get("region"))
         if country is None and default_country is not None:
             country = normalize_country(default_country)
             if country is None:
                 raise ValueError(f"unsupported default_country {default_country!r}")
         if country is None:
+            if enforce_europe_scope and ("nuts_code" in row or "region" in row):
+                return None
             raise ValueError("missing required field 'country'")
 
     source = _first_non_empty(row, ("source", "provider", "portal")) or default_source
@@ -196,6 +271,8 @@ def normalize_job_row(
     )
     if not description:
         description = _description_from_esco(row)
+        if description and not source.endswith(":esco_tags"):
+            source = f"{source}:esco_tags"
     if not description:
         raise ValueError("missing required field 'description'")
 

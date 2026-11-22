@@ -51,7 +51,7 @@ def test_normalize_external_dataset_row_aliases_and_deterministic_id() -> None:
     contracts.validate("raw.jobs", msg1)
 
 
-def test_normalize_huggingface_german_job_postings_row() -> None:
+def test_normalize_huggingface_german_job_postings_row_and_dach_regions() -> None:
     hf_row = {
         "id": "10001-1003183488-S",
         "source": "bundesagentur",
@@ -60,6 +60,7 @@ def test_normalize_huggingface_german_job_postings_row() -> None:
         "title": "IT-Security Analyst (m/w/d)",
         "employer": "Siemens AG",
         "description_derived": None,
+        "region": "Schleswig-Holstein",
         "nuts_code": "DEF",
         "esco_occupation": {
             "uri": "http://data.europa.eu/esco/occupation/example",
@@ -73,18 +74,25 @@ def test_normalize_huggingface_german_job_postings_row() -> None:
     msg = normalize_job_row(hf_row)
     assert msg is not None
     assert msg["country"] == "DE"
-    assert msg["source"] == "bundesagentur"
+    assert msg["source"] == "bundesagentur:esco_tags"
     assert msg["company"] == "Siemens AG"
     assert msg["url"] == "https://www.arbeitsagentur.de/jobsuche/jobdetail/10001-1003183488-S"
     assert "information security analyst" in msg["description"]
     assert "intrusion detection" in msg["description"]
     contracts.validate("raw.jobs", msg)
 
-    # Row without nuts_code falls back to default_country when configured
-    row_no_nuts = dict(hf_row, nuts_code=None)
-    msg_default = normalize_job_row(row_no_nuts, default_country="DE")
-    assert msg_default is not None
-    assert msg_default["country"] == "DE"
+    # Rows with null nuts_code map Austrian and Swiss regions to AT and CH
+    at_msg = normalize_job_row(dict(hf_row, nuts_code=None, region="Oberösterreich"))
+    assert at_msg is not None
+    assert at_msg["country"] == "AT"
+
+    ch_msg = normalize_job_row(dict(hf_row, nuts_code=None, region="Nordwestschweiz (mit Basel)"))
+    assert ch_msg is not None
+    assert ch_msg["country"] == "CH"
+
+    # Rows with null nuts_code and missing/unknown region are skipped (None)
+    assert normalize_job_row(dict(hf_row, nuts_code=None, region=None)) is None
+    assert normalize_job_row(dict(hf_row, nuts_code=None, region="Sonstiges")) is None
 
 
 def test_normalize_rejects_invalid_date_and_distinguishes_ads_without_id_or_url() -> None:
