@@ -1,0 +1,84 @@
+# Monitoring for the local stack: the pipeline metrics exporter, Kafka exporter,
+# Prometheus and Grafana. Start the main stack first (docker compose up -d in the
+# repository root), then follow deploy/monitoring/README.md:
+#
+#   docker compose -f deploy/monitoring/compose.yml up -d --build
+#
+# These containers join the main stack's Docker network, so they reach Kafka at
+# kafka:29092 and Cassandra at cassandra:9042. Grafana and Prometheus are only
+# reachable from this machine (127.0.0.1).
+name: ace-monitoring
+
+services:
+  pipeline-exporter:
+    build:
+      context: ../..
+      dockerfile: deploy/monitoring/exporter/Dockerfile
+    image: ace-pipeline-exporter:0.1.0
+    container_name: ace-pipeline-exporter
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      EXPORTER_GROUP_ID: ${EXPORTER_GROUP_ID:-ace-monitoring}
+      CASSANDRA_HOSTS: cassandra
+      CASSANDRA_KEYSPACE: ace
+      LLM_DAILY_BUDGET_EUR: ${LLM_DAILY_BUDGET_EUR:-2}
+    networks: [ace]
+    restart: unless-stopped
+
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:v1.10.0
+    container_name: ace-kafka-exporter
+    command: ["--kafka.server=kafka:29092", "--kafka.version=3.8.0"]
+    networks: [ace]
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    container_name: ace-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-9090}:9090"
+    networks: [ace]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.2.4
+    container_name: ace-grafana
+    depends_on: [prometheus]
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD first, see deploy/monitoring/README.md}
+      # Anyone who can open the page sees the dashboards, read-only; changes need the admin login.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/pipeline-health.json
+    volumes:
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    networks: [ace]
+    restart: unless-stopped
+
+networks:
+  # The main stack's network. Its name comes from the repository folder name,
+  # so it is looked up once and passed in (see README.md).
+  ace:
+    external: true
+    name: ${ACE_NETWORK:?set ACE_NETWORK to the main stack's Docker network, see deploy/monitoring/README.md}
+
+volumes:
+  prometheus-data:
+  grafana-data:

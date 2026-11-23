@@ -1,0 +1,121 @@
+# Cassandra 4.1, one data centre (datacenter1). Clients use cassandra:9042;
+# the driver then finds the other nodes itself. cassandra-0 is the seed node.
+apiVersion: v1
+kind: Service
+metadata:
+  name: cassandra-headless
+  labels:
+    app.kubernetes.io/name: cassandra
+    app.kubernetes.io/component: database
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true   # nodes must find the seed before they are ready
+  selector:
+    app.kubernetes.io/name: cassandra
+  ports:
+    - name: cql
+      port: 9042
+    - name: intra-node
+      port: 7000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cassandra
+  labels:
+    app.kubernetes.io/name: cassandra
+    app.kubernetes.io/component: database
+spec:
+  selector:
+    app.kubernetes.io/name: cassandra
+  ports:
+    - name: cql
+      port: 9042
+      targetPort: cql
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cassandra
+  labels:
+    app.kubernetes.io/name: cassandra
+    app.kubernetes.io/component: database
+spec:
+  serviceName: cassandra-headless
+  replicas: 3
+  podManagementPolicy: OrderedReady   # nodes join the ring one at a time
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cassandra
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cassandra
+        app.kubernetes.io/component: database
+    spec:
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 120
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: cassandra
+      containers:
+        - name: cassandra
+          image: cassandra:4.1
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: cassandra-config
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: CASSANDRA_SEEDS
+              value: cassandra-0.cassandra-headless.$(POD_NAMESPACE).svc
+          ports:
+            - name: cql
+              containerPort: 9042
+            - name: intra-node
+              containerPort: 7000
+            - name: jmx
+              containerPort: 7199
+          readinessProbe:
+            exec:
+              command: ["cqlsh", "-e", "SELECT release_version FROM system.local"]
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: intra-node
+            initialDelaySeconds: 90
+            periodSeconds: 20
+            failureThreshold: 6
+          lifecycle:
+            preStop:
+              exec:
+                command: ["nodetool", "drain"]   # flush to disk before the pod stops
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/cassandra
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

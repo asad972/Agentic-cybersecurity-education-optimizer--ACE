@@ -4,7 +4,7 @@ WORKDIR /app
 COPY shared/python /opt/ace/shared-python
 COPY shared/schemas /opt/ace/schemas
 RUN mkdir -p /opt/ace/m5/education_agent
-COPY agents/m5/m5_runtime.py agents/m5/education.py /opt/ace/m5/
+COPY agents/m5/m5_runtime.py agents/m5/education.py agents/m5/cyberhead.py /opt/ace/m5/
 COPY agents/m5/education_agent/__init__.py agents/m5/education_agent/__main__.py /opt/ace/m5/education_agent/
 RUN pip install --no-cache-dir '/opt/ace/shared-python[llm]' kafka-python==2.2.15
 

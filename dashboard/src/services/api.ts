@@ -13,6 +13,17 @@ export type CountryData = {
   alerts: CountryAlert[];
   alerts_truncated: boolean;
 };
+export type GapItem = { skill: string; demand: number; supply: number; gap_ratio: number | null };
+export type GapData = { country: string; month: string; items: GapItem[] };
+export type ForecastItem = {
+  target_month: string;
+  predicted: number;
+  lower: number;
+  upper: number;
+  model: 'sarima' | 'lightgbm' | 'seasonal_naive';
+  trained_at: string;
+};
+export type ForecastData = { region: string; skill: string; items: ForecastItem[] };
 
 // Same default as the other pages: a configured API URL in deployments, the local API otherwise.
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000').replace(/\/$/, '');
@@ -45,6 +56,21 @@ export async function getJSON<T>(path: string, params: Record<string, string>, s
   }
   return response.json() as Promise<T>;
 }
+
+// ---- Threat landscape (GET /threats/hourly, #40) ----
+export type HourCount = { hour: string; total: number; counts: Record<string, number> };
+export type Burst = { created_at: string; threat_type: string; score: number; details: string };
+export type HourlyThreats = {
+  country: string;
+  from: string;
+  to: string;
+  total: number;
+  by_type: Record<string, number>;
+  hours: HourCount[];
+  bursts: Burst[];
+  bursts_truncated: boolean;
+  note: string;
+};
 
 // ---- Live alert feed (WS /live) ----
 export type LiveAlert = CountryAlert & { country: string; day: string };

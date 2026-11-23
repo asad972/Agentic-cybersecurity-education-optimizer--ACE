@@ -75,7 +75,7 @@ Each sub-task runs as its own AI agent in its own container, owned by the member
 | Job ads agent | M1 | Live: Adzuna API (AT, BE, CH, DE, ES, FR, GB, IT, NL, PL), Bundesagentur für Arbeit job search API (DE). History: German job postings dataset (Hugging Face, 2015–2026) | `raw.jobs` | Replays the history dataset in `posted_date` order, fetches live ads when the orchestrator asks, and tags country, date, company and title |
 | Profile agent | M1 | Stack Overflow Developer Survey (yearly public CSVs), filtered to security roles and skills | `raw.profiles` | Replays survey answers as anonymous profiles, with the survey date as `profile_date`, and strips any identifying details |
 | Education agent | M5 | ENISA CYBERHEAD database | `raw.programmes` | Collects cybersecurity higher-education programmes per country and maps each to ECSF roles with an LLM |
-| Workforce agent | M5 | ISC2 annual workforce reports | `raw.workforce` | Parses report PDFs and tables into workforce figures per country and year |
+| Workforce agent | M5 | ISC2 annual workforce reports | `raw.workforce` | Publishes workforce figures with the report's country, regional, or global scope and year |
 | Threat agent | M4 | Public threat-intelligence feeds (AlienVault OTX, AbuseIPDB) | `threats.events` | Collects live threat events and geolocates them to a country |
 | Skill extraction agent (S2) | M1 | `jobs.clean`, `raw.profiles` | `skills.demand`, `skills.supply` | LLM reads the text and returns Skills, Certifications and an ECSF role, all mapped to the Skill Taxonomy |
 | Platform analysis agent | M5 | CyberSeek, ENISA ECSF tools, ISC2 Workforce Study | `analysis.platforms` | LLM compares platform features and publishes a structured comparison |
@@ -85,6 +85,10 @@ Each sub-task runs as its own AI agent in its own container, owned by the member
 **Replay in event time:** job-ad history and profiles come from static datasets, so their agents replay them into Kafka in date order, and every window uses event time, not arrival time. Live job ads from the APIs and threat events use their own posting or observation date in the same way.
 
 **Geography:** Demand and Supply are measured for the Skills Scope (EU27, EEA, UK and Switzerland); threats are measured worldwide. Countries are always ISO 3166-1 alpha-2 codes (`GR`, `GB`, never `EL`, `UK`). `EU` is a Region used only in forecasts, never in a `country` field.
+
+Workforce records use `geography_level` (`country`, `region`, or `global`)
+and `geography`. A region or global estimate stays at the scope printed in its
+ISC2 source; regional totals are never apportioned to countries.
 
 **Orchestration:** the orchestrator is the planning agent, built with LangGraph or CrewAI in Python. Every 6 hours it reads coverage from Kafka (job ads per country from `agg.demand_daily`, programmes from `raw.programmes`, threats from `agg.threats_daily`, rejected messages from `errors.invalid`), finds gaps such as "few Job Ads for PL", and uses the LLM module to choose from a fixed list of actions that live sources can perform:
 
@@ -106,7 +110,7 @@ Kafka is the only path into the system. Messages are JSON, validated against sch
 | `raw.jobs` | Job ads agent | S1 | country | `raw_job` |
 | `raw.profiles` | Profile agent | S2, sink | country | `raw_profile` |
 | `raw.programmes` | Education agent | Sink, orchestrator | country | `raw_programme` |
-| `raw.workforce` | Workforce agent | Sink | country | `raw_workforce` |
+| `raw.workforce` | Workforce agent | Sink | geography | `raw_workforce` |
 | `jobs.clean` | S1 | S2, sink | country | `raw_job` |
 | `skills.demand` | S2 | S3, S4 | country | `skills_demand` |
 | `skills.supply` | S2 | S5 | country | `skills_supply` |
@@ -203,7 +207,8 @@ Counts use `kind` (`skill`, `certification` or `role`) and `item` (the taxonomy 
 | `job_ads_raw` | `jobs.clean` | (country, month) | posted_date, event_id | Raw de-duplicated job ads, used for retraining |
 | `profiles_raw` | `raw.profiles` | (country, month) | event_id | Raw anonymized profiles |
 | `education_programmes` | `raw.programmes` | country | programme_id | Programmes per country and the ECSF roles they teach |
-| `workforce_baseline` | `raw.workforce` | country | year | Workforce figures per country |
+| `workforce_baseline` | legacy country workforce rows | country | year | Existing country workforce figures |
+| `workforce_baseline_by_geography` | `raw.workforce` | (geography_level, geography) | year | Workforce estimates and changes at the source's geographic scope |
 | `job_ads_by_day` | `agg.demand_daily` | day | country | Europe map: job ads per country |
 | `demand_by_day` | `agg.demand_daily` | (country, day) | kind, item | Country panel: Demand for every item on one day |
 | `demand_map` | `agg.demand_daily` | (kind, item, day) | country | Europe map: Demand for one item across countries |
@@ -252,12 +257,16 @@ A FastAPI service is the only reader of Cassandra for the web app. M4 sets up th
 | `GET /map/country?country=&date=` | For one Country and day: its Top 10 Skills and Certifications, the latest workforce figures and that day's drift and burst alerts | Europe map country panel |
 | `GET /map/meta` | The Europe map's Countries, the metrics with their labels and whether each needs a Skill (`item`), and the accepted date range | Europe map |
 | `GET /top10?country=&kind=&date=` | Top 10 Skills or Certifications | Country panel, Skills demand dashboard |
+| `GET /demand/map?kind=&item=&date=` | Demand for one Skill, Certification or role per country on one day | Skills demand dashboard |
+| `GET /demand/items?kind=&date=` | Every Skill, Certification or role with Demand on one day, summed over the Skills Scope, most demanded first | Skills demand dashboard (Skill filter) |
+| `GET /demand/latest-day` | Newest day with Demand data | Skills demand dashboard (default day) |
 | `GET /forecast?region=&skill=` | Forecast series with bands | Forecast dashboard |
 | `GET /gap?country=&month=` | Demand vs Supply per Skill | Gap dashboard |
 | `GET /threats/hourly?country=&from=&to=` | Hourly threat counts with burst alerts | Threat landscape dashboard |
 | `GET /roles` and `GET /roles/{role}?country=` | ECSF roles; for one role its top Skills and Certifications, Demand per country, programmes and related roles | Role explorer |
 | `GET /platforms` | Platform feature comparison: one row per platform and feature | Education and workforce dashboard |
-| `GET /education?country=` | Education programmes in a country, each with its ECSF roles, and the workforce figures per year | Education and workforce dashboard |
+| `GET /education?country=&day=` | Education programmes and country workforce figures, plus ECSF-role programme counts and, with optional `day`, daily role Demand | Education and workforce dashboard |
+| `GET /workforce?geography_level=&geography=` | Workforce estimates by year for one published country, regional or global geography | Education and workforce dashboard |
 | `GET /emerging?country=&day=` | S9 snapshot for that day: the most frequent Unmapped Skills over the 30 days up to it | Education and workforce dashboard |
 | `GET /companies?country=&day=` | S10 estimates for that day: distinct hiring companies that day and over the last 30 days, and job ads with no company | Education and workforce dashboard |
 | `WS /live` | New drift and burst alerts as they arrive | Live feed |

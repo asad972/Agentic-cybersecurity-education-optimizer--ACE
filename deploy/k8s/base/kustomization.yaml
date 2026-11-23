@@ -1,0 +1,119 @@
+# ACE on Kubernetes, cluster layout: 3 Kafka brokers, 3 Cassandra nodes,
+# replication factor 3. overlays/local shrinks it to one of each for a laptop.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ace
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: ace
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false
+    includeTemplates: true
+
+resources:
+  - namespace.yaml
+  # The Secret ace-api-keys is not listed here: it is created by hand on the
+  # cluster (see README.md), so applying these files never empties the keys.
+  - kafka.yaml
+  - kafka-init-job.yaml
+  - kafka-ui.yaml
+  - cassandra.yaml
+  - cassandra-init-job.yaml
+  - sink.yaml
+  - api.yaml
+  - dashboard.yaml
+  - ingress.yaml
+  - flink.yaml
+  - threat-agent.yaml
+  - m5-platform-job.yaml
+  # Batch jobs, kept next to their code (outside this folder, see README.md)
+  - ../../../batch/forecast/k8s/cronjob.yaml
+  - ../../../batch/gap/k8s/cronjob.yaml
+
+configMapGenerator:
+  # Shared files, read from where they live, so the cluster gets exactly what
+  # docker-compose.yml uses. They are outside this folder, so render with
+  # kubectl kustomize --load-restrictor LoadRestrictionsNone (see README.md).
+  - name: kafka-topics
+    files:
+      - create-topics.sh=../../kafka/create-topics.sh
+      - topics.csv=../../../shared/schemas/topics.csv
+  - name: cassandra-schema
+    files:
+      - schema.cql=../../../storage/cql/schema.cql
+
+  # Settings every ACE service reads (same names as .env.example)
+  - name: ace-config
+    literals:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - CASSANDRA_HOSTS=cassandra
+      - CASSANDRA_PORT=9042
+      - CASSANDRA_KEYSPACE=ace
+      - CASSANDRA_LOCAL_DC=datacenter1
+      - LLM_PROVIDER=local
+      - LLM_LOCAL_URL=http://llm:11434
+      - LLM_DAILY_BUDGET_EUR=2
+      - REPLAY_SECONDS_PER_DAY=5
+      - GAP_MIN_SUPPLY=20
+
+  # Kafka brokers. Every KAFKA_* key becomes a broker setting.
+  - name: kafka-config
+    literals:
+      - CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
+      - BROKERS=3                       # must match the StatefulSet replicas
+      - PARTITIONS=3                    # partitions per ACE topic
+      - KAFKA_DEFAULT_REPLICATION_FACTOR=3
+      - KAFKA_MIN_INSYNC_REPLICAS=2
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=3
+      - KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=3
+      - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=2
+      - KAFKA_AUTO_CREATE_TOPICS_ENABLE=false
+      - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
+      - KAFKA_HEAP_OPTS=-Xms512m -Xmx512m
+
+  # Cassandra nodes and the keyspace replication
+  - name: cassandra-config
+    literals:
+      - CASSANDRA_CLUSTER_NAME=ace
+      - CASSANDRA_DC=datacenter1
+      - CASSANDRA_RACK=rack1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_NUM_TOKENS=16
+      - MAX_HEAP_SIZE=768M
+      - HEAP_NEWSIZE=192M
+      - REPLICATION_FACTOR=3            # keyspace ace, NetworkTopologyStrategy
+
+  # Topics the sink writes to Cassandra: remove one to switch it off
+  - name: sink-config
+    literals:
+      - SINK_GROUP_ID=ace-sink
+      - SINK_TOPICS=jobs.clean,raw.profiles,raw.programmes,raw.workforce,agg.demand_daily,agg.supply_daily,agg.top10_demand,agg.threats_hourly,agg.threats_daily,agg.emerging_skills,agg.companies_daily,alerts.drift,alerts.threats,analysis.platforms,tasks.collect
+
+  # API: browser origins allowed to call it directly. The web app opened through
+  # kubectl port-forward (5173) or the NodePort (30080) calls the API on another
+  # port; through the Ingress it is the same origin.
+  - name: api-config
+    literals:
+      - API_CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173,http://localhost:30080
+
+  # Flink session cluster
+  - name: flink-config
+    literals:
+      - TASK_MANAGER_NUMBER_OF_TASK_SLOTS=6
+      - JOBMANAGER_MEMORY=1024m
+      - TASKMANAGER_MEMORY=2048m
+
+images:
+  # Built locally (see deploy/k8s/README.md); never pulled from a registry
+  - name: ace-sink
+    newTag: latest
+  - name: ace-api
+    newTag: latest
+  - name: ace-dashboard
+    newTag: latest
+  - name: ace-threat
+    newTag: latest
+  - name: ace-m5-platform
+    newTag: latest

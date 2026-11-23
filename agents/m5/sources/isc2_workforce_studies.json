@@ -1,0 +1,246 @@
+[
+  {
+    "geography_level": "global",
+    "geography": "GLOBAL",
+    "year": 2024,
+    "workforce_size": 5457173,
+    "workforce_gap": 4762963,
+    "workforce_growth_percent": 0.1,
+    "workforce_gap_growth_percent": 19.1,
+    "source": "ISC2 Cybersecurity Workforce Study 2024",
+    "source_reference": "Figures 2 and 3"
+  },
+  {
+    "geography_level": "region",
+    "geography": "North America",
+    "year": 2024,
+    "workforce_size": 1454868,
+    "workforce_gap": 542687,
+    "workforce_growth_percent": -2.7,
+    "workforce_gap_growth_percent": 4.0,
+    "source": "ISC2 Cybersecurity Workforce Study 2024",
+    "source_reference": "Figures 2 and 3"
+  },
+  {
+    "geography_level": "region",
+    "geography": "Europe",
+    "year": 2024,
+    "workforce_size": 1300023,
+    "workforce_gap": 392320,
+    "workforce_growth_percent": -0.7,
+    "workforce_gap_growth_percent": 12.8,
+    "source": "ISC2 Cybersecurity Workforce Study 2024",
+    "source_reference": "Figures 2 and 3"
+  },
+  {
+    "geography_level": "region",
+    "geography": "Middle East and Africa",
+    "year": 2024,
+    "workforce_size": 431302,
+    "workforce_gap": 124978,
+    "workforce_growth_percent": 7.4,
+    "workforce_gap_growth_percent": 11.8,
+    "source": "ISC2 Cybersecurity Workforce Study 2024",
+    "source_reference": "Figures 2 and 3"
+  },
+  {
+    "geography_level": "region",
+    "geography": "Asia-Pacific",
+    "year": 2024,
+    "workforce_size": 997068,
+    "workforce_gap": 3374580,
+    "workforce_growth_percent": 3.8,
+    "workforce_gap_growth_percent": 26.4,
+    "source": "ISC2 Cybersecurity Workforce Study 2024",
+    "source_reference": "Figures 2 and 3"
+  },
+  {
+    "geography_level": "region",
+    "geography": "Latin America",
+    "year": 2024,
+    "workforce_size": 1273868,
+    "workforce_gap": 328397,
+    "workforce_growth_percent": -0.9,
+    "workforce_gap_growth_percent": -5.7,
+    "source": "ISC2 Cybersecurity Workforce Study 2024",
+    "source_reference": "Figures 2 and 3"
+  },
+  {
+    "geography_level": "country",
+    "geography": "US",
+    "year": 2023,
+    "workforce_size": 1338507,
+    "workforce_gap": 482985,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "CA",
+    "year": 2023,
+    "workforce_size": 157318,
+    "workforce_gap": 38842,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "MX",
+    "year": 2023,
+    "workforce_size": 536027,
+    "workforce_gap": 116331,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "BR",
+    "year": 2023,
+    "workforce_size": 749479,
+    "workforce_gap": 231927,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "NG",
+    "year": 2023,
+    "workforce_size": 25574,
+    "workforce_gap": 8352,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "SG",
+    "year": 2023,
+    "workforce_size": 76942,
+    "workforce_gap": 3961,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "KR",
+    "year": 2023,
+    "workforce_size": 263771,
+    "workforce_gap": 17611,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "AU",
+    "year": 2023,
+    "workforce_size": 138860,
+    "workforce_gap": 27756,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "JP",
+    "year": 2023,
+    "workforce_size": 480659,
+    "workforce_gap": 110254,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "AE",
+    "year": 2023,
+    "workforce_size": 144300,
+    "workforce_gap": 31928,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "SA",
+    "year": 2023,
+    "workforce_size": 53907,
+    "workforce_gap": 14252,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "NL",
+    "year": 2023,
+    "workforce_size": 67527,
+    "workforce_gap": 29058,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "GB",
+    "year": 2023,
+    "workforce_size": 367300,
+    "workforce_gap": 73439,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "FR",
+    "year": 2023,
+    "workforce_size": 217190,
+    "workforce_gap": 59117,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "IE",
+    "year": 2023,
+    "workforce_size": 19476,
+    "workforce_gap": 6990,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "ES",
+    "year": 2023,
+    "workforce_size": 182144,
+    "workforce_gap": 74498,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "DE",
+    "year": 2023,
+    "workforce_size": 455951,
+    "workforce_gap": 104660,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "ZA",
+    "year": 2023,
+    "workforce_size": 177802,
+    "workforce_gap": 57269,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figures 1-B and 2-B, pp. 10, 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "CN",
+    "year": 2023,
+    "workforce_gap": 1720941,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figure 2-B, p. 12"
+  },
+  {
+    "geography_level": "country",
+    "geography": "IN",
+    "year": 2023,
+    "workforce_gap": 789793,
+    "source": "ISC2 Cybersecurity Workforce Study 2023",
+    "source_reference": "Figure 2-B, p. 12"
+  }
+]

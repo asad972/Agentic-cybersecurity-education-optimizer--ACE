@@ -1,0 +1,12 @@
+# Loads every dashboard JSON in /etc/grafana/dashboards into the "ACE" folder.
+apiVersion: 1
+
+providers:
+  - name: ace
+    folder: ACE
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards

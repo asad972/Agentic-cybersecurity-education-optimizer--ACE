@@ -55,7 +55,7 @@ Discovery loads public `.py` modules directly inside `routers/` in alphabetical 
 
 Inside a route, use `request.app.state.database.session` for prepared, bounded Cassandra reads. The session is opened and closed by the service. Use synchronous `def` routes for blocking driver operations (FastAPI runs these in its worker thread pool), or explicitly offload reads in async routes. Handle connection failures with a suitable 503 response. Do not execute unrestricted scans or introduce database writes in browser-facing endpoints.
 
-Domain endpoints remain with their owners, as listed in `docs/ARCHITECTURE.md`. The hourly threat endpoint is a later release.
+Domain endpoints remain with their owners, as listed in `docs/ARCHITECTURE.md`.
 
 ### M4 Europe map endpoints (#37)
 
@@ -71,6 +71,28 @@ partition key and a row limit; a partition larger than the limit is answered
 with 503 rather than a truncated count. Storage problems are also 503, and
 there is no sample-data fallback. The module is `routers/europe_map.py`, with
 the queries in `map_data.py`.
+
+### M4 threat landscape endpoint (#40)
+
+- `GET /threats/hourly?country=HU&from=2026-11-02&to=2026-11-08` — observations per UTC hour for one country, from S7's `threats_by_hour`, with S8's bursts from `alerts`. `from` and `to` are UTC days and both are included; `to` defaults to `from`, and at most 31 days are read. Threats are measured worldwide, so any ISO 3166-1 alpha-2 code is accepted.
+
+The answer has `hours` (the start of each UTC hour with its `total` and `counts` per threat type), `total`, `by_type` (largest first), `bursts` and a `note`. A burst has `created_at` (the hour S8 marked), `threat_type`, `score` and `details`; drift alerts stored in the same partition are left out. Hours without stored observations are left out too, which is not the same as zero. Each day is read with its complete partition key, a row limit and a 5-second timeout. An hourly partition over the limit is a 503 rather than an incomplete count, and a day with more than 200 alerts sets `bursts_truncated`. Storage problems are 503, with no sample-data fallback. The world map itself uses `GET /map?metric=threats`. The module is `routers/threats.py`, with the queries in `threat_data.py`.
+### M3 Supply, Gap and Forecast endpoints (#31)
+
+- `GET /gap?country=DE&month=2026-10` returns one complete Skills Gap
+  partition, alphabetically ordered by canonical Skill. Each item contains
+  `demand`, `supply`, and `gap_ratio`. A null ratio means Supply was below the
+  job's minimum threshold; it is not converted to zero. An empty partition is
+  returned as `items: []`.
+- `GET /forecast?region=EU&skill=Cloud%20Security` returns up to twelve ordered
+  forecast months for an exact canonical Skill. Each item contains the
+  prediction, lower and upper bounds, selected model, and UTC training time.
+  The region is `EU` or one of the countries from `/map/meta`.
+
+Both endpoints use complete partition keys, five-second Cassandra timeouts,
+and bounded reads. Oversized partitions, invalid stored values, and storage
+failures return a sanitized 503 response. They never scan, write, or substitute
+sample data.
 
 ### Live alert feed (#39)
 
@@ -107,12 +129,21 @@ The feed connects within a few seconds. `host.docker.internal:9092` does not wor
 
 The M5 read-only endpoints are:
 
-- `GET /education?country=DE` — programmes and workforce baseline for a country.
+- `GET /education?country=DE&day=2026-11-02` — programmes and workforce
+  baseline for a country, plus per-ECSF-role programme and daily job-ad demand
+  counts when `day` is provided. Programme counts cover the full country,
+  independently of the list limit. `demand_available` signals a daily snapshot;
+  `role_demand_available` signals at least one recognized ECSF role count.
+  Missing role counts are `null`; explicit zero counts remain zero.
+- `GET /workforce?geography_level=region&geography=Europe` — workforce
+  estimates and year-over-year changes for a published country, region, or
+  global scope.
 - `GET /emerging?country=DE&day=2026-11-02` — S9 snapshot for a country and day.
 - `GET /companies?country=DE&day=2026-11-02` — S10 estimates for a country and day.
 - `GET /platforms` — evidence rows for CyberSeek, ENISA ECSF and the ISC2 Workforce Study.
 
-The reads use bounded Cassandra partition queries. `/education` requires an
+The reads use Cassandra partition queries. `/education` requires an
 uppercase ISO alpha-2 country code; `/emerging` and `/companies` also require
-an ISO date. These endpoints return database-backed data only: there is no
-sample-data fallback.
+an ISO date. `/workforce` uses the geography and level printed by its source,
+so regional/global estimates are not shown as country values. These endpoints
+return database-backed data only: there is no sample-data fallback.
