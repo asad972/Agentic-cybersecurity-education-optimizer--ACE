@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 import pytest
 
 from ace_api.main import create_app
-from ace_api.map_data import COUNTRIES
+from ace_api.countries import COUNTRIES
 from ace_api.routers import demand
 from ace_api.routers.demand import CQL, router
 

@@ -13,7 +13,7 @@ import weakref
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
-from ..map_data import COUNTRIES
+from ..countries import COUNTRIES
 
 log = logging.getLogger(__name__)
 
