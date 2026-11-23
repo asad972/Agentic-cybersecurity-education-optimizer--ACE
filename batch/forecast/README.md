@@ -28,14 +28,14 @@ Switzerland); it is a Region, not a country code.
 - LightGBM's bounds are recursively forecast quantiles using their own prior
   predictions; they are not a formally calibrated prediction interval.
 
-The taxonomy loader prefers `shared/taxonomy/skills.csv`. Until M1 publishes
-that canonical file, it loads `shared/taxonomy/contributions/*_skills.csv` and
-rejects case-insensitive canonical-name collisions.
+Skills are loaded through `ace.taxonomy`, including its contribution-file
+fallback. The fixed country scope, Cassandra connection settings, and calendar
+helpers come from `ace.batch`.
 
 ## Run and test
 
 ```bash
-python -m pip install -e "batch/forecast[dev]"
+python -m pip install -e "shared/python[batch]" -e "batch/forecast[dev]"
 python -m pytest -q batch/forecast/tests
 python -m ace_forecast --as-of 2026-11-01
 ```

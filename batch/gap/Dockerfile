@@ -6,10 +6,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /opt/ace
 
+COPY shared/python /tmp/ace-shared
 COPY batch/gap/pyproject.toml /tmp/ace-gap/pyproject.toml
 COPY batch/gap/ace_gap /tmp/ace-gap/ace_gap
-RUN python -m pip install --no-cache-dir /tmp/ace-gap \
-    && rm -rf /tmp/ace-gap \
+RUN python -m pip install --no-cache-dir "/tmp/ace-shared[batch]" /tmp/ace-gap \
+    && rm -rf /tmp/ace-shared /tmp/ace-gap \
     && useradd --create-home --uid 10001 ace
 
 COPY shared/taxonomy /opt/ace/shared/taxonomy
