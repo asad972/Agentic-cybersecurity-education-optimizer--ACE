@@ -98,6 +98,19 @@ describe('useApi', () => {
     expect(result.current).toEqual<Load<string>>({ status: 'ready', data: 'data for FR' });
   });
 
+  it('keeps the new data when the old request finishes last', async () => {
+    const first = deferred<string>();
+    const second = deferred<string>();
+    const { result, rerender } = renderHook(({ load, key }: Props) => useApi(load, key),
+      { initialProps: { load: () => first.promise, key: 'DE' } as Props });
+
+    rerender({ load: () => second.promise, key: 'FR' });
+    await act(async () => { second.resolve('data for FR'); });
+    // The cancelled request for DE still resolves: it must not replace FR's data.
+    await act(async () => { first.resolve('data for DE'); });
+    expect(result.current).toEqual<Load<string>>({ status: 'ready', data: 'data for FR' });
+  });
+
   it('cancels the request for the old key', () => {
     let seen: AbortSignal | undefined;
     const { rerender } = renderHook(({ load, key }: Props) => useApi(load, key),

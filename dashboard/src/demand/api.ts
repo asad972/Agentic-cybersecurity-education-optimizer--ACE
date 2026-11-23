@@ -66,7 +66,11 @@ export function useApi<T>(load: ((signal: AbortSignal) => Promise<T>) | null, ke
     const controller = new AbortController();
     setState({ key, load: { status: 'loading' } });
     load(controller.signal).then(
-      data => setState({ key, load: { status: 'ready', data } }),
+      data => {
+        // A cancelled request can still resolve; its data must not replace the current key's state.
+        if (controller.signal.aborted) return;
+        setState({ key, load: { status: 'ready', data } });
+      },
       error => {
         if (controller.signal.aborted) return;
         setState({ key, load: { status: 'error', error: error instanceof ApiError ? error : new ApiError('other') } });
