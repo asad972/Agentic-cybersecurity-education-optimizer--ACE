@@ -37,7 +37,7 @@ docs/            architecture, report, slides
 
 ## Running the project
 
-Requirements: Docker Desktop (with Compose v2.20 or newer) and Git. The commands work the same in PowerShell, bash and zsh.
+Requirements: a current Docker Desktop and Git. The start command was tested with Docker Compose v5.7.0; older versions may reject the `include:` block in `docker-compose.yml` or stop `--wait` with an error when `kafka-init` and `cassandra-init` finish. Check yours with `docker compose version` and update Docker Desktop if it is older. The commands work the same in PowerShell, bash and zsh.
 
 ### First time only
 
