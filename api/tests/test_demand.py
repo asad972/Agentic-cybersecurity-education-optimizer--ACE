@@ -31,6 +31,8 @@ class Session:
         self.reads = []
         self.timeouts = []
         self.fail = None
+        self.now = 0.0            # fake clock, used by demand.monotonic in the slow-read tests
+        self.read_seconds = 0.0   # how long each read takes on the fake clock
 
     def prepare(self, cql):
         self.prepared.append(cql)
@@ -39,6 +41,10 @@ class Session:
     def execute(self, statement, values, timeout=None):
         assert statement in CQL.values(), "only prepared statements from CQL are executed"
         self.timeouts.append(timeout)
+        if self.read_seconds > timeout:
+            self.now += timeout
+            raise TimeoutError("read timed out")
+        self.now += self.read_seconds
         if self.fail:
             raise self.fail
         values = tuple(values)
@@ -163,6 +169,23 @@ def test_every_read_has_a_timeout(client, session):
     client.get("/demand/latest-day")
     assert len(session.timeouts) > 4
     assert set(session.timeouts) == {demand.READ_TIMEOUT}
+
+
+@pytest.mark.parametrize("path,params", [
+    ("/top10", {"country": "DE", "kind": "skill", "date": "2026-10-01"}),
+    ("/demand/items", {"kind": "skill", "date": "2026-10-01"}),
+    ("/demand/latest-day", {}),
+])
+def test_slow_reads_stop_at_the_request_budget(client, session, monkeypatch, path, params):
+    # Every read takes just under READ_TIMEOUT, so no single read times out.
+    monkeypatch.setattr(demand, "monotonic", lambda: session.now)
+    session.read_seconds = demand.READ_TIMEOUT - 0.1
+    response = client.get(path, params=params)
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Cassandra is unavailable"}
+    assert session.now <= demand.REQUEST_BUDGET
+    assert len(session.timeouts) == 6   # 5 full reads of 4.9 s, then one capped at the 0.5 s left
+    assert session.timeouts[-1] == pytest.approx(demand.REQUEST_BUDGET - 5 * session.read_seconds)
 
 
 def test_statements_are_prepared_once_per_session(client, session):

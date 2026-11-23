@@ -7,6 +7,7 @@ endpoints run in tests with a fake session.
 from datetime import date, datetime, timedelta, timezone
 import logging
 from threading import Lock
+from time import monotonic
 from typing import Annotated, Literal
 import weakref
 
@@ -28,9 +29,12 @@ LATEST_DAY_LOOKBACK = 31
 TOP10_LOOKBACK = 30
 # Most items read from one demand_by_day partition (one Country, day and kind).
 ITEMS_LIMIT = 5000
-# Seconds one read may take, as in map_data. Some endpoints read up to 32 partitions,
-# so the driver's default of 10 s could keep a worker busy long after nginx gave up.
+# Seconds one read may take, as in map_data.
 READ_TIMEOUT = 5
+# Seconds all reads of one request may take together. Some endpoints read up to 32
+# partitions one after another, so without a total a slow Cassandra could keep a
+# worker thread busy for minutes. Kept below nginx's 30 s proxy_read_timeout.
+REQUEST_BUDGET = 25
 
 CQL = {
     "top10": "SELECT rank, item, count FROM top10 WHERE country = ? AND day = ? AND kind = ? LIMIT 10",
@@ -94,6 +98,10 @@ class _Unavailable(Exception):
     pass
 
 
+class _OutOfTime(Exception):
+    """The request used up REQUEST_BUDGET before its next read."""
+
+
 _prepared = weakref.WeakKeyDictionary()
 _prepared_lock = Lock()
 
@@ -125,12 +133,19 @@ def _statement(session, name: str):
 
 
 def _read(request: Request, reads):
-    """Run reads(query) where query(name, *values) returns the rows; 503 on database errors."""
+    """Run reads(query) where query(name, *values) returns the rows; 503 on database errors.
+
+    Each read may take READ_TIMEOUT seconds, and all reads together REQUEST_BUDGET seconds.
+    """
+    deadline = monotonic() + REQUEST_BUDGET
     try:
         session = _session(request)
 
         def query(name, *values):
-            return list(session.execute(_statement(session, name), values, timeout=READ_TIMEOUT))
+            left = deadline - monotonic()
+            if left <= 0:
+                raise _OutOfTime()
+            return list(session.execute(_statement(session, name), values, timeout=min(READ_TIMEOUT, left)))
 
         return reads(query)
     except HTTPException:
