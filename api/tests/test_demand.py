@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 import pytest
 
 from ace_api.main import create_app
-from ace_api.countries import COUNTRIES
 from ace_api.routers import demand
 from ace_api.routers.demand import CQL, router
 
@@ -137,8 +136,13 @@ def test_demand_items_sums_the_skills_scope_most_demanded_first(client, session)
     assert countries == list(demand.SKILLS_SCOPE) and len(countries) == 32
 
 
-def test_skills_scope_is_the_europe_map_country_list():
-    assert set(demand.SKILLS_SCOPE) == set(COUNTRIES) and len(demand.SKILLS_SCOPE) == 32
+def test_skills_scope_is_eu27_eea_uk_and_switzerland():
+    eu27 = {"AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE",
+            "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"}
+    eea_outside_eu = {"IS", "LI", "NO"}
+    assert len(eu27) == 27
+    assert len(demand.SKILLS_SCOPE) == 32
+    assert set(demand.SKILLS_SCOPE) == eu27 | eea_outside_eu | {"GB", "CH"}
 
 
 def test_demand_items_warns_when_a_partition_hits_the_limit(client, session, monkeypatch, caplog):
