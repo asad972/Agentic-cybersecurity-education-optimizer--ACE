@@ -7,7 +7,7 @@ placeholders. It does not use mock or sample data when the API is unavailable.
 
 ## Run with Docker
 
-`docker compose up -d --build --wait` from the repository root starts the dashboard together with the API and the rest of the stack; see [Running the project](../README.md#running-the-project). To start the dashboard on its own, stop the full stack first with `docker compose down`, because both use port 5173. Then, from the repository root:
+`docker compose up -d --build --wait` from the repository root starts the dashboard together with the API and the rest of the stack; see [Running the project](../README.md#running-the-project). To start the dashboard on its own while the full stack runs, first stop only its dashboard with `docker compose stop dashboard`, because both use port 5173. The full stack's API keeps running on port 8000, and the dashboard started alone uses it. Then, from the repository root:
 
 ```bash
 docker compose -f dashboard/compose.yml up --build -d --wait

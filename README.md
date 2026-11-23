@@ -106,12 +106,19 @@ docker compose down -v        # stop everything and delete the stored data
 
 ### Run one part alone
 
-The API and the dashboard keep their own compose files, so you can work on one without the rest: see [api/README.md](api/README.md) and [dashboard/README.md](dashboard/README.md). Those files publish the same ports (8000 and 5173) as the full stack, so stop the full stack first with `docker compose down`.
+The API and the dashboard keep their own compose files, so you can work on one without the rest: see [api/README.md](api/README.md) and [dashboard/README.md](dashboard/README.md). Those files publish the same ports (8000 and 5173) as the full stack, so first stop only the part you replace and leave the rest running:
+
+```bash
+docker compose stop dashboard       # before starting the dashboard alone; it uses the full stack's API
+docker compose stop api dashboard   # before starting the API alone; the full stack's dashboard only reaches the full stack's API
+```
+
+To go back, stop the part you started alone, then run the start command again.
 
 ### Troubleshooting
 
 - **`container name "/ace-kafka" is already in use`:** containers from an older setup still exist. List them with `docker ps -a`, remove the old ones with `docker rm -f <name>`, then start again.
-- **`port is already allocated`:** another program, or the API or dashboard started on its own, is using that port. Stop it, or stop the full stack before starting a part alone.
+- **`port is already allocated`:** another program, or the API or dashboard started on its own, is using that port. Stop it, or stop that part of the full stack before starting it alone (see [Run one part alone](#run-one-part-alone)).
 - **The dashboard opens but stays empty:** check http://localhost:8000/ready. If it does not say `connected`, Cassandra is still starting; wait a minute and reload.
 
 ## Key dates
