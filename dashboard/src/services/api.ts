@@ -57,6 +57,21 @@ export async function getJSON<T>(path: string, params: Record<string, string>, s
   return response.json() as Promise<T>;
 }
 
+// ---- Threat landscape (GET /threats/hourly, #40) ----
+export type HourCount = { hour: string; total: number; counts: Record<string, number> };
+export type Burst = { created_at: string; threat_type: string; score: number; details: string };
+export type HourlyThreats = {
+  country: string;
+  from: string;
+  to: string;
+  total: number;
+  by_type: Record<string, number>;
+  hours: HourCount[];
+  bursts: Burst[];
+  bursts_truncated: boolean;
+  note: string;
+};
+
 // ---- Live alert feed (WS /live) ----
 export type LiveAlert = CountryAlert & { country: string; day: string };
 export type LiveState = 'connecting' | 'connected' | 'unavailable' | 'disabled';

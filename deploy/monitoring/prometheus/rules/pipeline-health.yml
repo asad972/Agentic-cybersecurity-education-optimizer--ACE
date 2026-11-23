@@ -1,0 +1,65 @@
+# Pipeline-health values worked out from the exporter's counters (ace_*_total)
+# and the late-record count of the Flink stages. Used by the Grafana dashboard
+# and the same on Docker Compose and Kubernetes.
+# Tested with: promtool test rules (see deploy/monitoring/README.md).
+groups:
+  - name: ace-pipeline-health
+    interval: 1m
+    rules:
+      # Records per second per topic and source, over the last 5 minutes.
+      - record: ace:records:rate5m
+        expr: sum by (topic, source) (rate(ace_records_total[5m]))
+
+      # Job ads S1 dropped as near-duplicates in the last hour: what came in on
+      # raw.jobs minus what S1 passed on to jobs.clean.
+      - record: ace:duplicates_removed:increase1h
+        expr: |
+          clamp_min(
+              (sum(increase(ace_records_total{topic="raw.jobs"}[1h])) or vector(0))
+            - (sum(increase(ace_records_total{topic="jobs.clean"}[1h])) or vector(0)),
+            0
+          )
+
+      # Share of S2's input that came out with at least one Skill, last hour.
+      # No value when nothing came in.
+      - record: ace:extraction_success:ratio1h
+        labels:
+          output: skills.demand
+        expr: |
+          sum(increase(ace_records_total{topic="skills.demand"}[1h]))
+            / (sum(increase(ace_records_total{topic="jobs.clean"}[1h])) > 0)
+      - record: ace:extraction_success:ratio1h
+        labels:
+          output: skills.supply
+        expr: |
+          sum(increase(ace_records_total{topic="skills.supply"}[1h]))
+            / (sum(increase(ace_records_total{topic="raw.profiles"}[1h])) > 0)
+
+      # Share of all mentions that matched no Skill Taxonomy entry, last hour.
+      - record: ace:unmapped:share1h
+        expr: |
+          sum by (topic) (increase(ace_skill_mentions_total{kind="unmapped"}[1h]))
+            / (sum by (topic) (increase(ace_skill_mentions_total[1h])) > 0)
+
+      # Messages sent to errors.invalid in the last hour.
+      - record: ace:invalid_messages:increase1h
+        expr: sum by (topic, producer) (increase(ace_invalid_messages_total[1h]))
+
+      # Late records dropped by the Flink stages in the last hour, per job.
+      # ace.stage counts them in the late_records_total Flink metric; Flink's
+      # Prometheus reporter exposes counters as gauges named
+      # flink_taskmanager_job_task_operator_..._late_records_total.
+      - record: ace:late_records:increase1h
+        expr: |
+          sum by (job_name) (
+            increase({__name__=~"flink_taskmanager_job_task_operator_(.+_)?late_records_total"}[1h])
+          )
+
+      # Today's LLM spend over all tasks and providers.
+      - record: ace:llm_spend_today_eur:sum
+        expr: sum(ace_llm_spend_today_eur) or (vector(0) and on() ace_llm_spend_available == 1)
+
+      # Share of the daily LLM budget used today. max() drops the exporter's
+      # job and instance labels, so both sides match.
+      - record: ace:llm_budget_used:ratio
+        expr: ace:llm_spend_today_eur:sum / max(ace_llm_daily_budget_eur > 0)

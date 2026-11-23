@@ -1,0 +1,171 @@
+# Tests for rules/pipeline-health.yml. Run from deploy/monitoring/prometheus:
+#   docker run --rm -v "${PWD}:/p" -w /p --entrypoint promtool prom/prometheus:v3.15.1 test rules tests/pipeline-health-test.yml
+rule_files:
+  - ../rules/pipeline-health.yml
+
+evaluation_interval: 1m
+
+tests:
+  # Steady flow: 10 job ads a minute in, 8 kept by S1, 6 of those with Skills.
+  - interval: 1m
+    input_series:
+      - series: 'ace_records_total{topic="raw.jobs", source="adzuna"}'
+        values: '0+6x60'
+      - series: 'ace_records_total{topic="raw.jobs", source="ba"}'
+        values: '0+4x60'
+      - series: 'ace_records_total{topic="jobs.clean", source="adzuna"}'
+        values: '0+8x60'
+      - series: 'ace_records_total{topic="skills.demand", source="adzuna"}'
+        values: '0+6x60'
+      - series: 'ace_records_total{topic="raw.profiles", source="stackoverflow_survey"}'
+        values: '0+5x60'
+      - series: 'ace_records_total{topic="skills.supply", source="stackoverflow_survey"}'
+        values: '0+5x60'
+      - series: 'ace_skill_mentions_total{topic="skills.demand", kind="skill"}'
+        values: '0+15x60'
+      - series: 'ace_skill_mentions_total{topic="skills.demand", kind="certification"}'
+        values: '0+3x60'
+      - series: 'ace_skill_mentions_total{topic="skills.demand", kind="unmapped"}'
+        values: '0+2x60'
+      - series: 'ace_invalid_messages_total{topic="skills.demand", producer="s2-extract"}'
+        values: '0+1x60'
+    alert_rule_test: []
+    promql_expr_test:
+      - expr: ace:records:rate5m{topic="raw.jobs", source="adzuna"}
+        eval_time: 60m
+        exp_samples:
+          - labels: 'ace:records:rate5m{topic="raw.jobs", source="adzuna"}'
+            value: 0.1
+      - expr: ace:duplicates_removed:increase1h
+        eval_time: 60m
+        exp_samples:
+          - labels: 'ace:duplicates_removed:increase1h'
+            value: 120
+      - expr: ace:extraction_success:ratio1h
+        eval_time: 60m
+        exp_samples:
+          - labels: 'ace:extraction_success:ratio1h{output="skills.demand"}'
+            value: 0.75
+          - labels: 'ace:extraction_success:ratio1h{output="skills.supply"}'
+            value: 1
+      - expr: ace:unmapped:share1h
+        eval_time: 60m
+        exp_samples:
+          - labels: 'ace:unmapped:share1h{topic="skills.demand"}'
+            value: 0.1
+      - expr: ace:invalid_messages:increase1h
+        eval_time: 60m
+        exp_samples:
+          - labels: 'ace:invalid_messages:increase1h{topic="skills.demand", producer="s2-extract"}'
+            value: 60
+
+  # The exporter restarts after 30 minutes: its counters start again from 0,
+  # and the rules still see about 10 duplicates a minute.
+  - interval: 1m
+    input_series:
+      - series: 'ace_records_total{topic="raw.jobs", source="adzuna"}'
+        values: '0+10x30 0+10x30'
+      - series: 'ace_records_total{topic="jobs.clean", source="adzuna"}'
+        values: '0+0x30 0+0x30'
+    promql_expr_test:
+      - expr: ace:duplicates_removed:increase1h
+        eval_time: 60m
+        exp_samples:
+          - labels: 'ace:duplicates_removed:increase1h'
+            value: 589.8305084745763   # 580 counted over 59 minutes of samples, scaled to the hour
+
+  # Nothing has come in yet: no duplicates, and no success rate rather than 0 %.
+  - interval: 1m
+    input_series:
+      - series: 'ace_skill_mentions_total{topic="skills.demand", kind="unmapped"}'
+        values: '0x60'
+      - series: 'ace_skill_mentions_total{topic="skills.demand", kind="skill"}'
+        values: '0x60'
+      - series: 'ace_llm_spend_available'
+        values: '1x60'
+    promql_expr_test:
+      - expr: ace:duplicates_removed:increase1h
+        eval_time: 60m
+        exp_samples:
+          - labels: 'ace:duplicates_removed:increase1h'
+            value: 0
+      - expr: ace:extraction_success:ratio1h
+        eval_time: 60m
+        exp_samples: []
+      - expr: ace:unmapped:share1h
+        eval_time: 60m
+        exp_samples: []
+      - expr: ace:llm_spend_today_eur:sum
+        eval_time: 60m
+        exp_samples:
+          - labels: 'ace:llm_spend_today_eur:sum'
+            value: 0
+
+  # LLM spend summed over tasks; no value while llm_cache cannot be read.
+  - interval: 1m
+    input_series:
+      - series: 'ace_llm_spend_today_eur{task="skill_extraction", provider="hosted"}'
+        values: '0.5x10'
+      - series: 'ace_llm_spend_today_eur{task="programme_roles", provider="hosted"}'
+        values: '0.25x10'
+      - series: 'ace_llm_spend_available'
+        values: '0x10'
+    promql_expr_test:
+      - expr: ace:llm_spend_today_eur:sum
+        eval_time: 10m
+        exp_samples:
+          - labels: 'ace:llm_spend_today_eur:sum'
+            value: 0.75
+  - interval: 1m
+    input_series:
+      - series: 'ace_llm_spend_available'
+        values: '0x10'
+    promql_expr_test:
+      - expr: ace:llm_spend_today_eur:sum
+        eval_time: 10m
+        exp_samples: []
+
+  # Budget share: the exporter's job and instance labels must not stop the match.
+  - interval: 1m
+    input_series:
+      - series: 'ace_llm_spend_today_eur{job="pipeline-exporter", instance="pipeline-exporter:9400", task="skill_extraction", provider="hosted"}'
+        values: '0.5x10'
+      - series: 'ace_llm_spend_available{job="pipeline-exporter", instance="pipeline-exporter:9400"}'
+        values: '1x10'
+      - series: 'ace_llm_daily_budget_eur{job="pipeline-exporter", instance="pipeline-exporter:9400"}'
+        values: '2x10'
+    promql_expr_test:
+      - expr: ace:llm_budget_used:ratio
+        eval_time: 10m
+        exp_samples:
+          - labels: 'ace:llm_budget_used:ratio'
+            value: 0.25
+  # No budget set (0): no ratio rather than a division by zero.
+  - interval: 1m
+    input_series:
+      - series: 'ace_llm_spend_today_eur{job="pipeline-exporter", instance="pipeline-exporter:9400", task="skill_extraction", provider="hosted"}'
+        values: '0.5x10'
+      - series: 'ace_llm_daily_budget_eur{job="pipeline-exporter", instance="pipeline-exporter:9400"}'
+        values: '0x10'
+    promql_expr_test:
+      - expr: ace:llm_budget_used:ratio
+        eval_time: 10m
+        exp_samples: []
+
+  # Late records from two Flink jobs; the operator part of the name may vary.
+  - interval: 1m
+    input_series:
+      - series: 'flink_taskmanager_job_task_operator_late_records_total{job_name="s4-demand-count", subtask_index="0"}'
+        values: '0+1x60'
+      - series: 'flink_taskmanager_job_task_operator_late_records_total{job_name="s4-demand-count", subtask_index="1"}'
+        values: '0+1x60'
+      - series: 'flink_taskmanager_job_task_operator_python_late_records_total{job_name="s3-top10", subtask_index="0"}'
+        values: '0+2x60'
+    promql_expr_test:
+      - expr: ace:late_records:increase1h
+        eval_time: 60m
+        exp_samples:
+          - labels: 'ace:late_records:increase1h{job_name="s4-demand-count"}'
+            value: 120
+          - labels: 'ace:late_records:increase1h{job_name="s3-top10"}'
+            value: 120
