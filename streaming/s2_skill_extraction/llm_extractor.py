@@ -46,10 +46,14 @@ class ExtractedMentions(BaseModel):
     )
 
 
+def _escape_record_tag(value: str) -> str:
+    return re.sub(r"</record_data\s*>", r"<\/record_data>", value, flags=re.IGNORECASE)
+
+
 def build_extraction_prompt(record_kind: str, *, title: str, text: str) -> str:
     """Build a deterministic prompt with the record text delimited as data."""
-    clean_title = title.strip() or "(none)"
-    clean_text = text.strip() or "(none)"
+    clean_title = _escape_record_tag(title.strip()) or "(none)"
+    clean_text = _escape_record_tag(text.strip()) or "(none)"
     return (
         f"Record type: {record_kind}\n"
         "Extract cybersecurity skills, certifications, and ECSF role from the data block below.\n"
@@ -74,8 +78,9 @@ def _mention_in_text(mention: str, source_text: str) -> bool:
     if not norm_source or not norm_mention:
         return False
     parts = [re.escape(part) for part in norm_mention.split()]
+    separator = r"\s+"
     pattern = re.compile(
-        rf"(?<![A-Za-z0-9_]){r'\s+'.join(parts)}(?![A-Za-z0-9_])",
+        rf"(?<![A-Za-z0-9_]){separator.join(parts)}(?![A-Za-z0-9_])",
         re.IGNORECASE,
     )
     return pattern.search(norm_source) is not None
@@ -87,11 +92,11 @@ def _filter_mentions(
     taxonomy: Taxonomy,
     baseline: ExtractionResult,
 ) -> list[str]:
-    """Cap count and length of LLM mentions and drop phrases absent from the input text."""
+    """Filter LLM mentions against the input text first, then cap count and length."""
     baseline_items = set(baseline.skills) | set(baseline.certifications)
     accepted: list[str] = []
     seen: set[str] = set()
-    for raw in raw_mentions[:MAX_MENTIONS]:
+    for raw in raw_mentions:
         cleaned = " ".join(str(raw).strip().split())
         if not cleaned or len(cleaned) > MAX_MENTION_LENGTH:
             continue
@@ -104,6 +109,8 @@ def _filter_mentions(
             continue
         seen.add(key)
         accepted.append(cleaned)
+        if len(accepted) >= MAX_MENTIONS:
+            break
     return accepted
 
 
@@ -123,6 +130,8 @@ class LLMSkillExtractor:
         self.last_call_fell_back = False
 
     def __getstate__(self) -> dict[str, Any]:
+        # Snapshot InMemoryLLMStore state when pickling an injected test client;
+        # update here if InMemoryLLMStore's internal attributes change in ace.llm.
         state: dict[str, Any] = {
             "max_tokens": self.max_tokens,
             "fallback_to_taxonomy": self.fallback_to_taxonomy,
