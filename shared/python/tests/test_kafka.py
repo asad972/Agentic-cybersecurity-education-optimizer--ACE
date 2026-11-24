@@ -231,8 +231,11 @@ def test_one_job_refuses_two_stages_with_the_same_name():
 def test_checkpoints_go_to_one_folder_per_job(monkeypatch, tmp_path):
     monkeypatch.setenv("ACE_CHECKPOINT_DIR", str(tmp_path))
     assert kafka.checkpoint_dir(Counts()) == (tmp_path / "test-counts").resolve().as_uri()
-    assert kafka.checkpoint_dir([Counts(), OtherCounts()]) == (
-        (tmp_path / "test-counts+test-other-counts").resolve().as_uri())
+    several = kafka.checkpoint_dir([Counts(), OtherCounts()])
+    assert several == (tmp_path / "test-counts_test-other-counts").resolve().as_uri()
+    # Flink creates the folder exactly as the URI spells it, escapes included, so the
+    # URI must not escape anything or latest_checkpoint() looks in another folder.
+    assert "%" not in several
     monkeypatch.delenv("ACE_CHECKPOINT_DIR")
     assert kafka.checkpoint_dir(Counts()).endswith("/.cache/ace/checkpoints/test-counts")
 
@@ -255,6 +258,9 @@ def test_latest_checkpoint_is_the_newest_finished_one(monkeypatch, tmp_path):
     _checkpoint(folder, "run-b", 3, finished=False)          # being written when the job stopped
     _checkpoint(tmp_path / "test-other-counts", "run-c", 9, mtime=3_000)   # another job's
     assert kafka.latest_checkpoint(Counts()) == newest.resolve().as_uri()
+    # A job with several stages finds its checkpoints too.
+    both = _checkpoint(tmp_path / "test-counts_test-other-counts", "run-d", 1, mtime=4_000)
+    assert kafka.latest_checkpoint([Counts(), OtherCounts()]) == both.resolve().as_uri()
 
 
 def _settings(env) -> dict:

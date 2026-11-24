@@ -218,7 +218,9 @@ def checkpoint_dir(stages: Any) -> str:
 def _checkpoint_folder(stages: Any) -> Path:
     configured = os.environ.get("ACE_CHECKPOINT_DIR")
     base = Path(configured) if configured else Path.home() / ".cache" / "ace" / "checkpoints"
-    return (base / "+".join(stage.name for stage in _as_list(stages))).resolve()
+    # "_" joins the stage names: as_uri() would escape "+" as %2B, and Flink then
+    # creates a folder literally named %2B, which latest_checkpoint() never finds.
+    return (base / "_".join(stage.name for stage in _as_list(stages))).resolve()
 
 
 def latest_checkpoint(stages: Any) -> str | None:
