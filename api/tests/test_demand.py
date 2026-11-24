@@ -1,7 +1,9 @@
 """Skills demand endpoints, tested with a fake Cassandra session (no driver, no database)."""
 from collections import namedtuple
 from datetime import date, datetime, timedelta, timezone
+from types import SimpleNamespace
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 import pytest
 
@@ -33,8 +35,10 @@ class Session:
         self.fail = None
         self.now = 0.0            # fake clock, used by demand.monotonic in the slow-read tests
         self.read_seconds = 0.0   # how long each read takes on the fake clock
+        self.prepare_seconds = 0.0  # how long each prepare takes on the fake clock
 
     def prepare(self, cql):
+        self.now += self.prepare_seconds
         self.prepared.append(cql)
         return cql
 
@@ -186,6 +190,27 @@ def test_slow_reads_stop_at_the_request_budget(client, session, monkeypatch, pat
     assert session.now <= demand.REQUEST_BUDGET
     assert len(session.timeouts) == 6   # 5 full reads of 4.9 s, then one capped at the 0.5 s left
     assert session.timeouts[-1] == pytest.approx(demand.REQUEST_BUDGET - 5 * session.read_seconds)
+
+
+def test_a_late_prepare_does_not_run_past_the_request_budget(session, monkeypatch):
+    # Five reads use up all but 0.5 s of the budget; the next statement was never
+    # prepared, and a prepare can take PREPARE_TIMEOUT. Starting it would end past
+    # the budget (and nginx's 30 s), so the request stops before preparing.
+    monkeypatch.setattr(demand, "monotonic", lambda: session.now)
+    session.prepare_seconds = demand.PREPARE_TIMEOUT
+    session.read_seconds = (demand.REQUEST_BUDGET - demand.PREPARE_TIMEOUT - 0.5) / 5
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(database=Database(session))))
+
+    def reads(query):
+        for _ in range(5):
+            query("top10", "DE", DAY, "skill")
+        return query("map", "skill", "SIEM", DAY)
+
+    with pytest.raises(HTTPException) as raised:
+        demand._read(request, reads)
+    assert raised.value.status_code == 503
+    assert session.now <= demand.REQUEST_BUDGET
+    assert CQL["map"] not in session.prepared
 
 
 def test_statements_are_prepared_once_per_session(client, session):

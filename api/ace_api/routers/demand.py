@@ -35,6 +35,9 @@ READ_TIMEOUT = 5
 # partitions one after another, so without a total a slow Cassandra could keep a
 # worker thread busy for minutes. Kept below nginx's 30 s proxy_read_timeout.
 REQUEST_BUDGET = 25
+# Seconds preparing one statement may take: the session's default_timeout in
+# database.py. A prepare only starts when this much of the budget is left.
+PREPARE_TIMEOUT = 5
 
 CQL = {
     "top10": "SELECT rank, item, count FROM top10 WHERE country = ? AND day = ? AND kind = ? LIMIT 10",
@@ -124,10 +127,14 @@ def _session(request: Request):
         raise _Unavailable() from None
 
 
-def _statement(session, name: str):
+def _statement(session, name: str, deadline: float):
     with _prepared_lock:
         statements = _prepared.setdefault(session, {})
         if name not in statements:
+            # Preparing is a round trip of up to PREPARE_TIMEOUT seconds that no
+            # read timeout covers, so only start it if the budget still has room.
+            if deadline - monotonic() < PREPARE_TIMEOUT:
+                raise _OutOfTime()
             statements[name] = session.prepare(CQL[name])
         return statements[name]
 
@@ -142,10 +149,12 @@ def _read(request: Request, reads):
         session = _session(request)
 
         def query(name, *values):
+            statement = _statement(session, name, deadline)
+            # Worked out after the prepare, so its time counts against the budget.
             left = deadline - monotonic()
             if left <= 0:
                 raise _OutOfTime()
-            return list(session.execute(_statement(session, name), values, timeout=min(READ_TIMEOUT, left)))
+            return list(session.execute(statement, values, timeout=min(READ_TIMEOUT, left)))
 
         return reads(query)
     except HTTPException:
