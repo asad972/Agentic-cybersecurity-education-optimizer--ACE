@@ -128,15 +128,20 @@ def _session(request: Request):
 
 
 def _statement(session, name: str, deadline: float):
+    # The lock only guards the cache. Preparing is a network round trip, so it runs
+    # outside the lock: one slow prepare must not hold up every other request. Two
+    # requests may prepare the same statement at once; the first one stored is kept.
     with _prepared_lock:
-        statements = _prepared.setdefault(session, {})
-        if name not in statements:
-            # Preparing is a round trip of up to PREPARE_TIMEOUT seconds that no
-            # read timeout covers, so only start it if the budget still has room.
-            if deadline - monotonic() < PREPARE_TIMEOUT:
-                raise _OutOfTime()
-            statements[name] = session.prepare(CQL[name])
-        return statements[name]
+        statement = _prepared.setdefault(session, {}).get(name)
+    if statement is not None:
+        return statement
+    # Preparing takes up to PREPARE_TIMEOUT seconds that no read timeout covers,
+    # so only start it if the budget still has room.
+    if deadline - monotonic() < PREPARE_TIMEOUT:
+        raise _OutOfTime()
+    statement = session.prepare(CQL[name])
+    with _prepared_lock:
+        return _prepared.setdefault(session, {}).setdefault(name, statement)
 
 
 def _read(request: Request, reads):

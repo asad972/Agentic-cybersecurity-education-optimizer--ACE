@@ -38,6 +38,8 @@ class Session:
         self.prepare_seconds = 0.0  # how long each prepare takes on the fake clock
 
     def prepare(self, cql):
+        # Preparing is a network call; it must not block other requests on the cache lock.
+        assert not demand._prepared_lock.locked(), "prepare runs while holding the cache lock"
         self.now += self.prepare_seconds
         self.prepared.append(cql)
         return cql
