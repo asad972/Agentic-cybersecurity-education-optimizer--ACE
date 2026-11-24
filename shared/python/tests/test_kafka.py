@@ -228,6 +228,29 @@ def test_one_job_refuses_two_stages_with_the_same_name():
         kafka.build_job([], "localhost:9092")
 
 
+def test_checkpoints_go_to_one_folder_per_job(monkeypatch, tmp_path):
+    monkeypatch.setenv("ACE_CHECKPOINT_DIR", str(tmp_path))
+    assert kafka.checkpoint_dir(Counts()) == (tmp_path / "test-counts").resolve().as_uri()
+    assert kafka.checkpoint_dir([Counts(), OtherCounts()]) == (
+        (tmp_path / "test-counts+test-other-counts").resolve().as_uri())
+    monkeypatch.delenv("ACE_CHECKPOINT_DIR")
+    assert kafka.checkpoint_dir(Counts()).endswith("/.cache/ace/checkpoints/test-counts")
+
+
+def _settings(env) -> dict:
+    return dict(env._j_stream_execution_environment.getConfiguration().toMap())
+
+
+@pytest.mark.flink
+def test_an_unbounded_job_saves_checkpoints_to_files(monkeypatch, tmp_path):
+    """In memory, a job's checkpoint may be at most 5 MB; S8's models are bigger."""
+    monkeypatch.setenv("ACE_CHECKPOINT_DIR", str(tmp_path))
+    settings = _settings(kafka.build_job(Counts(), "localhost:9092"))
+    assert settings["execution.checkpointing.storage"] == "filesystem"
+    assert settings["execution.checkpointing.dir"] == kafka.checkpoint_dir(Counts())
+    assert "execution.checkpointing.dir" not in _settings(kafka.build_job(OtherCounts(), "localhost:9092", bounded=True))
+
+
 REPO = Path(__file__).resolve().parents[3]
 LOAD_S4 = ("from ace.kafka import load_stage; "
            "print(type(load_stage('s4_demand_frequency.stage:DemandFrequency')).__name__)")

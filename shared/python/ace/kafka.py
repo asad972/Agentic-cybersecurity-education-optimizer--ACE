@@ -199,6 +199,18 @@ def write_topics(outputs: Any, bootstrap_servers: str) -> Any:
     return rows.sink_to(sink).name("Kafka sink")
 
 
+def checkpoint_dir(stages: Any) -> str:
+    """Where an unbounded job saves its checkpoints, as a file:// URI.
+
+    One folder per job, named after its stages, under ACE_CHECKPOINT_DIR
+    (default ~/.cache/ace/checkpoints). Without a folder Flink keeps
+    checkpoints in memory, where a job's state may be at most 5 MB.
+    """
+    configured = os.environ.get("ACE_CHECKPOINT_DIR")
+    base = Path(configured) if configured else Path.home() / ".cache" / "ace" / "checkpoints"
+    return (base / "+".join(stage.name for stage in _as_list(stages))).resolve().as_uri()
+
+
 def _as_list(stages: Any) -> list[Any]:
     listed = list(stages) if isinstance(stages, (list, tuple)) else [stages]
     if not listed:
@@ -218,8 +230,10 @@ def build_job(stages: Any, bootstrap_servers: str, bounded: bool = False) -> Any
 
     Each stage's consumer group is its name, so a restarted job continues where
     it stopped. An unbounded job saves a checkpoint every CHECKPOINT_MS, with the
-    stages' state and the Kafka offsets they have processed.
+    stages' state and the Kafka offsets they have processed, to checkpoint_dir().
     """
+    from pyflink.common import Configuration
+
     from ace import stage as ace_stage
 
     stages = _as_list(stages)
@@ -231,6 +245,12 @@ def build_job(stages: Any, bootstrap_servers: str, bounded: bool = False) -> Any
         env.add_python_file(root)  # so Flink's Python workers can import the stages and ace
     if not bounded:
         env.enable_checkpointing(CHECKPOINT_MS)
+        # Files, not the default in-memory storage: its 5 MB limit made every S8
+        # checkpoint fail once S8 held one model per country.
+        checkpoints = Configuration()
+        checkpoints.set_string("execution.checkpointing.storage", "filesystem")
+        checkpoints.set_string("execution.checkpointing.dir", checkpoint_dir(stages))
+        env.configure(checkpoints)
     for stage in stages:
         topics = stage.inputs if isinstance(stage, ace_stage.RecordStage) else (stage.input,)
         records = read_topics(env, topics, bootstrap_servers, group_id=stage.name, bounded=bounded)
