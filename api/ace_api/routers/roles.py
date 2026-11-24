@@ -15,6 +15,13 @@ import weakref
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from ace.taxonomy import TaxonomyError
+
+try:
+    from cassandra import DriverException
+except ImportError:
+    DriverException = ()  # type: ignore[assignment,misc]
+
 from ..map_data import COUNTRIES, MapResponse
 from ..roles_data import load_role_catalog, resolve_role, taxonomy_related_roles
 
@@ -96,9 +103,12 @@ def _read(request: Request, reads):
         return reads(query)
     except HTTPException:
         raise
-    except Exception as error:
+    except (DriverException, _Unavailable) as error:
         log.warning("Role Explorer Cassandra read failed (%s)", type(error).__name__)
         raise HTTPException(status_code=503, detail="Cassandra is unavailable") from None
+    except TaxonomyError as error:
+        log.warning("Role Explorer taxonomy unavailable (%s)", type(error).__name__)
+        raise HTTPException(status_code=503, detail="Skill taxonomy is unavailable") from None
 
 
 def _as_date(value: Any) -> Date:
@@ -171,8 +181,10 @@ def list_roles(
         query("replay_days")
         return {}, {}
 
-    role_demand, role_supply = _read(request, reads)
-    catalog = load_role_catalog()
+    role_demand, role_supply, catalog = _read(
+        request,
+        lambda query: (*reads(query), load_role_catalog()),
+    )
     items: list[dict[str, Any]] = []
     for profile in catalog["profiles"]:
         skills = catalog["skills_for_role"].get(profile.role, ())
@@ -206,7 +218,10 @@ def get_role_demand_map(
     day: Date | None = Query(default=None),
 ) -> dict[str, Any]:
     """Return daily demand per country for an ECSF role from demand_map (kind='role')."""
-    profile = resolve_role(role_name)
+    try:
+        profile = resolve_role(role_name)
+    except TaxonomyError:
+        raise HTTPException(status_code=503, detail="Skill taxonomy is unavailable") from None
     if profile is None:
         raise HTTPException(
             status_code=404,
@@ -246,7 +261,10 @@ def get_role_detail(
     day: Date | None = Query(default=None),
 ) -> dict[str, Any]:
     """Return detailed skills, certifications, related roles, and programmes for one ECSF role."""
-    profile = resolve_role(role_name)
+    try:
+        profile = resolve_role(role_name)
+    except TaxonomyError:
+        raise HTTPException(status_code=503, detail="Skill taxonomy is unavailable") from None
     if profile is None:
         raise HTTPException(
             status_code=404,
@@ -271,11 +289,10 @@ def get_role_detail(
             )
         return selected_day, demand_counts, supply_counts, db_relations, programme_rows
 
-    selected_day, demand_counts, supply_counts, db_relations, programme_rows = _read(
-        request, reads
+    selected_day, demand_counts, supply_counts, db_relations, programme_rows, catalog = _read(
+        request,
+        lambda query: (*reads(query), load_role_catalog()),
     )
-
-    catalog = load_role_catalog()
     raw_skills = catalog["skills_for_role"].get(profile.role, ())
     skills = [
         {

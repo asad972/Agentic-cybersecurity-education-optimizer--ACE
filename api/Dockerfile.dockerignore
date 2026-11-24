@@ -8,6 +8,7 @@
 !shared/python/ace/
 !shared/python/ace/__init__.py
 !shared/python/ace/ecsf.py
+!shared/python/ace/taxonomy.py
 !shared/taxonomy/
 !shared/taxonomy/**
 **/__pycache__/

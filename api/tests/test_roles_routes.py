@@ -10,7 +10,8 @@ from fastapi.testclient import TestClient
 import pytest
 
 from ace_api.main import create_app
-from ace_api.roles_data import _load_role_catalog_from_dir, load_role_catalog
+from ace.taxonomy import TaxonomyError, _load_cached
+from ace_api.roles_data import load_role_catalog
 from ace_api.routers.roles import CQL
 
 
@@ -113,17 +114,17 @@ def _client(session=None, *, ready: bool = True) -> TestClient:
 
 
 def test_load_role_catalog_raises_when_taxonomy_is_missing(monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
-    _load_role_catalog_from_dir.cache_clear()
+    _load_cached.cache_clear()
     monkeypatch.setenv("ACE_TAXONOMY_DIR", str(tmp_path / "does-not-exist"))
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(TaxonomyError):
         load_role_catalog()
 
     empty_dir = tmp_path / "empty-taxonomy"
     empty_dir.mkdir()
     monkeypatch.setenv("ACE_TAXONOMY_DIR", str(empty_dir))
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(TaxonomyError):
         load_role_catalog()
-    _load_role_catalog_from_dir.cache_clear()
+    _load_cached.cache_clear()
 
 
 def test_list_roles_returns_all_twelve_ecsf_profiles_from_taxonomy() -> None:

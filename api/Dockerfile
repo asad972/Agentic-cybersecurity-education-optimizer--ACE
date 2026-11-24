@@ -3,7 +3,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 ACE_TAXONOMY_DIR=/app/shared/ta
 WORKDIR /app
 COPY api/pyproject.toml ./
 COPY api/ace_api ./ace_api
-COPY shared/python/ace/__init__.py shared/python/ace/ecsf.py ./ace/
+COPY shared/python/ace/__init__.py shared/python/ace/ecsf.py shared/python/ace/taxonomy.py ./ace/
 COPY shared/taxonomy ./shared/taxonomy
 RUN pip install --no-cache-dir . && useradd --create-home --uid 10001 ace
 USER ace
