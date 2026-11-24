@@ -5,7 +5,7 @@ Docker container. Components connect only through Kafka topics, Cassandra
 tables or the REST API, so each member can build and test a component alone,
 and any data can be replayed through the whole pipeline again.
 
-![ACE system architecture. The numbers follow the data from the online sources (1) to the web application (7); each box names its owner.](images/architecture.png)
+![ACE system architecture. The numbers follow the data from the online sources (1) to the web application (7); each box names its owner, and dashed boxes are designed but not built yet.](images/architecture-report.png)
 
 ## Data flow
 
@@ -90,10 +90,13 @@ three known months. Every month, the gap job divides Demand by Supply. The
 FastAPI service is the only reader of Cassandra for the web application, and
 pushes alerts from Kafka to the browser over a WebSocket.
 
-The whole stack starts with one Docker Compose command for development and
-runs on Kubernetes (Burns et al., 2016): Kafka and Cassandra as three-node StatefulSets with
-replication factor 3, Flink as one JobManager and two TaskManagers, the batch
-jobs as CronJobs, and an Ingress in front of the web application and the API.
+Every component is packaged as a Docker image, and development runs on Docker
+Compose. The Kubernetes manifests (Burns et al., 2016) deploy Kafka and
+Cassandra as three-node StatefulSets with replication factor 3, a Flink
+cluster with one JobManager and two TaskManagers, the sink, the API, the web
+application behind an Ingress, the threat agent, and the batch jobs as
+CronJobs. The other agents, the AI model server and the stage jobs on the
+Flink cluster are still to be added to them.
 Prometheus and Grafana show pipeline health, including late and invalid
 records and the AI model's daily spend.
 
