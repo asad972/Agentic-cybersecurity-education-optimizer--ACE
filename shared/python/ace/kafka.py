@@ -199,36 +199,55 @@ def write_topics(outputs: Any, bootstrap_servers: str) -> Any:
     return rows.sink_to(sink).name("Kafka sink")
 
 
-def build_job(stage: Any, bootstrap_servers: str, bounded: bool = False) -> Any:
-    """A Flink job that runs stage between Kafka topics: its input topics in, its outputs out.
+def _as_list(stages: Any) -> list[Any]:
+    listed = list(stages) if isinstance(stages, (list, tuple)) else [stages]
+    if not listed:
+        raise ValueError("needs at least one stage")
+    names = [stage.name for stage in listed]
+    if len(set(names)) != len(names):
+        raise ValueError(f"stage names must be unique in one job, got {names}")
+    return listed
 
-    The consumer group is the stage's name, so a restarted job continues where
+
+def build_job(stages: Any, bootstrap_servers: str, bounded: bool = False) -> Any:
+    """A Flink job that runs one stage, or several side by side, between Kafka topics.
+
+    Each stage reads its own input topics and writes its own outputs, exactly as
+    when it runs alone. Running several stages in one job shares one Java
+    process, which saves memory on a small machine.
+
+    Each stage's consumer group is its name, so a restarted job continues where
     it stopped. An unbounded job saves a checkpoint every CHECKPOINT_MS, with the
-    stage's state and the Kafka offsets it has processed.
+    stages' state and the Kafka offsets they have processed.
     """
     from ace import stage as ace_stage
 
+    stages = _as_list(stages)
     env = ace_stage.flink_env()
     add_connector(env)
-    for root in {ace_stage._import_root(type(stage).__module__), ace_stage._import_root(contracts.__name__)}:
-        env.add_python_file(root)  # so Flink's Python workers can import the stage and ace
+    roots = {ace_stage._import_root(contracts.__name__)}
+    roots.update(ace_stage._import_root(type(stage).__module__) for stage in stages)
+    for root in roots:
+        env.add_python_file(root)  # so Flink's Python workers can import the stages and ace
     if not bounded:
         env.enable_checkpointing(CHECKPOINT_MS)
-    topics = stage.inputs if isinstance(stage, ace_stage.RecordStage) else (stage.input,)
-    records = read_topics(env, topics, bootstrap_servers, group_id=stage.name, bounded=bounded)
-    outputs, late = ace_stage.build_flink(stage, records)
-    write_topics(outputs, bootstrap_servers)
-    if late is not None:
-        # The late stream only counts late records (late_records_total); this sink
-        # writes nothing but makes Flink run that count.
-        late.filter(lambda _: False).print()
+    for stage in stages:
+        topics = stage.inputs if isinstance(stage, ace_stage.RecordStage) else (stage.input,)
+        records = read_topics(env, topics, bootstrap_servers, group_id=stage.name, bounded=bounded)
+        outputs, late = ace_stage.build_flink(stage, records)
+        write_topics(outputs, bootstrap_servers)
+        if late is not None:
+            # The late stream only counts late records (late_records_total); this sink
+            # writes nothing but makes Flink run that count.
+            late.filter(lambda _: False).print()
     return env
 
 
-def run_on_kafka(stage: Any, bootstrap_servers: str | None = None, bounded: bool = False) -> None:
-    """Run stage on Kafka until it is stopped, or, if bounded, until its input topics are read."""
+def run_on_kafka(stages: Any, bootstrap_servers: str | None = None, bounded: bool = False) -> None:
+    """Run one stage, or several in one job, on Kafka until stopped, or, if bounded, until the inputs are read."""
+    stages = _as_list(stages)
     servers = bootstrap_servers or os.environ.get("KAFKA_BOOTSTRAP_SERVERS", DEFAULT_BOOTSTRAP_SERVERS)
-    build_job(stage, servers, bounded).execute(f"ace {stage.name}")
+    build_job(stages, servers, bounded).execute("ace " + ", ".join(stage.name for stage in stages))
 
 
 def load_stage(spec: str, kwargs: dict[str, str] | None = None) -> Any:
@@ -257,15 +276,22 @@ def _stage_arg(text: str) -> tuple[str, str]:
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="python -m ace.kafka", description="Run a stream stage on Kafka.")
-    parser.add_argument("stage", help="module:Class, e.g. s4_demand_frequency.stage:DemandFrequency")
+    parser = argparse.ArgumentParser(prog="python -m ace.kafka",
+                                     description="Run a stream stage, or several in one job, on Kafka.")
+    parser.add_argument("stages", nargs="+", metavar="stage",
+                        help="module:Class, e.g. s4_demand_frequency.stage:DemandFrequency; "
+                             "name several to run them in one job")
     parser.add_argument("--bounded", action="store_true",
                         help="process what is in the input topics now, then stop")
     parser.add_argument("--arg", dest="stage_args", type=_stage_arg, action="append", default=[],
                         metavar="NAME=VALUE",
-                        help="a setting passed to the stage class, e.g. --arg period=daily; repeatable")
+                        help="a setting passed to the stage class, e.g. --arg period=daily; repeatable; "
+                             "only with a single stage")
     args = parser.parse_args(argv)
-    run_on_kafka(load_stage(args.stage, dict(args.stage_args)), bounded=args.bounded)
+    if args.stage_args and len(args.stages) > 1:
+        parser.error("--arg works with a single stage only")
+    stages = [load_stage(spec, dict(args.stage_args)) for spec in args.stages]
+    run_on_kafka(stages, bounded=args.bounded)
 
 
 if __name__ == "__main__":

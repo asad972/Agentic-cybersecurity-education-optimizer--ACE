@@ -191,13 +191,41 @@ def test_load_stage_passes_settings_to_the_class():
     assert kafka.load_stage(f"{__name__}:Periods", {"period": "daily"}).period == "daily"
 
 
-def test_main_passes_arg_settings_to_the_stage(monkeypatch):
+class OtherCounts(Counts):
+    name = "test-other-counts"
+
+
+@pytest.fixture
+def started(monkeypatch):
+    """Replace run_on_kafka; returns the stages main() would have started."""
     seen = {}
-    monkeypatch.setattr(kafka, "run_on_kafka", lambda stage, bounded=False: seen.update(stage=stage))
+    monkeypatch.setattr(kafka, "run_on_kafka", lambda stages, bounded=False: seen.update(stages=stages))
+    return seen
+
+
+def test_main_passes_arg_settings_to_the_stage(started):
     kafka.main([f"{__name__}:Periods", "--arg", "period=daily"])
-    assert seen["stage"].period == "daily"
+    assert [stage.period for stage in started["stages"]] == ["daily"]
     with pytest.raises(SystemExit):
         kafka.main([f"{__name__}:Periods", "--arg", "no-equals-sign"])
+
+
+def test_main_starts_several_stages_in_one_job(started):
+    kafka.main([f"{__name__}:Counts", f"{__name__}:OtherCounts"])
+    assert [stage.name for stage in started["stages"]] == ["test-counts", "test-other-counts"]
+
+
+def test_arg_settings_are_refused_with_several_stages(started):
+    with pytest.raises(SystemExit):
+        kafka.main([f"{__name__}:Counts", f"{__name__}:OtherCounts", "--arg", "period=daily"])
+    assert "stages" not in started
+
+
+def test_one_job_refuses_two_stages_with_the_same_name():
+    with pytest.raises(ValueError, match="unique"):
+        kafka.build_job([Counts(), Counts()], "localhost:9092")
+    with pytest.raises(ValueError, match="at least one stage"):
+        kafka.build_job([], "localhost:9092")
 
 
 REPO = Path(__file__).resolve().parents[3]
@@ -224,3 +252,9 @@ def test_build_job_reads_the_input_topic_and_writes_to_kafka():
     nodes = [node["contents"] for node in json.loads(env.get_execution_plan())["nodes"]]
     assert "Source: Kafka skills.demand" in nodes
     assert nodes.count("Kafka sink: Writer") == 1
+
+    # Two stages in one job: each keeps its own Kafka source and sink.
+    env = kafka.build_job([Counts(), OtherCounts()], "localhost:9092", bounded=True)
+    nodes = [node["contents"] for node in json.loads(env.get_execution_plan())["nodes"]]
+    assert nodes.count("Source: Kafka skills.demand") == 2
+    assert nodes.count("Kafka sink: Writer") == 2

@@ -66,6 +66,7 @@ python -m ace.kafka s7_threat_frequency.stage:ThreatFrequencyStage --arg period=
 ```
 
 - `--arg NAME=VALUE` passes a setting to the stage class; repeat it for several. Values arrive as text.
+- Name several stages to run them side by side in one Flink job, e.g. `python -m ace.kafka s3_top10.stage:TopTen s4_demand_frequency.stage:DemandFrequency`. Each keeps its own topics and consumer group; they share one Java process, which saves memory (one stage uses about 700 MB). `--arg` works with a single stage only.
 
 - The consumer group is the stage's `name`, so a restarted job continues where it stopped. An unbounded job saves a checkpoint (state and Kafka offsets) every 60 seconds.
 - Delivery is at least once; the Cassandra sink's upserts absorb a repeated result after a restart.
