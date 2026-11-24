@@ -198,7 +198,85 @@ spend.
      docs/M3-testing-experiments.md here, with APA citations, written as the
      team. Your results table is Table 2. -->
 
-*To be moved in by M3.*
+### Method
+
+We combined automated tests with a deterministic experiment harness. Offline
+tests use fake records to check JSON contracts, event-time boundaries, late
+data, replay suppression, checkpoint restoration, configuration errors and
+failure handling without Kafka or Cassandra. Marked integration tests cover
+PyFlink and Cassandra separately. The experiment harness imports the production
+S5, S6 and forecasting implementations rather than reimplementing them. It uses
+seed `20261122`, records its Python and library versions, rounds metrics to four
+decimal places and reproduces the checked-in result file in a Linux Docker
+image. Stream and forecast experiments use separate environments because River
+0.23 requires pandas below version 3, while the forecast package pins pandas
+3.1.1.
+
+For S5, we compared every DGIM exponential-histogram estimate (Datar et al.,
+2002) with an exact inclusive 365-day rolling sum. Each of the stationary,
+seasonal and bursty Supply scenarios contains 100 fixed-seed trials of 730
+daily counts. We recorded relative and absolute error, bucket count and the
+number of active profiles represented per bucket, while checking bucket size,
+order and compression invariants after every observation.
+
+For S6, 100 trials of 365 observations used the production River ADWIN
+implementation (Montiel et al., 2021), `delta=0.002` and `clock=1`. Stationary
+Demand had mean 20; upward and downward scenarios changed between means 20 and
+40 on day 180. Nonnegative Gaussian noise had standard deviation 3. We measured
+false alerts, correctly directed detections, misses and detection delay.
+
+Forecast evaluation used synthetic data because ACE has no versioned
+multi-year Demand series. Four 84-month series modelled stable seasonality,
+trend plus seasonality, an abrupt level change and intermittent Demand. At
+origins 48, 60 and 72, seasonal-naive, SARIMA, LightGBM (Ke et al., 2017) and
+the production selection policy forecast the next 12 months. We measured MAE,
+MAPE excluding zero actuals, nominal 95% interval coverage and interval width.
+
+### Results
+
+| Component | Scenario | Measured result |
+| --- | --- | --- |
+| S5 DGIM | Stationary / seasonal / bursty | mean relative error 2.57% / 2.61% / 2.57%; p95 4.30% / 4.35% / 4.32%; maximum 8.33%; at most 103 / 103 / 96 buckets |
+| S6 ADWIN | Stationary | 0 of 100 trials produced a false alert |
+| S6 ADWIN | Upward / downward shift | 100% detection; median delay 4 / 3 days; p95 delay 4 / 4 days; no wrong-direction alerts |
+| Forecast | Stable seasonality | MAE SN/SARIMA/LightGBM/policy 2.0000 / 1.9162 / 2.4624 / 1.8382; policy coverage 97.22% |
+| Forecast | Trend plus seasonality | MAE 7.2778 / 2.3528 / 4.7601 / 3.7954; policy coverage 52.78% |
+| Forecast | Level change | MAE 6.6111 / 6.7237 / 3.7421 / 6.2985; policy coverage 86.11% |
+| Forecast | Intermittent Demand | MAE 14.4722 / 12.3851 / 11.0912 / 11.7633; policy coverage 72.22% |
+
+*Table 2: Deterministic S5, S6 and forecast experiment results. SN means
+seasonal naive.*
+
+DGIM's mean error stayed near 2.6%, and its 95th percentile stayed below the
+configured 5% target in every workload. The 8.33% maximum occurred for small
+early counts, where permitted upward integer rounding is large relative to the
+exact value; every absolute error still met the implemented bound. At most 103
+buckets represented a rolling population, with up to 79.66 active profiles per
+bucket.
+
+ADWIN produced no stationary or pre-change false alerts and detected every
+injected shift in the expected direction. This supports the configuration for
+clear sustained changes, but it does not establish a zero false-positive rate
+on real Demand. No forecast model dominated all scenarios. The production
+policy performed best for stable seasonality, SARIMA was best for trend, and
+LightGBM was best after the level change and for intermittent Demand. Its
+three-month holdout can therefore select a weaker model for the following 12
+months. Coverage ranged from 52.78% to 97.22%; LightGBM's recursively forecast
+quantiles are not formally calibrated prediction intervals.
+
+The final report-branch run produced 326 non-Flink shared and streaming passes,
+three skipped Cassandra tests, 20 deselected Flink tests and one expected
+failure. Forecast tests produced 44 passes and two environment skips: live
+Cassandra and host-native LightGBM/OpenMP. LightGBM ran in the canonical Linux
+image; all seven experiment-harness tests passed and the result file matched
+exactly.
+Docker PyFlink parity tests for S5 and S6 both passed.
+
+These fixed-seed synthetic workloads cover few distributions and abrupt
+changes. They omit gradual drift, real reporting gaps, adversarial bursts and
+production-scale latency or memory measurements. With only three forecast
+origins per scenario, the results measure reproducible implementation behaviour
+and bounded state, not real-world European labour-market generalisation.
 
 <!-- M3 END -->
 
@@ -280,6 +358,20 @@ How the other stages are tested (one line each):
 ### M3
 
 <!-- M3 START -->
+
+- (OLD) Datar, M., Gionis, A., Indyk, P., & Motwani, R. (2002). Maintaining
+  stream statistics over sliding windows. *SIAM Journal on Computing, 31*(6),
+  1794–1813. <https://doi.org/10.1137/S0097539701398363>
+- Ke, G., Meng, Q., Finley, T., Wang, T., Chen, W., Ma, W., Ye, Q., & Liu,
+  T.-Y. (2017). LightGBM: A highly efficient gradient boosting decision tree.
+  In *Advances in Neural Information Processing Systems 30*.
+  <https://proceedings.neurips.cc/paper/2017/hash/6449f44a102fde848669bdd9eb6b76fa-Abstract.html>
+- Montiel, J., Halford, M., Mastelini, S. M., Bolmier, G., Sourty, R., Vaysse,
+  R., Zouitine, A., Gomes, H. M., Read, J., Abdessalem, T., & Bifet, A. (2021).
+  River: Machine learning for streaming data in Python. *Journal of Machine
+  Learning Research, 22*(110), 1–8.
+  <https://www.jmlr.org/papers/v22/20-1380.html>
+
 <!-- M3 END -->
 
 ### M4
