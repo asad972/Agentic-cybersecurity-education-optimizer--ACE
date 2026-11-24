@@ -1065,6 +1065,10 @@ def build_provider(settings: LLMSettings) -> Provider:
     )
 
 
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
 class LLMClient:
     def __init__(
         self,
@@ -1091,7 +1095,7 @@ class LLMClient:
         self.settings = settings
         self.store = store
         self.provider = provider
-        self._now = now or (lambda: datetime.now(UTC))
+        self._now = now or _utc_now
         self._monotonic = monotonic or time.monotonic
         self._sleep = sleep or time.sleep
         self._random = random_value or random.random
