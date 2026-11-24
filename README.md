@@ -83,6 +83,8 @@ All services should show `Up` or `healthy`. `kafka-init` and `cassandra-init` sh
 | Kafka (from other containers) | `kafka:29092` |
 | Cassandra (CQL) | `localhost:9042`, keyspace `ace` |
 
+The dashboard and API ports can be changed: set `ACE_DASHBOARD_PORT` or `ACE_API_PORT` in your shell before the start command, and use that port in the addresses above. The dashboard in Docker always calls the API on port 8000, so only move the API when you don't need the dashboard.
+
 The dashboard shows numbers only after data has passed through the pipeline. The agents and stream stages run separately; see the README in each folder under `agents/` and `streaming/`.
 
 ### After changing code
@@ -106,7 +108,7 @@ docker compose down -v        # stop everything and delete the stored data
 
 ### Run one part alone
 
-The API and the dashboard keep their own compose files, so you can work on one without the rest: see [api/README.md](api/README.md) and [dashboard/README.md](dashboard/README.md). Those files publish the same ports (8000 and 5173) as the full stack, so first stop only the part you replace and leave the rest running:
+The API and the dashboard keep their own compose files, so you can work on one without the rest: see [api/README.md](api/README.md) and [dashboard/README.md](dashboard/README.md). Those files publish the same ports as the full stack (8000 and 5173, or `ACE_API_PORT` and `ACE_DASHBOARD_PORT` if you set them), so first stop only the part you replace and leave the rest running:
 
 ```bash
 docker compose stop dashboard       # before starting the dashboard alone; it uses the full stack's API
