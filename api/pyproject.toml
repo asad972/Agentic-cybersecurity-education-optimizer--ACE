@@ -19,3 +19,4 @@ include = ["ace_api*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = [".", "../shared/python"]

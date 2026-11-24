@@ -10,6 +10,7 @@ on:
       - 'shared/schemas/alert.schema.json'
       - 'shared/schemas/topics.csv'
       - 'shared/python/ace/ecsf.py'
+- 'shared/python/ace/taxonomy.py'
       - 'shared/taxonomy/**'
   pull_request:
     paths:
@@ -18,6 +19,7 @@ on:
       - 'shared/schemas/alert.schema.json'
       - 'shared/schemas/topics.csv'
       - 'shared/python/ace/ecsf.py'
+- 'shared/python/ace/taxonomy.py'
       - 'shared/taxonomy/**'
   workflow_dispatch:
 
