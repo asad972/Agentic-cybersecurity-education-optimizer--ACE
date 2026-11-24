@@ -251,6 +251,21 @@ def test_an_unbounded_job_saves_checkpoints_to_files(monkeypatch, tmp_path):
     assert "execution.checkpointing.dir" not in _settings(kafka.build_job(OtherCounts(), "localhost:9092", bounded=True))
 
 
+@pytest.mark.flink
+def test_every_operator_with_state_has_a_uid_from_its_stage():
+    """A checkpoint's state is matched to operators by uid. Without one, Flink derives
+    the id from the operator's place in the job, so adding a stage to a job could
+    stop the others' state from being restored."""
+    env = kafka.build_job([Counts(), OtherCounts()], "localhost:9092", bounded=True)
+    nodes = env._generate_stream_graph(clear_transformations=False).getStreamNodes().toArray()
+    stateful = [node for node in nodes
+                if node.getStateKeySerializer() is not None or node.getOperatorName().startswith("Source: Kafka")]
+    uids = [node.getTransformationUID() for node in stateful]
+    assert len(stateful) == 2 * 3   # per stage: the Kafka source, the windows, the publish step
+    assert all(uid and uid.split("/")[0] in {"test-counts", "test-other-counts"} for uid in uids)
+    assert len(set(uids)) == len(uids)
+
+
 REPO = Path(__file__).resolve().parents[3]
 LOAD_S4 = ("from ace.kafka import load_stage; "
            "print(type(load_stage('s4_demand_frequency.stage:DemandFrequency')).__name__)")

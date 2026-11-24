@@ -153,16 +153,19 @@ def read_topics(env: Any, topics: Iterable[str], bootstrap_servers: str, group_i
                    .set_value_only_deserializer(SimpleStringSchema()))
         if bounded:
             builder.set_bounded(KafkaOffsetsInitializer.latest())
-        # Event time and watermarks are assigned later, by build_flink.
-        records = env.from_source(builder.build(), WatermarkStrategy.no_watermarks(), f"Kafka {topic}")
-        streams.append(records.map(lambda text, topic=topic: (topic, text), output_type=pair))
+        # Event time and watermarks are assigned later, by build_flink. The uids tie
+        # the saved offsets to the stage and topic, not to the operator's place in the job.
+        records = (env.from_source(builder.build(), WatermarkStrategy.no_watermarks(), f"Kafka {topic}")
+                   .uid(f"{group_id}/kafka-source/{topic}"))
+        streams.append(records.map(lambda text, topic=topic: (topic, text), output_type=pair)
+                       .uid(f"{group_id}/topic-name/{topic}"))
     if not streams:
         raise ValueError("read_topics needs at least one topic")
     first, *rest = streams
     return first.union(*rest) if rest else first
 
 
-def write_topics(outputs: Any, bootstrap_servers: str) -> Any:
+def write_topics(outputs: Any, bootstrap_servers: str, stage_name: str = "ace") -> Any:
     """Write ace.stage.build_flink's (topic, key, JSON text) outputs to Kafka, each to its own topic.
 
     The topic comes from each output, so one sink serves a stage's results and
@@ -174,6 +177,8 @@ def write_topics(outputs: Any, bootstrap_servers: str) -> Any:
     record as the key, not one field of it. Nothing downstream reads the key:
     stages group by the record's own country field and the Cassandra sink ignores
     it. The agents, which publish the raw topics, still set the key.
+
+    stage_name makes the operator uids unique when several stages share one job.
     """
     from pyflink.common import Row, Types
     from pyflink.common.serialization import SerializationSchema, SimpleStringSchema
@@ -181,8 +186,9 @@ def write_topics(outputs: Any, bootstrap_servers: str) -> Any:
     from pyflink.datastream.connectors.kafka import KafkaRecordSerializationSchema, KafkaSink
     from pyflink.java_gateway import get_gateway
 
-    rows = outputs.map(lambda output: Row(output[0], output[2]),
-                       output_type=Types.ROW([Types.STRING(), Types.STRING()]))
+    rows = (outputs.map(lambda output: Row(output[0], output[2]),
+                        output_type=Types.ROW([Types.STRING(), Types.STRING()]))
+            .uid(f"{stage_name}/kafka-rows"))
     # The topic selector picks the topic from column 0; this writes only column 1,
     # the JSON text. PyFlink has no Python class for it, so the Java one is used.
     value_only = SerializationSchema(
@@ -196,7 +202,7 @@ def write_topics(outputs: Any, bootstrap_servers: str) -> Any:
                                    .build())
             .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
             .build())
-    return rows.sink_to(sink).name("Kafka sink")
+    return rows.sink_to(sink).name("Kafka sink").uid(f"{stage_name}/kafka-sink")
 
 
 def checkpoint_dir(stages: Any) -> str:
@@ -255,11 +261,11 @@ def build_job(stages: Any, bootstrap_servers: str, bounded: bool = False) -> Any
         topics = stage.inputs if isinstance(stage, ace_stage.RecordStage) else (stage.input,)
         records = read_topics(env, topics, bootstrap_servers, group_id=stage.name, bounded=bounded)
         outputs, late = ace_stage.build_flink(stage, records)
-        write_topics(outputs, bootstrap_servers)
+        write_topics(outputs, bootstrap_servers, stage.name)
         if late is not None:
             # The late stream only counts late records (late_records_total); this sink
             # writes nothing but makes Flink run that count.
-            late.filter(lambda _: False).print()
+            late.filter(lambda _: False).uid(f"{stage.name}/late-drop").print().uid(f"{stage.name}/late-print")
     return env
 
 
