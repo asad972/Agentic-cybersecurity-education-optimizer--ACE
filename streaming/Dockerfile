@@ -10,7 +10,7 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 \
     JAVA_HOME=/usr/lib/jvm/default-java \
     ACE_SCHEMAS_DIR=/app/shared/schemas ACE_TAXONOMY_DIR=/app/shared/taxonomy \
-    ACE_FLINK_JARS=/opt/ace/flink-jars \
+    ACE_FLINK_JARS=/opt/ace/flink-jars ACE_CHECKPOINT_DIR=/checkpoints \
     KAFKA_BOOTSTRAP_SERVERS=kafka:29092
 COPY shared/python /app/shared/python
 # ARM64 needs to compile PyFlink's extensions; remove the compiler afterwards.
@@ -25,6 +25,8 @@ COPY shared/schemas /app/shared/schemas
 COPY shared/taxonomy /app/shared/taxonomy
 COPY streaming /app/streaming
 RUN useradd --create-home --uid 10001 ace
+# Checkpoints, one folder per job. A new Docker volume mounted here copies this owner.
+RUN mkdir "$ACE_CHECKPOINT_DIR" && chown ace "$ACE_CHECKPOINT_DIR"
 USER ace
 WORKDIR /app/streaming
 ENTRYPOINT ["python", "-m", "ace.kafka"]

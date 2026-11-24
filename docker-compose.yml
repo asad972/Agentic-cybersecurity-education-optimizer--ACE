@@ -135,6 +135,9 @@ services:
         condition: service_completed_successfully
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    # Checkpoints, one folder per job (ACE_CHECKPOINT_DIR in the image).
+    volumes:
+      - stage-checkpoints:/checkpoints
     restart: on-failure
 
   s7-threat-frequency-daily:
@@ -167,3 +170,4 @@ volumes:
   kafka-data:
   cassandra-data:
   threat-state:
+  stage-checkpoints:
