@@ -52,11 +52,14 @@ def _split_pipe(value: str | None) -> tuple[str, ...]:
     return tuple(part.strip() for part in value.split("|") if part.strip())
 
 
-def _compile_phrase_pattern(term: str) -> re.Pattern[str]:
-    """Compile a case-insensitive boundary-aware regex for a taxonomy term."""
+def compile_phrase_pattern(term: str) -> re.Pattern[str]:
+    """Compile a case-insensitive Unicode word-boundary regex for a term."""
     parts = [re.escape(p) for p in term.strip().split() if p]
     body = r"\s+".join(parts)
-    return re.compile(rf"(?<![A-Za-z0-9_]){body}(?![A-Za-z0-9_])", re.IGNORECASE)
+    return re.compile(rf"(?<!\w){body}(?!\w)", re.IGNORECASE)
+
+
+_compile_phrase_pattern = compile_phrase_pattern
 
 
 def taxonomy_dir() -> Path:

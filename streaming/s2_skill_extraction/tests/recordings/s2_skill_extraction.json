@@ -1,6 +1,6 @@
 {
   "recordings": {
-    "47cddde679ff92b2ae3a13143aac1421c2cae8e34fda8918ab9caa7257f03185": {
+    "96c1261ab174f6571c156a890834d586c5755332236c14ba9e6c1422f62084ef": {
       "answer": {
         "mentions": [
           "Suricata",
@@ -10,10 +10,10 @@
         ],
         "ecsf_role": "Cyber Incident Responder"
       },
-      "input_tokens": 48,
+      "input_tokens": 56,
       "output_tokens": 19
     },
-    "4b8098f8130c4593f3356d3c5c6cdaecc8f7f3502da45f2281db04355d1b000e": {
+    "f7e1bcd255c265ca455204e8bff75a2fe874e57da4c2cb0911aa99da14a1fd77": {
       "answer": {
         "mentions": [
           "Internal Pivoting",
@@ -23,15 +23,15 @@
         ],
         "ecsf_role": "Penetration Tester"
       },
-      "input_tokens": 41,
+      "input_tokens": 49,
       "output_tokens": 18
     },
-    "65047e5e84cb37bc8934b35bf0e92c340178f98446f63da7aca85ad376a75968": {
+    "1bafc5dd296bc3b8d0f60cc11f5a45698e4348cbce98f8647d7cdc73317e8dae": {
       "answer": {
         "mentions": [],
         "ecsf_role": null
       },
-      "input_tokens": 34,
+      "input_tokens": 42,
       "output_tokens": 9
     }
   }

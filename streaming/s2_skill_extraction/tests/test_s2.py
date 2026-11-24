@@ -11,6 +11,7 @@ from ace.llm import (
     BudgetExceededError,
     InMemoryLLMStore,
     LLMClient,
+    LLMConfigurationError,
     LLMResult,
     LLMSettings,
     RecordedProvider,
@@ -20,6 +21,7 @@ from s2_skill_extraction.llm_extractor import (
     ExtractedMentions,
     LLMSkillExtractor,
     MAX_MENTIONS,
+    _mention_in_text,
 )
 from s2_skill_extraction.stage import (
     FALLBACK_METRIC,
@@ -112,7 +114,7 @@ def _sample_inputs() -> list[tuple[str, dict[str, str]]]:
 
 
 def test_s2_extracts_demand_and_supply_and_skips_empty_skills() -> None:
-    stage = S2SkillExtractionStage()
+    stage = S2SkillExtractionStage(use_llm=False)
     res = run_local(stage, _sample_inputs())
 
     demand = res.published(SKILLS_DEMAND)
@@ -177,11 +179,12 @@ def test_s2_recorded_llm_extractor_emits_unmapped_skills_and_uses_cache() -> Non
     stage.close()
 
 
-def test_s2_survives_pickle_roundtrip_with_use_llm_and_injected_client(
+def test_s2_survives_pickle_roundtrip_with_default_llm_and_injected_client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # 1. Stage configured with use_llm=True survives _roundtrip() before open().
-    unopened = S2SkillExtractionStage(use_llm=True)
+    # 1. Stage defaults to use_llm=True and survives _roundtrip() before open().
+    unopened = S2SkillExtractionStage()
+    assert unopened._use_llm is True
     assert unopened.extractor is None
     restored = _roundtrip(unopened)
     assert restored._use_llm is True
@@ -218,26 +221,24 @@ def test_s2_survives_pickle_roundtrip_with_use_llm_and_injected_client(
     restored_injected.close()
 
 
-def test_s2_open_falls_back_to_taxonomy_when_llm_setup_fails(
+def test_s2_open_fails_visibly_when_llm_setup_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Hosted provider without LLM_API_KEY raises LLMConfigurationError inside from_env().
+    # Hosted provider without LLM_API_KEY raises LLMConfigurationError inside open().
     monkeypatch.setenv("LLM_PROVIDER", "hosted")
     monkeypatch.delenv("LLM_API_KEY", raising=False)
 
-    stage = S2SkillExtractionStage(use_llm=True)
+    stage = S2SkillExtractionStage()
+    assert stage._use_llm is True
     ctx = _FakeRuntimeContext()
-    stage.open(ctx)
+    with pytest.raises(LLMConfigurationError):
+        stage.open(ctx)
 
-    assert stage.extractor is None
-    assert stage._use_llm is False
-    assert ctx.metrics.counters[FALLBACK_METRIC].value == 1
 
-    res = run_local(stage, _sample_inputs()[:1])
-    demand = res.published(SKILLS_DEMAND)
-    assert len(demand) == 1
-    assert "Intrusion Detection" in demand[0]["skills"]
-    assert demand[0]["unmapped"] == []
+def test_s2_word_boundary_respects_unicode_letters() -> None:
+    assert _mention_in_text("ISO", "Sécurité ISO 27001") is True
+    assert _mention_in_text("ISO", "ISOé und Übung") is False
+    assert _mention_in_text("Übung", "ISOé und Übung") is True
 
 
 def test_s2_llm_extractor_filters_hallucinations_caps_mentions_and_counts_fallbacks() -> None:
@@ -288,8 +289,8 @@ def test_s2_llm_extractor_filters_hallucinations_caps_mentions_and_counts_fallba
 def test_s2_skill_extraction_flink() -> None:
     pytest.importorskip("pyflink")
     records = _sample_inputs()
-    local_res = run_local(S2SkillExtractionStage(), records)
-    flink_outs = run_flink_local(S2SkillExtractionStage(), records)
+    local_res = run_local(S2SkillExtractionStage(use_llm=False), records)
+    flink_outs = run_flink_local(S2SkillExtractionStage(use_llm=False), records)
 
     local_pairs = sorted((o.topic, o.value["event_id"]) for o in local_res.outputs)
     flink_pairs = sorted((o.topic, o.value["event_id"]) for o in flink_outs)

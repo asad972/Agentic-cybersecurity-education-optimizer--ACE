@@ -4,17 +4,17 @@
 
 ## How it works
 
-1. **Taxonomy baseline (`ace.taxonomy`):** Reads canonical or contribution CSVs from `shared/taxonomy/` (or `ACE_TAXONOMY_DIR`) and performs boundary-aware matching across `job_title` + `description` (`jobs.clean`) or `headline` + `text` (`raw.profiles`).
-2. **LLM extraction (`ace.llm`):** Disabled by default (`ACE_S2_USE_LLM=0`) so deterministic runs work without an LLM backend. When enabled (`ACE_S2_USE_LLM=1`, `use_llm=True`, or `llm_client`), `S2SkillExtractionStage` instantiates `LLMSkillExtractor.from_env()` inside `open()` (keeping the stage picklable for Flink) and calls `LLMClient.generate(task="skill_extraction", prompt_version="v2", response_model=ExtractedMentions)` with Cassandra caching, claim leases, and budget enforcement.
-3. **Grounding, bounds & graceful fallback:** Record text is wrapped in `<record_data>` tags as untrusted input data. LLM-returned mentions are capped (`MAX_MENTIONS = 25`, `MAX_MENTION_LENGTH = 80`), verified to appear in the input text, and mapped against `ace.taxonomy`. Novel terms are emitted in `unmapped` (incrementing `unmapped_skills_total`) for S9 (`agg.emerging_skills`). Note: `skills.demand` and `skills.supply` schemas currently require `skills` `minItems >= 1`, so records with zero canonical skills are not emitted. If LLM initialization in `open()` fails (e.g., Cassandra unreachable or missing `LLM_API_KEY`) or `generate()` raises `LLMError`, S2 logs a warning, increments `llm_fallbacks_total`, and continues with deterministic taxonomy matching for the remainder of that task's lifetime so Flink tasks do not enter a restart loop.
+1. **Taxonomy baseline (`ace.taxonomy`):** Reads canonical or contribution CSVs from `shared/taxonomy/` (or `ACE_TAXONOMY_DIR`) and performs Unicode word-boundary matching (`\w`) across `job_title` + `description` (`jobs.clean`) or `headline` + `text` (`raw.profiles`).
+2. **LLM extraction (`ace.llm`):** Enabled by default (`ACE_S2_USE_LLM=1`; set `ACE_S2_USE_LLM=0` or `use_llm=False` for deterministic taxonomy-only runs). `S2SkillExtractionStage` instantiates `LLMSkillExtractor.from_env()` inside `open()` (keeping the stage picklable for Flink) and calls `LLMClient.generate(task="skill_extraction", prompt_version="v3", response_model=ExtractedMentions)` with Cassandra caching, claim leases, and budget enforcement.
+3. **Grounding, bounds & error handling:** Record text is wrapped in `<record_data>` tags as untrusted input data alongside the valid ENISA ECSF role list. LLM-returned mentions are verified against the input text using `ace.taxonomy` word boundaries, capped (`MAX_MENTIONS = 25`, `MAX_MENTION_LENGTH = 80`), and mapped against `ace.taxonomy`. Novel terms are emitted in `unmapped` (incrementing `unmapped_skills_total`) for S9 (`agg.emerging_skills`). Note: `skills.demand` and `skills.supply` schemas currently require `skills` `minItems >= 1`, so records with zero canonical skills are not emitted. If LLM initialization in `open()` fails (e.g., Cassandra unreachable or missing `LLM_API_KEY`), S2 logs an error and raises so misconfiguration fails visibly; if a single `generate()` call raises `LLMError` at runtime, S2 logs a warning, increments `llm_fallbacks_total`, and falls back to deterministic taxonomy matching for that record.
 
 ## Deployment Environment Variables
 
-Set these variables on the Flink TaskManager / S2 runner environment when enabling LLM extraction:
+Set these variables on the Flink TaskManager / S2 runner environment:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `ACE_S2_USE_LLM` | `0` (off) | Set to `1` (or `true`) to enable `LLMSkillExtractor` in `S2SkillExtractionStage.open()`. |
+| `ACE_S2_USE_LLM` | `1` (on) | Enabled by default; set to `0` (or `false`) to disable `LLMSkillExtractor` and run taxonomy-only matching. |
 | `LLM_PROVIDER` | `local` | `local` (Ollama) or `hosted` (Anthropic-compatible API). |
 | `LLM_LOCAL_URL` | `http://localhost:11434` | Ollama base URL when `LLM_PROVIDER=local` (e.g. `http://ollama:11434` in Docker/K8s). |
 | `LLM_LOCAL_MODEL` | `qwen3:4b` | Local Ollama model tag. |
@@ -42,18 +42,20 @@ python -c "
 import json
 from pathlib import Path
 from ace.llm import LLMClient, InMemoryLLMStore, request_hash
+from ace.taxonomy import load_taxonomy
 from s2_skill_extraction.llm_extractor import (
     DEFAULT_MAX_TOKENS, ExtractedMentions, PROMPT_VERSION, SYSTEM_PROMPT, TASK_NAME, build_extraction_prompt
 )
 from s2_skill_extraction.tests.test_s2 import _sample_inputs
 
+taxonomy = load_taxonomy()
 client = LLMClient.from_env(environ={'LLM_PROVIDER': 'local', 'LLM_LOCAL_MODEL': 'qwen3:4b'}, store=InMemoryLLMStore())
 recordings = {}
 for topic, rec in _sample_inputs():
     kind = 'job_ad' if topic == 'jobs.clean' else 'profile'
     title = rec.get('job_title') or rec.get('headline') or ''
     text = rec.get('description') or rec.get('text') or ''
-    prompt = build_extraction_prompt(kind, title=title, text=text)
+    prompt = build_extraction_prompt(kind, title=title, text=text, roles=taxonomy.roles)
     digest = request_hash(
         task=TASK_NAME, prompt_version=PROMPT_VERSION, provider='local', model='qwen3:4b',
         system_prompt=SYSTEM_PROMPT, prompt=prompt, response_model=ExtractedMentions, max_tokens=DEFAULT_MAX_TOKENS

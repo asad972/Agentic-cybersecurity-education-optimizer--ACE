@@ -31,9 +31,9 @@ class S2SkillExtractionStage(RecordStage):
     """Extract canonical Skills, Certifications, and ECSF role from job ads and profiles.
 
     Consumes ``jobs.clean`` -> ``skills.demand`` and ``raw.profiles`` -> ``skills.supply``.
-    Supports deterministic boundary matching against ``ace.taxonomy`` as well as
-    LLM-assisted extraction via ``ace.llm`` (enabled via ``llm_client``, ``use_llm=True``,
-    or ``ACE_S2_USE_LLM=1``) to surface emerging unmapped terms for S9.
+    Combines deterministic boundary matching against ``ace.taxonomy`` with LLM-assisted
+    extraction via ``ace.llm`` (enabled by default; disable with ``ACE_S2_USE_LLM=0`` or
+    ``use_llm=False``) to surface emerging unmapped terms for S9.
     """
 
     name = "s2-skill-extraction"
@@ -86,18 +86,17 @@ class S2SkillExtractionStage(RecordStage):
             self._fallback_counter.inc(1)
 
     def _ensure_extractor(self) -> None:
-        """Lazily build LLMSkillExtractor from env, falling back to taxonomy on setup errors."""
+        """Lazily build LLMSkillExtractor from env, raising visibly on setup errors."""
         if self.extractor is not None or not self._use_llm:
             return
         try:
             self.extractor = LLMSkillExtractor.from_env()
         except Exception as error:
-            log.warning(
-                "S2 LLM initialization failed (%s); falling back to taxonomy matcher",
+            log.error(
+                "S2 LLM initialization failed (%s); check LLM_* and CASSANDRA_* configuration",
                 type(error).__name__,
             )
-            self._use_llm = False
-            self._record_fallback()
+            raise
 
     def open(self, runtime_context: Any) -> None:
         """Initialize runtime metrics and env-configured LLM client inside each Flink task."""
