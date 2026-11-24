@@ -212,9 +212,25 @@ def checkpoint_dir(stages: Any) -> str:
     (default ~/.cache/ace/checkpoints). Without a folder Flink keeps
     checkpoints in memory, where a job's state may be at most 5 MB.
     """
+    return _checkpoint_folder(stages).as_uri()
+
+
+def _checkpoint_folder(stages: Any) -> Path:
     configured = os.environ.get("ACE_CHECKPOINT_DIR")
     base = Path(configured) if configured else Path.home() / ".cache" / "ace" / "checkpoints"
-    return (base / "+".join(stage.name for stage in _as_list(stages))).resolve().as_uri()
+    return (base / "+".join(stage.name for stage in _as_list(stages))).resolve()
+
+
+def latest_checkpoint(stages: Any) -> str | None:
+    """The newest complete checkpoint of this job, as a file:// URI, or None.
+
+    Flink puts each run's checkpoints in <checkpoint_dir>/<run id>/chk-<n>, and
+    writes chk-<n>/_metadata last, so a folder without it was never finished
+    (for example, the container stopped while writing it).
+    """
+    finished = _checkpoint_folder(stages).glob("*/chk-*/_metadata")
+    newest = max(finished, key=lambda metadata: metadata.stat().st_mtime, default=None)
+    return newest.parent.as_uri() if newest else None
 
 
 def _as_list(stages: Any) -> list[Any]:
@@ -234,9 +250,11 @@ def build_job(stages: Any, bootstrap_servers: str, bounded: bool = False) -> Any
     when it runs alone. Running several stages in one job shares one Java
     process, which saves memory on a small machine.
 
-    Each stage's consumer group is its name, so a restarted job continues where
-    it stopped. An unbounded job saves a checkpoint every CHECKPOINT_MS, with the
-    stages' state and the Kafka offsets they have processed, to checkpoint_dir().
+    An unbounded job saves a checkpoint every CHECKPOINT_MS, with the stages'
+    state and the Kafka offsets they have processed, to checkpoint_dir(), and
+    starts from latest_checkpoint() when there is one. So a restarted job
+    continues where it stopped, state included. Without a checkpoint each stage
+    starts from its consumer group's committed offsets, with empty state.
     """
     from pyflink.common import Configuration
 
@@ -256,6 +274,18 @@ def build_job(stages: Any, bootstrap_servers: str, bounded: bool = False) -> Any
         checkpoints = Configuration()
         checkpoints.set_string("execution.checkpointing.storage", "filesystem")
         checkpoints.set_string("execution.checkpointing.dir", checkpoint_dir(stages))
+        # Keep the last checkpoint when the job stops, so the next start can use it.
+        checkpoints.set_string("execution.checkpointing.externalized-checkpoint-retention",
+                               "RETAIN_ON_CANCELLATION")
+        restore = latest_checkpoint(stages)
+        if restore:
+            checkpoints.set_string("execution.state-recovery.path", restore)
+            # The new run owns the checkpoint and deletes it once it has a newer one.
+            checkpoints.set_string("execution.state-recovery.claim-mode", "CLAIM")
+            # State of a stage no longer in this job is dropped instead of blocking
+            # the start; the operator uids match the rest to their stages.
+            checkpoints.set_string("execution.state-recovery.ignore-unclaimed-state", "true")
+            print(f"Restoring from {restore}", flush=True)
         env.configure(checkpoints)
     for stage in stages:
         topics = stage.inputs if isinstance(stage, ace_stage.RecordStage) else (stage.input,)

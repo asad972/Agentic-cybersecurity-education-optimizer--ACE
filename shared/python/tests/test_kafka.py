@@ -237,6 +237,26 @@ def test_checkpoints_go_to_one_folder_per_job(monkeypatch, tmp_path):
     assert kafka.checkpoint_dir(Counts()).endswith("/.cache/ace/checkpoints/test-counts")
 
 
+def _checkpoint(folder: Path, run: str, number: int, finished: bool = True, mtime: float = 0) -> Path:
+    chk = folder / run / f"chk-{number}"
+    chk.mkdir(parents=True)
+    if finished:
+        (chk / "_metadata").write_bytes(b"x")
+        os.utime(chk / "_metadata", (mtime, mtime))
+    return chk
+
+
+def test_latest_checkpoint_is_the_newest_finished_one(monkeypatch, tmp_path):
+    monkeypatch.setenv("ACE_CHECKPOINT_DIR", str(tmp_path))
+    folder = tmp_path / "test-counts"
+    assert kafka.latest_checkpoint(Counts()) is None
+    _checkpoint(folder, "run-a", 7, mtime=1_000)
+    newest = _checkpoint(folder, "run-b", 2, mtime=2_000)   # a later run restarts the numbering
+    _checkpoint(folder, "run-b", 3, finished=False)          # being written when the job stopped
+    _checkpoint(tmp_path / "test-other-counts", "run-c", 9, mtime=3_000)   # another job's
+    assert kafka.latest_checkpoint(Counts()) == newest.resolve().as_uri()
+
+
 def _settings(env) -> dict:
     return dict(env._j_stream_execution_environment.getConfiguration().toMap())
 
@@ -248,7 +268,21 @@ def test_an_unbounded_job_saves_checkpoints_to_files(monkeypatch, tmp_path):
     settings = _settings(kafka.build_job(Counts(), "localhost:9092"))
     assert settings["execution.checkpointing.storage"] == "filesystem"
     assert settings["execution.checkpointing.dir"] == kafka.checkpoint_dir(Counts())
+    assert settings["execution.checkpointing.externalized-checkpoint-retention"] == "RETAIN_ON_CANCELLATION"
+    assert "execution.state-recovery.path" not in settings   # nothing to restore yet
     assert "execution.checkpointing.dir" not in _settings(kafka.build_job(OtherCounts(), "localhost:9092", bounded=True))
+
+
+@pytest.mark.flink
+def test_an_unbounded_job_starts_from_its_latest_checkpoint(monkeypatch, tmp_path):
+    monkeypatch.setenv("ACE_CHECKPOINT_DIR", str(tmp_path))
+    chk = _checkpoint(tmp_path / "test-counts", "run-a", 4, mtime=1_000)
+    settings = _settings(kafka.build_job(Counts(), "localhost:9092"))
+    assert settings["execution.state-recovery.path"] == chk.resolve().as_uri()
+    assert settings["execution.state-recovery.claim-mode"] == "CLAIM"
+    assert settings["execution.state-recovery.ignore-unclaimed-state"] == "true"
+    # A bounded run (tests, backfills) never restores.
+    assert "execution.state-recovery.path" not in _settings(kafka.build_job(Counts(), "localhost:9092", bounded=True))
 
 
 @pytest.mark.flink
