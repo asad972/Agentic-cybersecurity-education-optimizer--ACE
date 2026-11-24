@@ -147,6 +147,22 @@ services:
     container_name: ace-s8
     command: ["s8_threat_bursts.stage:ThreatBurstStage"]
 
+  # The job-ad and profile stages S1–S6, S9 and S10 run side by side in one Flink job.
+  # Each keeps its own topics and consumer group, but they share one Java process:
+  # about 700 MB instead of about 700 MB per stage.
+  job-stages:
+    <<: *stage
+    container_name: ace-job-stages
+    command:
+      - s1_dedup.stage:S1DedupStage
+      - s2_skill_extraction.stage:S2SkillExtractionStage
+      - s3_top10.stage:TopTen
+      - s4_demand_frequency.stage:DemandFrequency
+      - s5_supply_frequency.stage:SupplyFrequency
+      - s6_drift.stage:DemandDrift
+      - s9_emerging_skills.stage:EmergingSkillsStage
+      - s10_hiring_companies.stage:HiringCompaniesStage
+
 volumes:
   kafka-data:
   cassandra-data:
