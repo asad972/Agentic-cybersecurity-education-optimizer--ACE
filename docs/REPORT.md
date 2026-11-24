@@ -55,7 +55,11 @@ HOW TO ADD YOUR PART (delete nothing outside your own markers)
      Each dataset: source, period, size, licence or terms, how it is used,
      and its limits (for example Supply only for DE, GB and FR). -->
 
-*To be written by M1.*
+We combine two external labor-market sources and one synthetic test dataset to model European cybersecurity Demand and Supply:
+
+- **Historical Job Advertisements (`mischeiwiller/german-job-postings`):** Public German-language job-posting archive hosted on Hugging Face covering 2015–2026 (70,584 records in Apache Parquet format, derived primarily from Bundesagentur für Arbeit listings under the dataset's open research terms on Hugging Face). Our job-ads agent normalizes regional identifiers (`nuts_code` and `region`) into ISO 3166-1 alpha-2 country codes within our European scope, synthesizes job descriptions from pre-annotated ESCO occupation and skill tags (European Commission, 2022), validates records against `raw.jobs`, and replays them in global event-time order through S1 and S2 to populate historical Skill Demand. *Limits:* Free-text `description_derived` fields are null across all 70,584 rows, so historical demand relies on structured ESCO tags (`bundesagentur:esco_tags`) rather than raw prose; geographic coverage is concentrated in DACH (`DE`: 70,111, `AT`: 355, `CH`: 2, with 116 rows lacking valid region metadata skipped), and live job APIs (Adzuna, Bundesagentur für Arbeit) remain designed for future integration.
+- **Practitioner Profiles (`Stack Overflow Developer Survey`):** Annual public survey microdata (Stack Overflow, 2024) distributed under the Open Database License (ODbL), comprising ~65,000 anonymized global responses in CSV format for the 2024 wave. Filtered to European respondents, self-reported developer/security roles and technology stacks map to `raw.profiles` and feed S2 and S5 to estimate rolling 365-day Skill Supply per country for the monthly Skills Gap calculation. *Limits:* Self-selected developer respondents over-represent software-engineering security roles while under-representing operational tracks (such as SOC Tier-1 analysts or GRC auditors); European sample sizes skew heavily toward `DE`, `GB`, and `FR`, and the automated profile replay agent is designed but not yet implemented.
+- **Deterministic CI Fixtures (`shared/testdata/`):** Two repository-licensed JSONL files containing 200 synthetic job ads (`jobs_sample.jsonl`) and 200 synthetic profiles (`profiles_sample.jsonl`) generated with fixed seeds to validate Kafka contracts and end-to-end replay without external downloads. *Limits:* Synthetic distributions reflect schema structure rather than real market frequencies.
 
 <!-- M1 END -->
 
@@ -202,7 +206,7 @@ How the other stages are tested (one line each):
 
 <!-- M1 START: one line on how S1 and S2 are tested. -->
 
-- *S1, S2: to be written by M1.*
+- S1 is tested on synthetic duplicate and near-duplicate job ads across 30-day country windows to verify exact Jaccard and MinHash-LSH filtering (Zhu et al., 2016), while S2 is tested with deterministic taxonomy fixtures and recorded structured LLM responses for skill and role extraction (Zhang et al., 2022).
 
 <!-- M1 END -->
 
@@ -240,6 +244,12 @@ How the other stages are tested (one line each):
 ### M1
 
 <!-- M1 START -->
+
+- European Commission. (2022). *ESCO handbook: European Skills, Competences, Qualifications and Occupations* (v1.1). Publications Office of the European Union. <https://esco.ec.europa.eu/>
+- Stack Overflow. (2024). *2024 Stack Overflow Developer Survey*. <https://survey.stackoverflow.co/2024/>
+- Zhang, M., Jensen, K. N., Sonniks, S. D., & Plank, B. (2022). SkillSpan: Hard and soft skill extraction from English job postings. In *Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies* (pp. 4962–4984). Association for Computational Linguistics.
+- Zhu, E., Nargesian, F., Pu, K. Q., & Miller, R. J. (2016). LSH ensemble: Internet-scale domain search. *Proceedings of the VLDB Endowment, 9*(12), 1185–1196.
+
 <!-- M1 END -->
 
 ### M2
