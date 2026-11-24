@@ -188,7 +188,7 @@ def test_slow_reads_stop_at_the_request_budget(client, session, monkeypatch, pat
     session.read_seconds = demand.READ_TIMEOUT - 0.1
     response = client.get(path, params=params)
     assert response.status_code == 503
-    assert response.json() == {"detail": "Cassandra is unavailable"}
+    assert response.json() == {"detail": "Cassandra is too slow: the request ran out of time"}
     assert session.now <= demand.REQUEST_BUDGET
     assert len(session.timeouts) == 6   # 5 full reads of 4.9 s, then one capped at the 0.5 s left
     assert session.timeouts[-1] == pytest.approx(demand.REQUEST_BUDGET - 5 * session.read_seconds)
@@ -211,8 +211,20 @@ def test_a_late_prepare_does_not_run_past_the_request_budget(session, monkeypatc
     with pytest.raises(HTTPException) as raised:
         demand._read(request, reads)
     assert raised.value.status_code == 503
+    assert raised.value.detail == "Cassandra is too slow: the request ran out of time"
     assert session.now <= demand.REQUEST_BUDGET
     assert CQL["map"] not in session.prepared
+
+
+def test_one_timed_out_read_is_reported_as_unavailable(client, session, monkeypatch, caplog):
+    # A single read that times out long before the budget ends means Cassandra is not
+    # answering, not that the request ran out of time.
+    monkeypatch.setattr(demand, "monotonic", lambda: session.now)
+    session.read_seconds = demand.READ_TIMEOUT + 1
+    response = client.get("/demand/map", params={"kind": "skill", "item": "SIEM", "date": "2026-10-01"})
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Cassandra is unavailable"}
+    assert any("Demand read failed after 5.0 s" in record.getMessage() for record in caplog.records)
 
 
 def test_statements_are_prepared_once_per_session(client, session):

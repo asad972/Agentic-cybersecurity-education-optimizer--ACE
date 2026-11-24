@@ -38,6 +38,9 @@ REQUEST_BUDGET = 25
 # Seconds preparing one statement may take: the session's default_timeout in
 # database.py. A prepare only starts when this much of the budget is left.
 PREPARE_TIMEOUT = 5
+# A read whose timeout the budget capped fails a moment before or after the
+# deadline; failing within this many seconds of it counts as running out of time.
+BUDGET_SLACK = 0.1
 
 CQL = {
     "top10": "SELECT rank, item, count FROM top10 WHERE country = ? AND day = ? AND kind = ? LIMIT 10",
@@ -148,8 +151,11 @@ def _read(request: Request, reads):
     """Run reads(query) where query(name, *values) returns the rows; 503 on database errors.
 
     Each read may take READ_TIMEOUT seconds, and all reads together REQUEST_BUDGET seconds.
+    Running out of that budget is also a 503 (the dashboard reads 504 as "API
+    unreachable"), but with its own message, so a slow database isn't reported as down.
     """
-    deadline = monotonic() + REQUEST_BUDGET
+    started = monotonic()
+    deadline = started + REQUEST_BUDGET
     try:
         session = _session(request)
 
@@ -165,7 +171,13 @@ def _read(request: Request, reads):
     except HTTPException:
         raise
     except Exception as error:
-        log.warning("Demand read failed (%s)", type(error).__name__)
+        elapsed = monotonic() - started
+        # _OutOfTime, or the last read timed out because the budget capped its timeout.
+        if isinstance(error, _OutOfTime) or elapsed >= REQUEST_BUDGET - BUDGET_SLACK:
+            log.warning("Demand request ran out of its %d s budget after %.1f s (%s)",
+                        REQUEST_BUDGET, elapsed, type(error).__name__)
+            raise HTTPException(status_code=503, detail="Cassandra is too slow: the request ran out of time") from None
+        log.warning("Demand read failed after %.1f s (%s)", elapsed, type(error).__name__)
         raise HTTPException(status_code=503, detail="Cassandra is unavailable") from None
 
 
