@@ -206,6 +206,18 @@ describe('RolePage', () => {
       }),
     ).toBeTruthy();
     expect(screen.getByRole('img', { name: 'Role demand map' })).toBeTruthy();
+    const barOption = chartRender.mock.calls
+      .flat()
+      .find(
+        (arg): arg is { series: Array<{ name: string; data: unknown[] }> } =>
+          typeof arg === 'object' &&
+          arg !== null &&
+          Array.isArray((arg as { series?: unknown }).series) && (arg as { series: Array<{ name?: string }> }).series.some(s => s.name === 'Demand'),
+      );
+    expect(barOption).toBeTruthy();
+    expect(barOption!.series.map(s => s.name)).toEqual(['Demand', 'Supply']);
+    expect(barOption!.series[0].data.length).toBeGreaterThan(0);
+    expect(barOption!.series[1].data.length).toBeGreaterThan(0);
     expect(screen.getByText('45% overlap')).toBeTruthy();
     expect(screen.getByText('MSc Incident Response & Forensics')).toBeTruthy();
     expect(screen.getByText('Security Blue Team')).toBeTruthy();

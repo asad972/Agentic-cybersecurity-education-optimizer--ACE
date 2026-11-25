@@ -17,10 +17,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from ace.taxonomy import TaxonomyError
 
-try:
-    from cassandra import DriverException
-except ImportError:
-    DriverException = ()  # type: ignore[assignment,misc]
+from cassandra import DriverException
 
 from ..map_data import COUNTRIES, MapResponse
 from ..roles_data import load_role_catalog, resolve_role, taxonomy_related_roles
