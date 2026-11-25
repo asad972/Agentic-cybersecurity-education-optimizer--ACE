@@ -1,4 +1,4 @@
-"""Profile dataset replay agent backed by ace.replay and ace.contracts."""
+﻿"""Profile dataset replay agent backed by ace.replay and ace.contracts."""
 
 from __future__ import annotations
 
@@ -81,13 +81,15 @@ def open_cassandra_store(
     return cluster, CassandraPositionStore(session, keyspace=keyspace)
 
 
-def _infer_survey_date(path: Path, fallback: str | None) -> str | None:
+def _infer_survey_date(path: Path, fallback: str | None) -> str:
     if fallback:
         return fallback
     match = re.search(r"(20\d{2})", path.name)
     if match:
         return f"{match.group(1)}-06-01"
-    return "2025-06-01"
+    raise ValueError(
+        f"Cannot infer survey year from CSV filename {path.name!r}; pass --default-profile-date YYYY-MM-DD."
+    )
 
 
 def _csv_to_temp_jsonl(csv_path: Path, tmp_dir: Path, survey_date: str | None) -> Path:

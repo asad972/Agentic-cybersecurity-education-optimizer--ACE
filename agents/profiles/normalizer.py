@@ -1,4 +1,4 @@
-"""Normalize raw profile and Stack Overflow Developer Survey rows into ace/raw_profile."""
+﻿"""Normalize raw profile and Stack Overflow Developer Survey rows into ace/raw_profile."""
 
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ _SECURITY_ROLE_KEYWORDS: tuple[str, ...] = (
     "cyber",
     "penetration",
     "pentest",
-    "soc ",
+    "soc analyst",
     "incident",
     "forensic",
     "threat",
@@ -83,16 +83,8 @@ _SECURITY_ROLE_KEYWORDS: tuple[str, ...] = (
     "ciso",
 )
 
+# Strictly security-specific tools, frameworks, and standards (no general languages, OS, or cloud).
 _SECURITY_SKILL_KEYWORDS: tuple[str, ...] = (
-    "linux",
-    "docker",
-    "kubernetes",
-    "terraform",
-    "aws",
-    "azure",
-    "python",
-    "bash",
-    "powershell",
     "wireshark",
     "splunk",
     "burp",
@@ -103,6 +95,7 @@ _SECURITY_SKILL_KEYWORDS: tuple[str, ...] = (
     "soar",
     "owasp",
     "iso 27001",
+    "iso27001",
     "gdpr",
     "nist",
     "firewall",
@@ -113,6 +106,16 @@ _SECURITY_SKILL_KEYWORDS: tuple[str, ...] = (
     "osint",
     "cryptography",
     "pki",
+    "nessus",
+    "snort",
+    "suricata",
+    "zeek",
+    "crowdstrike",
+    "sentinel",
+    "qradar",
+    "ids/ips",
+    "penetration testing",
+    "vulnerability",
 )
 
 _SO_SKILL_COLUMNS: tuple[str, ...] = (
@@ -191,7 +194,7 @@ def _is_stackoverflow_row(row: dict[str, Any]) -> bool:
 
 def _is_security_relevant(roles: list[str], skills: list[str]) -> bool:
     roles_lower = " | ".join(roles).lower()
-    if any(kw in roles_lower for kw in _SECURITY_ROLE_KEYWORDS):
+    if any(kw in roles_lower for kw in _SECURITY_ROLE_KEYWORDS) or re.search(r"\bsoc\b", roles_lower):
         return True
     skills_lower = " | ".join(skills).lower()
     return any(kw in skills_lower for kw in _SECURITY_SKILL_KEYWORDS)
@@ -215,7 +218,8 @@ def _resolve_event_id(
     natural_key = _first_non_empty(row, ("ResponseId", "response_id", "profile_id", "id")) or (
         f"{source}|{country}|{profile_date}|{headline}|{text[:160]}"
     )
-    return str(uuid.uuid5(_UUID_NAMESPACE, f"ace-profile:{source}:{natural_key}"))
+    survey_year = profile_date[:4]
+    return str(uuid.uuid5(_UUID_NAMESPACE, f"ace-profile:{source}:{survey_year}:{natural_key}"))
 
 
 def normalize_profile_row(

@@ -1,10 +1,12 @@
-"""Tests for the ACE Profile replay agent (agents/profiles)."""
+﻿"""Tests for the ACE Profile replay agent (agents/profiles)."""
 
 from __future__ import annotations
 
 import csv
 import json
 from pathlib import Path
+
+import pytest
 
 from ace import contracts
 from ace.replay import InMemoryPositionStore
@@ -56,16 +58,37 @@ def test_normalize_stackoverflow_row_strips_pii_and_conforms_to_schema() -> None
 
 
 def test_normalize_stackoverflow_filters_non_security_and_non_europe() -> None:
-    non_security = {
-        "ResponseId": "2001",
+    frontend_with_python = {
+        "ResponseId": "1",
         "Country": "Germany",
         "DevType": "Developer, front-end",
-        "YearsCodePro": "3",
-        "LanguageHaveWorkedWith": "HTML/CSS;JavaScript",
+        "LanguageHaveWorkedWith": "JavaScript;Python;HTML/CSS",
+        "profile_date": "2024-06-01",
     }
-    assert normalize_profile_row(non_security, default_profile_date="2025-06-01") is None
+    assert normalize_profile_row(frontend_with_python) is None
 
-    kept = normalize_profile_row(non_security, default_profile_date="2025-06-01", security_only=False)
+    backend_with_cloud = {
+        "ResponseId": "2001",
+        "Country": "Germany",
+        "DevType": "Developer, back-end",
+        "YearsCodePro": "5",
+        "LanguageHaveWorkedWith": "Python;Bash/Shell",
+        "PlatformHaveWorkedWith": "Amazon Web Services (AWS);Linux",
+        "ToolsTechHaveWorkedWith": "Docker;Kubernetes;Terraform",
+    }
+    assert normalize_profile_row(backend_with_cloud, default_profile_date="2025-06-01") is None
+
+    security_tooling_signal = {
+        "ResponseId": "2003",
+        "Country": "Germany",
+        "DevType": "Developer, back-end",
+        "ToolsTechHaveWorkedWith": "Burp Suite;OWASP;Docker",
+    }
+    matched_tool = normalize_profile_row(security_tooling_signal, default_profile_date="2025-06-01")
+    assert matched_tool is not None
+    assert contracts.check("raw.profiles", matched_tool) is None
+
+    kept = normalize_profile_row(frontend_with_python, security_only=False)
     assert kept is not None
     assert contracts.check("raw.profiles", kept) is None
 
@@ -77,6 +100,27 @@ def test_normalize_stackoverflow_filters_non_security_and_non_europe() -> None:
         "LanguageHaveWorkedWith": "Python",
     }
     assert normalize_profile_row(non_europe, default_profile_date="2025-06-01") is None
+
+
+def test_event_id_is_distinct_across_survey_years() -> None:
+    row_2023 = {
+        "ResponseId": "1",
+        "Country": "Germany",
+        "DevType": "Security professional",
+        "LanguageHaveWorkedWith": "Python",
+        "profile_date": "2023-06-01",
+    }
+    row_2024 = {
+        "ResponseId": "1",
+        "Country": "Germany",
+        "DevType": "Security professional",
+        "LanguageHaveWorkedWith": "Python",
+        "profile_date": "2024-06-01",
+    }
+    msg_2023 = normalize_profile_row(row_2023)
+    msg_2024 = normalize_profile_row(row_2024)
+    assert msg_2023 is not None and msg_2024 is not None
+    assert msg_2023["event_id"] != msg_2024["event_id"]
 
 
 def test_replay_sample_profiles_in_event_time_order() -> None:
@@ -157,6 +201,17 @@ def test_replay_stackoverflow_csv_and_checkpoint_resume(tmp_path: Path) -> None:
     producer_retry = DryRunProducer()
     agent.replay_paths(csv_path, producer_retry, dataset="so_2025")
     assert producer_retry.sent == []
+
+
+def test_csv_without_year_requires_default_profile_date(tmp_path: Path) -> None:
+    csv_path = tmp_path / "survey_results_public.csv"
+    csv_path.write_text(
+        "ResponseId,Country,DevType,LanguageHaveWorkedWith\n1,Germany,Security professional,Python\n",
+        encoding="utf-8",
+    )
+    agent = ProfileAgent(seconds_per_day=0.0, position_store=InMemoryPositionStore())
+    with pytest.raises(ValueError, match="Cannot infer survey year"):
+        agent.replay_paths(csv_path, DryRunProducer(), dataset="no_year")
 
 
 def test_invalid_profile_record_is_routed_to_errors_invalid(tmp_path: Path) -> None:
