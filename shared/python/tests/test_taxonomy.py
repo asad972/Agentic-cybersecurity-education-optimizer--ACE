@@ -1,4 +1,4 @@
-"""Tests for the shared ace.taxonomy module."""
+﻿"""Tests for the shared ace.taxonomy module."""
 
 from __future__ import annotations
 
@@ -83,7 +83,6 @@ def test_key_set_and_roles_for() -> None:
 def test_invalid_taxonomy_directory_raises(tmp_path: Path) -> None:
     with pytest.raises(TaxonomyError):
         load_taxonomy(tmp_path)
-
 
 def test_canonical_v1_files_exist_and_match_all_member_contributions() -> None:
     import csv
