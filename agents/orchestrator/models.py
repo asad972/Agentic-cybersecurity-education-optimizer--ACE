@@ -1,4 +1,4 @@
-﻿"""Data models and contract constants for the ACE planning orchestrator."""
+"""Data models and contract constants for the ACE planning orchestrator."""
 
 from __future__ import annotations
 
@@ -97,13 +97,13 @@ def _is_within_window(raw_day: Any, cutoff_date: date | None) -> bool:
         return True
     parsed = _parse_iso_day(raw_day)
     if parsed is None:
-        return True
+        return False
     return parsed >= cutoff_date
 
 
 @dataclass
 class CoverageSnapshot:
-    """Aggregated pipeline coverage read from Kafka summary and raw topics."""
+    """Aggregated live pipeline coverage read from Kafka summary and raw topics."""
 
     job_ads_by_country: dict[str, int] = field(default_factory=dict)
     programmes_by_country: dict[str, int] = field(default_factory=dict)

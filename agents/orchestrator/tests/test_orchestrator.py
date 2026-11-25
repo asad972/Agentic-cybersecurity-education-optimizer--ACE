@@ -1,4 +1,4 @@
-﻿"""Tests for the ACE planning orchestrator (agents/orchestrator)."""
+"""Tests for the ACE planning orchestrator (agents/orchestrator)."""
 
 from __future__ import annotations
 
@@ -72,7 +72,8 @@ def test_rules_planner_prioritizes_low_coverage_countries_and_caps_at_five() -> 
     assert tasks[0]["agent"] == "job-agent"
     assert tasks[0]["action"] == "fetch_job_ads"
     assert tasks[0]["params"]["country"] == "AT"
-    assert any(t["params"].get("country") == "PL" for t in tasks)
+    assert tasks[0]["params"]["max_pages"] == 2
+    assert any(t["params"].get("country") == "PL" and t["params"].get("max_pages") == 1 for t in tasks)
 
     for task in tasks:
         assert task["decided_by"] == "rules"
@@ -189,8 +190,9 @@ def test_agg_threats_sums_counts_map_values() -> None:
     assert all(t["agent"] != "threat-agent" for t in tasks)
 
 
-def test_recent_window_filters_old_demand_daily_messages() -> None:
+def test_recent_window_filters_old_and_unparseable_messages() -> None:
     old_msg = {"country": "PL", "day": "2026-11-01", "job_ads": 50, "counts": []}
+    bad_date_msg = {"country": "PL", "day": "not-a-date", "job_ads": 99, "counts": []}
     recent_msg = {"country": "PL", "day": "2026-11-24", "job_ads": 2, "counts": []}
     assert contracts.check("agg.demand_daily", old_msg) is None
     assert contracts.check("agg.demand_daily", recent_msg) is None
@@ -201,6 +203,7 @@ def test_recent_window_filters_old_demand_daily_messages() -> None:
         if c != "PL"
     ] + [
         ("agg.demand_daily", old_msg),
+        ("agg.demand_daily", bad_date_msg),
         ("agg.demand_daily", recent_msg),
     ]
     snapshot = CoverageSnapshot.from_messages(

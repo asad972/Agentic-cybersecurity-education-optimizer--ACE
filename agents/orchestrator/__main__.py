@@ -1,4 +1,4 @@
-﻿"""CLI entrypoint for the ACE planning orchestrator."""
+"""CLI entrypoint for the ACE planning orchestrator."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--lookback-days",
         type=int,
         default=int(os.environ.get("ORCHESTRATOR_LOOKBACK_DAYS", str(DEFAULT_LOOKBACK_DAYS))),
-        help="Recent coverage window in days (default: ORCHESTRATOR_LOOKBACK_DAYS or 7).",
+        help="Recent live coverage window in days (default: ORCHESTRATOR_LOOKBACK_DAYS or 7).",
     )
     parser.add_argument(
         "--rules-only",

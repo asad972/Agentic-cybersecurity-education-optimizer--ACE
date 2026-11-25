@@ -26,13 +26,13 @@ from orchestrator.models import (
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are the ACE collection orchestrator for European cybersecurity labor-market intelligence.
-Given current coverage counts across Kafka topics, choose up to 5 high-impact collection tasks for live data agents.
+Given current live coverage counts across Kafka topics, choose up to 5 high-impact collection tasks for live data agents.
 Rules:
 1. Only use these exact (agent, action) pairs:
-   - ("job-agent", "fetch_job_ads") with country in live_job_countries and max_pages between 1 and 10.
-   - ("education-agent", "refresh_programmes") with country in the European Skills Scope (EU27, EEA, GB, CH).
-   - ("threat-agent", "refresh_threats") with hours between 1 and 24 (and optional 2-letter country).
-   - ("platform-agent", "rerun_platform_analysis") with no country, max_pages, or hours.
+  - ("job-agent", "fetch_job_ads") with country in live_job_countries and max_pages between 1 and 10 (prefer 1..3 to respect API quotas).
+  - ("education-agent", "refresh_programmes") with country in the European Skills Scope (EU27, EEA, GB, CH).
+  - ("threat-agent", "refresh_threats") with hours between 1 and 24 (and optional 2-letter country).
+  - ("platform-agent", "rerun_platform_analysis") with no country, max_pages, or hours.
 2. Never request static replay datasets (do not schedule profile-agent).
 3. Prioritize countries with zero or very low coverage first.
 4. Provide a single clear sentence (max 300 characters) in 'reason' for every task."""
@@ -76,7 +76,7 @@ def sanitize_proposed_task(
         if country not in LIVE_JOB_COUNTRIES:
             logger.warning("Refusing job-agent task for unsupported country=%r", country)
             return None
-        raw_pages = 3 if proposal.max_pages is None else int(proposal.max_pages)
+        raw_pages = 2 if proposal.max_pages is None else int(proposal.max_pages)
         max_pages = max(1, min(10, raw_pages))
         params = {"country": country, "max_pages": max_pages}
         fallback_reason = f"Job ad coverage for {country} is below target; fetching up to {max_pages} pages."
@@ -145,7 +145,7 @@ class OrchestratorPlanner:
         now_iso = self.clock()
         proposals: list[ProposedTask] = []
 
-        # 1. Prioritize live job-ad countries with lowest coverage first.
+        # 1. Prioritize live job-ad countries with lowest coverage first (conservative page counts for API quotas).
         ranked_job_countries = sorted(
             LIVE_JOB_COUNTRIES,
             key=lambda c: (snapshot.job_ads_by_country.get(c, 0), c),
@@ -153,7 +153,7 @@ class OrchestratorPlanner:
         for country in ranked_job_countries:
             count = snapshot.job_ads_by_country.get(country, 0)
             if count < self.min_job_ads_per_country:
-                pages = 5 if count == 0 else 3
+                pages = 2 if count == 0 else 1
                 proposals.append(
                     ProposedTask(
                         agent="job-agent",
@@ -161,7 +161,7 @@ class OrchestratorPlanner:
                         country=country,
                         max_pages=pages,
                         reason=(
-                            f"Country {country} has only {count} recorded job ads, "
+                            f"Country {country} has only {count} recent live job ads, "
                             f"below the target threshold of {self.min_job_ads_per_country}."
                         ),
                     )
@@ -219,7 +219,7 @@ class OrchestratorPlanner:
         if self.use_llm and self.llm_client is not None:
             try:
                 prompt = (
-                    "Current ACE pipeline coverage snapshot (JSON):\n"
+                    "Current ACE live pipeline coverage snapshot (JSON):\n"
                     + json.dumps(snapshot.to_prompt_context(), indent=2, sort_keys=True)
                     + f"\n\nSelect up to {limit} prioritized collection tasks."
                 )

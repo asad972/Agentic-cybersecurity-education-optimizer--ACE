@@ -1,4 +1,4 @@
-﻿"""Kafka-integrated Orchestrator runtime for ACE."""
+"""Kafka-integrated Orchestrator runtime for ACE."""
 
 from __future__ import annotations
 
@@ -25,21 +25,6 @@ COVERAGE_TOPICS: tuple[str, ...] = (
     "errors.invalid",
     "analysis.platforms",
 )
-
-
-@dataclass(frozen=True)
-class _FallbackTopicPartition:
-    topic: str
-    partition: int
-
-
-def _make_topic_partition(topic: str, partition: int) -> Any:
-    try:
-        from kafka import TopicPartition
-
-        return TopicPartition(topic, partition)
-    except ImportError:
-        return _FallbackTopicPartition(topic=topic, partition=partition)
 
 
 class KafkaJsonProducer:
@@ -104,23 +89,25 @@ def collect_coverage_from_kafka(
     consumer_factory: Callable[[str], Any] | None = None,
 ) -> CoverageSnapshot:
     """Read every partition up to its current end offset and filter to the recent window."""
+    from kafka import TopicPartition
+
     factory = consumer_factory or _default_consumer_factory
     consumer = factory(bootstrap_servers)
     records: list[tuple[str, dict[str, Any]]] = []
     try:
-        partitions: list[Any] = []
+        partitions: list[TopicPartition] = []
         for topic in COVERAGE_TOPICS:
             part_ids = consumer.partitions_for_topic(topic)
             if part_ids:
                 for pid in sorted(part_ids):
-                    partitions.append(_make_topic_partition(topic, pid))
+                    partitions.append(TopicPartition(topic, pid))
 
         if not partitions:
             return CoverageSnapshot()
 
         consumer.assign(partitions)
         consumer.seek_to_beginning(*partitions)
-        end_offsets: dict[Any, int] = consumer.end_offsets(partitions)
+        end_offsets: dict[TopicPartition, int] = consumer.end_offsets(partitions)
         pending = {tp for tp in partitions if end_offsets.get(tp, 0) > 0}
 
         deadline = time.monotonic() + max_wait_seconds
