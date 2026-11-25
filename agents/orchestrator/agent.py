@@ -1,16 +1,17 @@
-"""Kafka-integrated Orchestrator runtime for ACE."""
+﻿"""Kafka-integrated Orchestrator runtime for ACE."""
 
 from __future__ import annotations
 
 import json
 import logging
 import time
-import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from ace import contracts
-from orchestrator.models import CoverageSnapshot
+from orchestrator.models import DEFAULT_LOOKBACK_DAYS, CoverageSnapshot
 from orchestrator.planner import OrchestratorPlanner
 
 logger = logging.getLogger(__name__)
@@ -68,34 +69,72 @@ class DryRunProducer:
         return None
 
 
+def _default_consumer_factory(bootstrap_servers: str) -> Any:
+    from kafka import KafkaConsumer
+
+    return KafkaConsumer(
+        bootstrap_servers=[s.strip() for s in bootstrap_servers.split(",") if s.strip()],
+        enable_auto_commit=False,
+        value_deserializer=lambda raw: json.loads(raw.decode("utf-8")),
+    )
+
+
 def collect_coverage_from_kafka(
     bootstrap_servers: str,
     *,
-    poll_timeout_ms: int = 2000,
-    max_records: int = 5000,
+    poll_timeout_ms: int = 1000,
+    window_days: int = DEFAULT_LOOKBACK_DAYS,
+    reference_date: date | None = None,
+    max_wait_seconds: float = 30.0,
+    consumer_factory: Callable[[str], Any] | None = None,
 ) -> CoverageSnapshot:
-    """Read available coverage messages from Kafka without blocking indefinitely."""
-    from kafka import KafkaConsumer
+    """Read every partition up to its current end offset and filter to the recent window."""
+    from kafka import TopicPartition
 
-    consumer = KafkaConsumer(
-        *COVERAGE_TOPICS,
-        bootstrap_servers=[s.strip() for s in bootstrap_servers.split(",") if s.strip()],
-        group_id=f"ace-orchestrator-probe-{uuid.uuid4()}",
-        auto_offset_reset="earliest",
-        enable_auto_commit=False,
-        consumer_timeout_ms=poll_timeout_ms,
-        value_deserializer=lambda raw: json.loads(raw.decode("utf-8")),
-    )
+    factory = consumer_factory or _default_consumer_factory
+    consumer = factory(bootstrap_servers)
     records: list[tuple[str, dict[str, Any]]] = []
     try:
-        for msg in consumer:
-            if isinstance(msg.value, dict):
-                records.append((msg.topic, msg.value))
-            if len(records) >= max_records:
-                break
+        partitions: list[TopicPartition] = []
+        for topic in COVERAGE_TOPICS:
+            part_ids = consumer.partitions_for_topic(topic)
+            if part_ids:
+                for pid in sorted(part_ids):
+                    partitions.append(TopicPartition(topic, pid))
+
+        if not partitions:
+            return CoverageSnapshot()
+
+        consumer.assign(partitions)
+        consumer.seek_to_beginning(*partitions)
+        end_offsets: dict[TopicPartition, int] = consumer.end_offsets(partitions)
+        pending = {tp for tp in partitions if end_offsets.get(tp, 0) > 0}
+
+        deadline = time.monotonic() + max_wait_seconds
+        while pending and time.monotonic() < deadline:
+            polled = consumer.poll(timeout_ms=poll_timeout_ms)
+            for tp, messages in polled.items():
+                for msg in messages:
+                    if isinstance(msg.value, dict):
+                        records.append((tp.topic, msg.value))
+            for tp in list(pending):
+                if consumer.position(tp) >= end_offsets[tp]:
+                    pending.discard(tp)
+
+        if pending:
+            logger.warning(
+                "Timed out before reaching end offsets for %d partition(s): %s",
+                len(pending),
+                sorted(f"{tp.topic}:{tp.partition}" for tp in pending),
+            )
     finally:
         consumer.close()
-    return CoverageSnapshot.from_messages(records)
+
+    return CoverageSnapshot.from_messages(
+        records,
+        window_days=window_days,
+        reference_date=reference_date,
+    )
 
 
 @dataclass
@@ -104,6 +143,7 @@ class OrchestratorAgent:
 
     planner: OrchestratorPlanner = field(default_factory=OrchestratorPlanner)
     producer_name: str = "orchestrator"
+    lookback_days: int = DEFAULT_LOOKBACK_DAYS
 
     def run_once(
         self,
@@ -111,7 +151,7 @@ class OrchestratorAgent:
         snapshot: CoverageSnapshot | None = None,
         *,
         bootstrap_servers: str | None = None,
-        poll_timeout_ms: int = 2000,
+        poll_timeout_ms: int = 1000,
     ) -> list[dict[str, Any]]:
         """Compute one planning cycle and publish validated tasks to Kafka."""
         if snapshot is None:
@@ -119,6 +159,7 @@ class OrchestratorAgent:
                 snapshot = collect_coverage_from_kafka(
                     bootstrap_servers,
                     poll_timeout_ms=poll_timeout_ms,
+                    window_days=self.lookback_days,
                 )
             else:
                 snapshot = CoverageSnapshot()
@@ -158,7 +199,10 @@ class OrchestratorAgent:
         """Run periodic orchestration cycles (default: every 6 hours / 21600s)."""
         cycles = 0
         while max_cycles is None or cycles < max_cycles:
-            self.run_once(producer, bootstrap_servers=bootstrap_servers)
+            try:
+                self.run_once(producer, bootstrap_servers=bootstrap_servers)
+            except Exception:
+                logger.exception("Orchestrator planning cycle failed; will retry on next cycle")
             cycles += 1
             if max_cycles is not None and cycles >= max_cycles:
                 break

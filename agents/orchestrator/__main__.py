@@ -1,4 +1,4 @@
-"""CLI entrypoint for the ACE planning orchestrator."""
+﻿"""CLI entrypoint for the ACE planning orchestrator."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import sys
 
 from ace.llm import LLMClient, LLMError
 from orchestrator.agent import DryRunProducer, KafkaJsonProducer, OrchestratorAgent
-from orchestrator.models import MAX_TASKS_PER_RUN, CoverageSnapshot
+from orchestrator.models import DEFAULT_LOOKBACK_DAYS, MAX_TASKS_PER_RUN, CoverageSnapshot
 from orchestrator.planner import OrchestratorPlanner
 
 logger = logging.getLogger(__name__)
@@ -37,6 +37,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=int(os.environ.get("ORCHESTRATOR_MAX_TASKS", str(MAX_TASKS_PER_RUN))),
         help="Maximum collection tasks emitted per run (1..5, default: 5).",
+    )
+    parser.add_argument(
+        "--lookback-days",
+        type=int,
+        default=int(os.environ.get("ORCHESTRATOR_LOOKBACK_DAYS", str(DEFAULT_LOOKBACK_DAYS))),
+        help="Recent coverage window in days (default: ORCHESTRATOR_LOOKBACK_DAYS or 7).",
     )
     parser.add_argument(
         "--rules-only",
@@ -79,7 +85,7 @@ def main(argv: list[str] | None = None) -> int:
         use_llm=llm_client is not None,
         max_tasks=args.max_tasks,
     )
-    agent = OrchestratorAgent(planner=planner)
+    agent = OrchestratorAgent(planner=planner, lookback_days=args.lookback_days)
 
     kafka_producer = None
     try:
