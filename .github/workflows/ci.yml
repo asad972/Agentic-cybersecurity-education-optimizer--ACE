@@ -267,6 +267,37 @@ jobs:
       - name: Run the job ads agent tests
         run: python -m pytest -q agents/job_ads
 
+  m3-experiments:
+    name: M3 experiments
+    runs-on: ubuntu-latest
+    # Building the image installs River, LightGBM and statsmodels in two venvs.
+    timeout-minutes: 30
+    env:
+      IMAGE: ace-m3-experiments
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # The image has two separate virtual environments, because River needs
+      # pandas below 3 while the forecast job pins pandas 3. Each test file runs
+      # in the environment it belongs to (experiments/m3/README.md).
+      - name: Build the experiments image
+        run: docker build -f experiments/m3/Dockerfile -t "$IMAGE" .
+      - name: Run the stream experiment tests
+        run: >-
+          docker run --rm --entrypoint /opt/ace-stream/bin/python "$IMAGE"
+          -m pytest -q experiments/m3/tests/test_stream_experiments.py
+      - name: Run the forecast and harness tests
+        run: >-
+          docker run --rm --entrypoint /opt/ace-forecast/bin/python "$IMAGE"
+          -m pytest -q
+          experiments/m3/tests/test_forecast_experiments.py
+          experiments/m3/tests/test_harness.py
+      # Recomputes every experiment and fails if any result differs from the
+      # checked-in results.json that the report quotes.
+      - name: Check the experiment results
+        run: docker run --rm "$IMAGE" --check experiments/m3/results.json
+
   api:
     name: API
     runs-on: ubuntu-latest
