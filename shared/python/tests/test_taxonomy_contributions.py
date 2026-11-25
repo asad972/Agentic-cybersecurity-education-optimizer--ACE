@@ -99,7 +99,9 @@ def test_every_test_data_skill_is_in_a_contribution():
         found = re.search(r"Required skills and technologies: ([^.]+)\.", json.loads(line)["description"])
         terms.update(t.strip() for t in found.group(1).split(","))
     for line in (TESTDATA / "profiles_sample.jsonl").read_text(encoding="utf-8").splitlines():
-        terms.update(json.loads(line)["skills"])
+        found = re.search(r"Core skills and tools: ([^.]+)\.", json.loads(line)["text"])
+        assert found is not None, f"missing skills summary in profile text: {line}"
+        terms.update(t.strip() for t in found.group(1).split(","))
     index = names()
     missing = sorted(t for t in terms if t.lower() not in index)
     assert not missing, f"not in any contribution: {missing}"
