@@ -1,7 +1,9 @@
 # Run with: docker compose -f api/compose.yml up --build -d
 services:
   api:
-    build: .
+    build:
+      context: ..
+      dockerfile: api/Dockerfile
     ports:
       - "127.0.0.1:${ACE_API_PORT:-8000}:8000"
     extra_hosts:

@@ -38,7 +38,7 @@ spec:
         runAsUser: 10001
       containers:
         - name: api
-          image: ace-api            # built locally: docker build -t ace-api -f api/Dockerfile api
+          image: ace-api            # built locally: docker build -t ace-api -f api/Dockerfile .
           imagePullPolicy: IfNotPresent
           envFrom:
             - configMapRef:

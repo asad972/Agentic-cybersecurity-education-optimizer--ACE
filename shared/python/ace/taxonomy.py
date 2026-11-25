@@ -32,6 +32,22 @@ class Match:
 
 
 @dataclass(frozen=True, slots=True)
+class SkillMeta:
+    skill: str
+    ecsf_roles: tuple[str, ...]
+    nice_ids: tuple[str, ...]
+    aliases: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CertMeta:
+    certification: str
+    issuer: str
+    aliases: tuple[str, ...]
+    ecsf_roles: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ExtractionResult:
     """Normalized taxonomy extraction output for a job ad or profile."""
 
@@ -83,6 +99,9 @@ class Taxonomy:
     _skill_patterns: tuple[tuple[re.Pattern[str], str], ...]
     _cert_patterns: tuple[tuple[re.Pattern[str], str], ...]
     _role_patterns: tuple[tuple[re.Pattern[str], str], ...]
+    role_summaries: tuple[tuple[str, str], ...] = ()
+    skill_meta: tuple[SkillMeta, ...] = ()
+    cert_meta: tuple[CertMeta, ...] = ()
 
     @property
     def skill_lookup(self) -> dict[str, str]:
@@ -314,7 +333,7 @@ def _load_cached(resolved_dir: str) -> Taxonomy:
                 "Canonical taxonomy requires both skills.csv and ecsf_roles.csv"
             )
         skill_files = (canonical_skills,)
-        explicit_roles, role_aliases = _load_roles_file(canonical_roles)
+        explicit_roles, role_aliases, role_summary_map = _load_roles_file(canonical_roles)
         validate_roles = True
     else:
         skill_files = tuple(
@@ -322,7 +341,7 @@ def _load_cached(resolved_dir: str) -> Taxonomy:
         )
         if not skill_files:
             raise TaxonomyError(f"No Skill taxonomy files found under {folder}")
-        explicit_roles, role_aliases = (), {}
+        explicit_roles, role_aliases, role_summary_map = (), {}, {}
         validate_roles = False
 
     if canonical_certs.is_file():
@@ -333,6 +352,7 @@ def _load_cached(resolved_dir: str) -> Taxonomy:
         )
 
     skill_mappings: dict[str, tuple[str, tuple[str, ...]]] = {}
+    skill_meta_map: dict[str, SkillMeta] = {}
     skill_alias_map: dict[str, str] = {}
     skill_terms: list[tuple[str, str]] = []
     discovered_roles: dict[str, str] = {r.casefold(): r for r in explicit_roles}
@@ -376,6 +396,12 @@ def _load_cached(resolved_dir: str) -> Taxonomy:
                     discovered_roles.setdefault(r.casefold(), r)
 
                 skill_mappings[identity] = (skill, mapped_roles)
+                skill_meta_map[identity] = SkillMeta(
+                    skill=skill,
+                    ecsf_roles=mapped_roles,
+                    nice_ids=_split_pipe(row.get("nice_ids")),
+                    aliases=_split_pipe(row.get("aliases")),
+                )
                 skill_terms.append((skill, skill))
                 for alias in _split_pipe(row.get("aliases")):
                     alias_key = _normalize(alias)
@@ -388,6 +414,7 @@ def _load_cached(resolved_dir: str) -> Taxonomy:
         skill_map[norm_key] = canonical_skill
 
     cert_canonical_map: dict[str, str] = {}
+    cert_meta_map: dict[str, CertMeta] = {}
     cert_alias_map: dict[str, str] = {}
     cert_terms: list[tuple[str, str]] = []
 
@@ -409,6 +436,12 @@ def _load_cached(resolved_dir: str) -> Taxonomy:
                         f"Canonical Certification collision: {previous!r} and {cert!r}"
                     )
                 cert_canonical_map[identity] = cert
+                cert_meta_map[identity] = CertMeta(
+                    certification=cert,
+                    issuer=(row.get("issuer") or "").strip(),
+                    aliases=_split_pipe(row.get("aliases")),
+                    ecsf_roles=_split_pipe(row.get("ecsf_roles")),
+                )
                 cert_terms.append((cert, cert))
                 for alias in _split_pipe(row.get("aliases")):
                     alias_key = _normalize(alias)
@@ -468,12 +501,16 @@ def _load_cached(resolved_dir: str) -> Taxonomy:
         _skill_patterns=skill_patterns,
         _cert_patterns=cert_patterns,
         _role_patterns=role_patterns,
+        role_summaries=tuple(sorted(role_summary_map.items(), key=lambda x: x[0].casefold())),
+        skill_meta=tuple(sorted(skill_meta_map.values(), key=lambda x: x.skill.casefold())),
+        cert_meta=tuple(sorted(cert_meta_map.values(), key=lambda x: x.certification.casefold())),
     )
 
 
-def _load_roles_file(path: Path) -> tuple[tuple[str, ...], dict[str, str]]:
+def _load_roles_file(path: Path) -> tuple[tuple[str, ...], dict[str, str], dict[str, str]]:
     found: dict[str, str] = {}
     aliases: dict[str, str] = {}
+    summaries: dict[str, str] = {}
     with path.open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         if "role" not in (reader.fieldnames or ()):
@@ -488,11 +525,14 @@ def _load_roles_file(path: Path) -> tuple[tuple[str, ...], dict[str, str]]:
                     f"ECSF role collision: {found[identity]!r} and {role!r}"
                 )
             found[identity] = role
+            summary = (row.get("summary") or "").strip()
+            if summary:
+                summaries[role] = summary
             for alias in _split_pipe(row.get("aliases")):
                 alias_key = _normalize(alias)
                 if alias_key:
                     aliases.setdefault(alias_key, role)
-    return tuple(sorted(found.values(), key=str.casefold)), aliases
+    return tuple(sorted(found.values(), key=str.casefold)), aliases, summaries
 
 
 def load_taxonomy(folder: Path | str | None = None) -> Taxonomy:

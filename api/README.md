@@ -30,7 +30,7 @@ python -m uvicorn ace_api.main:app --reload --host 127.0.0.1 --port 8000
 
 Run tests from the repository root with `python -m pytest -q -c api/pyproject.toml api/tests`. Unit tests use fake connections and need no running database. Verify the real connection separately with `/ready` against the root Cassandra stack.
 
-Build the API alone with `docker build -t ace-api -f api/Dockerfile api` (the build context is `api/`).
+Build the API alone from the repository root with `docker build -t ace-api -f api/Dockerfile .` (the build context is the repository root so `shared/taxonomy` and `ace.ecsf` are included).
 
 ## Add a teammate router
 

@@ -263,7 +263,9 @@ A FastAPI service is the only reader of Cassandra for the web app. M4 sets up th
 | `GET /forecast?region=&skill=` | Forecast series with bands | Forecast dashboard |
 | `GET /gap?country=&month=` | Demand vs Supply per Skill | Gap dashboard |
 | `GET /threats/hourly?country=&from=&to=` | Hourly threat counts with burst alerts | Threat landscape dashboard |
-| `GET /roles` and `GET /roles/{role}?country=` | ECSF roles; for one role its top Skills and Certifications, Demand per country, programmes and related roles | Role explorer |
+| `GET /roles?country=&day=` | All 12 ECSF role profiles with optional country and day Demand/Supply counts | Role explorer |
+| `GET /roles/{role}?country=&day=` | For one ECSF role (default `country=DE`, latest day): top Skills and Certifications, Demand/Supply, programmes and related roles | Role explorer |
+| `GET /roles/{role}/map?day=` | Daily Demand per country for one ECSF role from `demand_map` | Role explorer |
 | `GET /platforms` | Platform feature comparison: one row per platform and feature | Education and workforce dashboard |
 | `GET /education?country=&day=` | Education programmes and country workforce figures, plus ECSF-role programme counts and, with optional `day`, daily role Demand | Education and workforce dashboard |
 | `GET /workforce?geography_level=&geography=` | Workforce estimates by year for one published country, regional or global geography | Education and workforce dashboard |
