@@ -1,4 +1,4 @@
-"""Tests for the shared ace.taxonomy module."""
+﻿"""Tests for the shared ace.taxonomy module."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ace.taxonomy import Match, TaxonomyError, _load_roles_file, key_set, load_taxonomy
+from ace.taxonomy import Match, TaxonomyError, _load_roles_file, compile_phrase_pattern, key_set, load_taxonomy
 
 
 def test_load_repository_taxonomy_and_match_by_name_and_alias() -> None:
@@ -31,6 +31,18 @@ def test_load_repository_taxonomy_and_match_by_name_and_alias() -> None:
     # Unmapped mention returns None
     assert tax.match("Quantum Blockchain Wizardry") is None
     assert tax.match("   ") is None
+
+
+def test_compile_phrase_pattern_unicode_and_symbols() -> None:
+    iso_pat = compile_phrase_pattern("ISO")
+    assert iso_pat.search("Aligned with ISO 27001 controls") is not None
+    assert iso_pat.search("ISOé") is None
+    assert iso_pat.search("éISO") is None
+
+    sec_plus_pat = compile_phrase_pattern("Security+")
+    assert sec_plus_pat.search("Holds CompTIA Security+ certification") is not None
+    assert sec_plus_pat.search("Security+1") is None
+    assert sec_plus_pat.search("CyberSecurity+") is None
 
 
 def test_extract_text_word_boundaries_and_role_inference() -> None:

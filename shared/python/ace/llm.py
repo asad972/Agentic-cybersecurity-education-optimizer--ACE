@@ -512,6 +512,20 @@ class InMemoryLLMStore:
         with self._lock:
             return self._budgets.get(day)
 
+    def __getstate__(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "cache": dict(self._cache),
+                "claims": {k: dict(v) for k, v in self._claims.items()},
+                "budgets": dict(self._budgets),
+            }
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        self._lock = threading.RLock()
+        self._cache = dict(state["cache"])
+        self._claims = {k: dict(v) for k, v in state["claims"].items()}
+        self._budgets = dict(state["budgets"])
+
     def close(self) -> None:
         return None
 
@@ -1037,6 +1051,10 @@ def build_provider(settings: LLMSettings) -> Provider:
     )
 
 
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
 class LLMClient:
     def __init__(
         self,
@@ -1063,7 +1081,7 @@ class LLMClient:
         self.settings = settings
         self.store = store
         self.provider = provider
-        self._now = now or (lambda: datetime.now(UTC))
+        self._now = now or _utc_now
         self._monotonic = monotonic or time.monotonic
         self._sleep = sleep or time.sleep
         self._random = random_value or random.random

@@ -68,11 +68,12 @@ def _split_pipe(value: str | None) -> tuple[str, ...]:
     return tuple(part.strip() for part in value.split("|") if part.strip())
 
 
-def _compile_phrase_pattern(term: str) -> re.Pattern[str]:
-    """Compile a case-insensitive boundary-aware regex for a taxonomy term."""
+def compile_phrase_pattern(term: str) -> re.Pattern[str]:
+    """Compile a case-insensitive Unicode word-boundary regex for a term."""
     parts = [re.escape(p) for p in term.strip().split() if p]
     body = r"\s+".join(parts)
-    return re.compile(rf"(?<![A-Za-z0-9_]){body}(?![A-Za-z0-9_])", re.IGNORECASE)
+    return re.compile(rf"(?<!\w){body}(?!\w)", re.IGNORECASE)
+
 
 
 def taxonomy_dir() -> Path:
@@ -470,19 +471,19 @@ def _load_cached(resolved_dir: str) -> Taxonomy:
 
     # Sort patterns longest-first so specific multi-word phrases match first
     skill_patterns = tuple(
-        (_compile_phrase_pattern(term), canonical)
+        (compile_phrase_pattern(term), canonical)
         for term, canonical in sorted(
             skill_terms, key=lambda x: (-len(x[0]), x[0].casefold())
         )
     )
     cert_patterns = tuple(
-        (_compile_phrase_pattern(term), canonical)
+        (compile_phrase_pattern(term), canonical)
         for term, canonical in sorted(
             cert_terms, key=lambda x: (-len(x[0]), x[0].casefold())
         )
     )
     role_patterns = tuple(
-        (_compile_phrase_pattern(term), canonical)
+        (compile_phrase_pattern(term), canonical)
         for term, canonical in sorted(
             role_terms, key=lambda x: (-len(x[0]), x[0].casefold())
         )
