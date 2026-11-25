@@ -36,8 +36,14 @@ If the month has no Demand input, existing role relationships are left intact.
 
 ## Run and test
 
+Skills Gap imports `ace.batch` and `ace.taxonomy` from the shared package. From
+the repository root, install the local `ace` package with its `batch` extra
+(which provides the Cassandra driver) before installing Skills Gap. Both steps
+use the same Python environment.
+
 ```bash
-python -m pip install -e "shared/python[batch]" -e "batch/gap[dev]"
+python -m pip install -e "shared/python[batch]"
+python -m pip install -e "batch/gap[dev]"
 python -m pytest -q batch/gap/tests
 python -m ace_gap --month 2026-10
 ```

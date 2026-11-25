@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 import tomllib
 from types import ModuleType
+from unittest.mock import Mock
 
 import pytest
 
@@ -69,7 +70,9 @@ def test_invalid_cassandra_settings_are_rejected(values: dict[str, str]) -> None
         CassandraSettings.from_env(values)
 
 
-def _fake_driver(monkeypatch: pytest.MonkeyPatch, *, fail: bool = False):
+def _fake_driver(
+    monkeypatch: pytest.MonkeyPatch, *, fail: bool = False, session: object | None = None
+):
     calls: dict[str, object] = {}
 
     class Auth:
@@ -89,7 +92,7 @@ def _fake_driver(monkeypatch: pytest.MonkeyPatch, *, fail: bool = False):
             calls["keyspace"] = keyspace
             if fail:
                 raise RuntimeError("unavailable")
-            return object()
+            return object() if session is None else session
 
         def shutdown(self) -> None:
             calls["shutdowns"] = int(calls["shutdowns"]) + 1
@@ -129,6 +132,27 @@ def test_repository_shuts_down_after_connect_failure(
     calls = _fake_driver(monkeypatch, fail=True)
     with pytest.raises(RuntimeError, match="unavailable"):
         CassandraRepositoryBase.connect(CassandraSettings())
+    assert calls["shutdowns"] == 1
+
+
+def test_repository_shuts_down_after_prepare_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    error = RuntimeError("statement preparation failed")
+    session = Mock()
+    session.prepare.side_effect = error
+    calls = _fake_driver(monkeypatch, session=session)
+
+    class PreparingRepository(CassandraRepositoryBase):
+        def __init__(self, session: Mock, cluster: object) -> None:
+            super().__init__(session, cluster)
+            session.prepare("SELECT 1")
+
+    with pytest.raises(RuntimeError) as exc:
+        PreparingRepository.connect(CassandraSettings())
+
+    assert exc.value is error
+    session.prepare.assert_called_once_with("SELECT 1")
     assert calls["shutdowns"] == 1
 
 

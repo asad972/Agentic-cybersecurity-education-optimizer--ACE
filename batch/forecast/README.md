@@ -34,8 +34,14 @@ helpers come from `ace.batch`.
 
 ## Run and test
 
+Forecast imports `ace.batch` and `ace.taxonomy` from the shared package. From
+the repository root, install the local `ace` package with its `batch` extra
+(which provides the Cassandra driver) before installing Forecast. Both steps
+use the same Python environment.
+
 ```bash
-python -m pip install -e "shared/python[batch]" -e "batch/forecast[dev]"
+python -m pip install -e "shared/python[batch]"
+python -m pip install -e "batch/forecast[dev]"
 python -m pytest -q batch/forecast/tests
 python -m ace_forecast --as-of 2026-11-01
 ```

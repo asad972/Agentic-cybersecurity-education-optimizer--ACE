@@ -112,10 +112,10 @@ class CassandraRepositoryBase:
         )
         try:
             session = cluster.connect(config.cassandra_keyspace)
+            return cls(session, cluster)
         except Exception:
             cluster.shutdown()
             raise
-        return cls(session, cluster)
 
     def close(self) -> None:
         if self._cluster is not None:
