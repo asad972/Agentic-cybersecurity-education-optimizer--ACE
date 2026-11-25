@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ace.taxonomy import Match, TaxonomyError, key_set, load_taxonomy
+from ace.taxonomy import Match, TaxonomyError, compile_phrase_pattern, key_set, load_taxonomy
 
 
 def test_load_repository_taxonomy_and_match_by_name_and_alias() -> None:
@@ -71,3 +71,16 @@ def test_key_set_and_roles_for() -> None:
 def test_invalid_taxonomy_directory_raises(tmp_path: Path) -> None:
     with pytest.raises(TaxonomyError):
         load_taxonomy(tmp_path)
+
+def test_compile_phrase_pattern_unicode_and_symbols() -> None:
+    iso_pattern = compile_phrase_pattern("ISO")
+    assert iso_pattern.search("Sécurité ISO 27001") is not None
+    assert iso_pattern.search("ISOé und Übung") is None
+
+    ubung_pattern = compile_phrase_pattern("Übung")
+    assert ubung_pattern.search("ISOé und Übung") is not None
+
+    sec_plus = compile_phrase_pattern("Security+")
+    assert sec_plus.search("Holds CompTIA Security+ certification") is not None
+    assert sec_plus.search("CompTIA Security") is None
+    assert sec_plus.search("Security+Plus") is None

@@ -89,14 +89,7 @@ class S2SkillExtractionStage(RecordStage):
         """Lazily build LLMSkillExtractor from env, raising visibly on setup errors."""
         if self.extractor is not None or not self._use_llm:
             return
-        try:
-            self.extractor = LLMSkillExtractor.from_env()
-        except Exception as error:
-            log.error(
-                "S2 LLM initialization failed (%s); check LLM_* and CASSANDRA_* configuration",
-                type(error).__name__,
-            )
-            raise
+        self.extractor = LLMSkillExtractor.from_env()
 
     def open(self, runtime_context: Any) -> None:
         """Initialize runtime metrics and env-configured LLM client inside each Flink task."""

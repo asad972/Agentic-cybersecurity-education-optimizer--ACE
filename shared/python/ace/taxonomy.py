@@ -59,8 +59,6 @@ def compile_phrase_pattern(term: str) -> re.Pattern[str]:
     return re.compile(rf"(?<!\w){body}(?!\w)", re.IGNORECASE)
 
 
-_compile_phrase_pattern = compile_phrase_pattern
-
 
 def taxonomy_dir() -> Path:
     """Return the taxonomy directory from ACE_TAXONOMY_DIR or repo default."""
@@ -440,19 +438,19 @@ def _load_cached(resolved_dir: str) -> Taxonomy:
 
     # Sort patterns longest-first so specific multi-word phrases match first
     skill_patterns = tuple(
-        (_compile_phrase_pattern(term), canonical)
+        (compile_phrase_pattern(term), canonical)
         for term, canonical in sorted(
             skill_terms, key=lambda x: (-len(x[0]), x[0].casefold())
         )
     )
     cert_patterns = tuple(
-        (_compile_phrase_pattern(term), canonical)
+        (compile_phrase_pattern(term), canonical)
         for term, canonical in sorted(
             cert_terms, key=lambda x: (-len(x[0]), x[0].casefold())
         )
     )
     role_patterns = tuple(
-        (_compile_phrase_pattern(term), canonical)
+        (compile_phrase_pattern(term), canonical)
         for term, canonical in sorted(
             role_terms, key=lambda x: (-len(x[0]), x[0].casefold())
         )

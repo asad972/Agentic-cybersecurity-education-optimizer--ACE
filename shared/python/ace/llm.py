@@ -505,6 +505,13 @@ class InMemoryLLMStore:
     def release_budget(self, day: date, reserved: Decimal) -> None:
         self.settle_budget(day, reserved, Decimal(0))
 
+    def charge_abandoned(self, day: date, reserved: Decimal) -> None:
+        self.settle_budget(day, reserved, reserved)
+
+    def budget_snapshot(self, day: date) -> BudgetSnapshot | None:
+        with self._lock:
+            return self._budgets.get(day)
+
     def __getstate__(self) -> dict[str, Any]:
         with self._lock:
             return {
@@ -518,13 +525,6 @@ class InMemoryLLMStore:
         self._cache = dict(state["cache"])
         self._claims = {k: dict(v) for k, v in state["claims"].items()}
         self._budgets = dict(state["budgets"])
-
-    def charge_abandoned(self, day: date, reserved: Decimal) -> None:
-        self.settle_budget(day, reserved, reserved)
-
-    def budget_snapshot(self, day: date) -> BudgetSnapshot | None:
-        with self._lock:
-            return self._budgets.get(day)
 
     def close(self) -> None:
         return None
@@ -810,20 +810,6 @@ class CassandraLLMStore:
 
     def release_budget(self, day: date, reserved: Decimal) -> None:
         self.settle_budget(day, reserved, Decimal(0))
-
-    def __getstate__(self) -> dict[str, Any]:
-        with self._lock:
-            return {
-                "cache": dict(self._cache),
-                "claims": {k: dict(v) for k, v in self._claims.items()},
-                "budgets": dict(self._budgets),
-            }
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        self._lock = threading.RLock()
-        self._cache = dict(state["cache"])
-        self._claims = {k: dict(v) for k, v in state["claims"].items()}
-        self._budgets = dict(state["budgets"])
 
     def charge_abandoned(self, day: date, reserved: Decimal) -> None:
         if reserved:
