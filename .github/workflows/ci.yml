@@ -1,6 +1,7 @@
 # Runs on every pull request and every push to master: all tests, the
 # dashboard build, every Docker image that has a Dockerfile, and the Compose
-# files. Jobs for parts not yet on the branch are skipped with a notice.
+# files. Only the setup scripts, which are not on master yet, are skipped
+# with a notice while they are missing.
 # What each job checks and how to run the same checks locally: docs/ci.md
 name: CI
 
@@ -145,8 +146,6 @@ jobs:
       - name: Run the batch tests
         run: python -m pytest batch/${{ matrix.job }}/tests
 
-  # Monitoring comes with its own pull request; until then these steps are
-  # skipped. The ifs can go once deploy/monitoring is on master.
   exporter:
     name: Monitoring exporter
     runs-on: ubuntu-latest
@@ -155,11 +154,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Note when the exporter is missing
-        if: hashFiles('deploy/monitoring/exporter/pyproject.toml') == ''
-        run: echo "::notice::deploy/monitoring/exporter is not on this branch, so its tests are skipped."
       - uses: actions/setup-python@v7
-        if: hashFiles('deploy/monitoring/exporter/pyproject.toml') != ''
         with:
           python-version: "3.11"
           cache: pip
@@ -167,12 +162,10 @@ jobs:
             shared/python/pyproject.toml
             deploy/monitoring/exporter/pyproject.toml
       - name: Install the shared package and the exporter
-        if: hashFiles('deploy/monitoring/exporter/pyproject.toml') != ''
         run: |
           python -m pip install -e "shared/python[dev]"
           python -m pip install -e "deploy/monitoring/exporter[dev]"
       - name: Run the exporter tests
-        if: hashFiles('deploy/monitoring/exporter/pyproject.toml') != ''
         run: python -m pytest deploy/monitoring/exporter/tests
 
   prometheus:
@@ -185,19 +178,14 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Note when the Prometheus config is missing
-        if: hashFiles('deploy/monitoring/prometheus/prometheus.yml') == ''
-        run: echo "::notice::deploy/monitoring/prometheus is not on this branch, so its checks are skipped."
       # Mounted where the container expects it, because prometheus.yml loads
       # its rules from /etc/prometheus/rules/.
       - name: Check prometheus.yml and the rules it loads
-        if: hashFiles('deploy/monitoring/prometheus/prometheus.yml') != ''
         run: >-
           docker run --rm -v "$PWD/deploy/monitoring/prometheus:/etc/prometheus:ro"
           --entrypoint promtool "$PROMETHEUS_IMAGE"
           check config /etc/prometheus/prometheus.yml
       - name: Run the rule tests
-        if: hashFiles('deploy/monitoring/prometheus/prometheus.yml') != ''
         run: >-
           docker run --rm -v "$PWD/deploy/monitoring/prometheus:/p:ro" -w /p
           --entrypoint promtool "$PROMETHEUS_IMAGE"
@@ -379,7 +367,6 @@ jobs:
           docker build -f batch/forecast/Dockerfile .
           docker build -f batch/gap/Dockerfile .
       - name: Build the monitoring exporter image
-        if: hashFiles('deploy/monitoring/exporter/Dockerfile') != ''
         run: docker build -f deploy/monitoring/exporter/Dockerfile .
       # The agent and stage images are built from the repository root, because
       # they copy shared/python and shared/schemas next to their own code.
@@ -396,16 +383,10 @@ jobs:
       # which the two stage jobs above already do.
       - name: Build the stage images
         run: |
+          docker build --target runtime -f streaming/s3_top10/Dockerfile .
+          docker build --target runtime -f streaming/s4_demand_frequency/Dockerfile .
           docker build --target runtime -f streaming/s7_threat_frequency/Dockerfile .
           docker build --target runtime -f streaming/s8_threat_bursts/Dockerfile .
-      # The S3 and S4 Dockerfiles come with their own pull requests (#82, #90);
-      # the ifs can go once they are on master.
-      - name: Build the S3 image
-        if: hashFiles('streaming/s3_top10/Dockerfile') != ''
-        run: docker build --target runtime -f streaming/s3_top10/Dockerfile .
-      - name: Build the S4 image
-        if: hashFiles('streaming/s4_demand_frequency/Dockerfile') != ''
-        run: docker build --target runtime -f streaming/s4_demand_frequency/Dockerfile .
 
   # The setup scripts come with their own pull request; until then the checks
   # are skipped. The ifs can go once setup.sh and setup.ps1 are on master.
