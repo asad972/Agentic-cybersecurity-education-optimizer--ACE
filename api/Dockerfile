@@ -1,8 +1,10 @@
 FROM python:3.12-slim
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 ACE_TAXONOMY_DIR=/app/shared/taxonomy
 WORKDIR /app
-COPY pyproject.toml ./
-COPY ace_api ./ace_api
+COPY api/pyproject.toml ./
+COPY api/ace_api ./ace_api
+COPY shared/python/ace/__init__.py shared/python/ace/ecsf.py shared/python/ace/taxonomy.py ./ace/
+COPY shared/taxonomy ./shared/taxonomy
 RUN pip install --no-cache-dir . && useradd --create-home --uid 10001 ace
 USER ace
 EXPOSE 8000

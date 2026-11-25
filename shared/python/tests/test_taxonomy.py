@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ace.taxonomy import Match, TaxonomyError, key_set, load_taxonomy
+from ace.taxonomy import Match, TaxonomyError, _load_roles_file, key_set, load_taxonomy
 
 
 def test_load_repository_taxonomy_and_match_by_name_and_alias() -> None:
@@ -71,6 +71,33 @@ def test_key_set_and_roles_for() -> None:
 def test_invalid_taxonomy_directory_raises(tmp_path: Path) -> None:
     with pytest.raises(TaxonomyError):
         load_taxonomy(tmp_path)
+
+
+def test_load_taxonomy_populates_role_summaries_skill_meta_and_cert_meta(tmp_path: Path) -> None:
+    tax = load_taxonomy()
+    assert len(tax.skill_meta) == len(tax.skills)
+    assert len(tax.cert_meta) == len(tax.certifications)
+
+    skill_by_name = {entry.skill: entry for entry in tax.skill_meta}
+    assert "Intrusion Detection" in skill_by_name
+    assert "Cyber Incident Responder" in skill_by_name["Intrusion Detection"].ecsf_roles
+    assert "Suricata" in skill_by_name["Intrusion Detection"].aliases
+
+    cert_by_name = {entry.certification: entry for entry in tax.cert_meta}
+    assert "BTL1" in cert_by_name
+    assert cert_by_name["BTL1"].issuer != ""
+
+    roles_csv = tmp_path / "ecsf_roles.csv"
+    roles_csv.write_text(
+        "role,summary,aliases\n"
+        "Cyber Incident Responder,Analyses and responds to cybersecurity incidents.,Incident Responder\n",
+        encoding="utf-8",
+    )
+    roles, aliases, summaries = _load_roles_file(roles_csv)
+    assert roles == ("Cyber Incident Responder",)
+    assert aliases["incident responder"] == "Cyber Incident Responder"
+    assert summaries["Cyber Incident Responder"] == "Analyses and responds to cybersecurity incidents."
+
 
 def test_canonical_v1_files_exist_and_match_all_member_contributions() -> None:
     import csv

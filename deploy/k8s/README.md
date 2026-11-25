@@ -41,7 +41,7 @@ The ACE images are built on your machine and never pulled from a registry. From 
 
 ```powershell
 docker build -t ace-sink -f storage/sink/Dockerfile .
-docker build -t ace-api -f api/Dockerfile api
+docker build -t ace-api -f api/Dockerfile .
 docker build -t ace-dashboard -f dashboard/Dockerfile dashboard
 docker build -t ace-threat -f agents/threat/Dockerfile .
 docker build -t ace-m5-platform -f agents/m5/platform_agent/Dockerfile .
