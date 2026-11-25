@@ -139,7 +139,9 @@ def run_gap_job(
 def _skill_counts(
     rows: tuple[StoredCount, ...], taxonomy: Taxonomy
 ) -> tuple[Counter[str], int]:
-    canonical = taxonomy.skill_lookup
+    # S2 stores canonical names. Keep historical-row handling strict rather than
+    # silently accepting aliases merely because the shared taxonomy exposes them.
+    canonical = {skill.casefold(): skill for skill in taxonomy.skills}
     result: Counter[str] = Counter()
     unknown_rows = 0
     for row in rows:

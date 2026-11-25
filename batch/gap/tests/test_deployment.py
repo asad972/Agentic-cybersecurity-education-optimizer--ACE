@@ -7,6 +7,8 @@ ROOT = Path(__file__).resolve().parents[3]
 def test_dockerfile_uses_root_context_python_311_and_nonroot_user():
     content = (ROOT / "batch" / "gap" / "Dockerfile").read_text(encoding="utf-8")
     assert "FROM python:3.11-slim" in content
+    assert "COPY shared/python" in content
+    assert 'ace-shared[batch]' in content
     assert "COPY batch/gap/" in content
     assert "USER ace" in content
     assert '["python", "-m", "ace_gap"]' in content

@@ -1,4 +1,5 @@
 from datetime import date
+from dataclasses import dataclass
 
 import pytest
 
@@ -7,10 +8,19 @@ from ace_gap.config import GapConfig
 from ace_gap.month import TargetMonth
 from ace_gap.repository import StoredCount, SupplySnapshot
 from ace_gap.runner import run_gap_job
-from ace_gap.taxonomy import Taxonomy
 
 
-TAXONOMY = Taxonomy(
+@dataclass(frozen=True)
+class TaxonomyFixture:
+    skills: tuple[str, ...]
+    roles: tuple[str, ...]
+    skill_roles: tuple[tuple[str, tuple[str, ...]], ...]
+
+    def roles_for(self, skill: str) -> tuple[str, ...]:
+        return dict(self.skill_roles)[skill]
+
+
+TAXONOMY = TaxonomyFixture(
     skills=("Cloud Security", "Linux"),
     roles=("Architect", "Implementer"),
     skill_roles=(
