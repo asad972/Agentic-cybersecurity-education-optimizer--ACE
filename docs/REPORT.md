@@ -28,7 +28,23 @@ HOW TO ADD YOUR PART (delete nothing outside your own markers)
 <!-- M4 START: structured abstract, at most 200 words.
      Background, goal, method, results, impact (one or two sentences each). -->
 
-*To be written by M4.*
+Europe has no public, country-level view, like CyberSeek in
+the United States, of the cybersecurity skills employers ask for, the skills
+the workforce offers and how threats develop. ACE, the Agentic
+Cybersecurity Education Optimizer, provides such a view for 32 countries: the
+EU27, the EEA, the United Kingdom and Switzerland. Separate agents
+collect job ads, education programmes, workforce figures and threat events and
+publish every record to Kafka. Ten stream-mining stages on Apache Flink compute
+Top 10 skills, Demand and Supply, drift, emerging skills, hiring companies and
+threat bursts with bounded-memory summaries and online detectors. Cassandra
+stores the results, batch jobs forecast Demand and compute the Skills Gap, and
+a FastAPI and React application shows them on maps and dashboards with live
+alerts. In deterministic experiments, the Supply estimate kept a
+mean relative error of about 2.6%, drift detection found every injected shift
+after a median of three to four days without false alerts, and no forecasting
+model was best for every Demand pattern. **Impact.** ACE shows that such a view
+can be built from open sources with bounded memory, and it gives a base for
+adding live job and profile sources.
 
 <!-- M4 END -->
 
@@ -38,7 +54,44 @@ HOW TO ADD YOUR PART (delete nothing outside your own markers)
      The problem, the goal of ACE, and references to relevant papers,
      standards and technologies. -->
 
-*To be written by M4.*
+Organisations in Europe, as elsewhere, report a persistent shortage of
+cybersecurity professionals, and the shortage concerns specific skills as well
+as numbers (ISC2, 2024). Educators, students and policy makers therefore need
+to know which skills are asked for in which country, how many people offer
+them, and how this changes over time. The evidence exists, but it is
+scattered: job ads appear on national portals and in datasets with different
+formats, survey answers describe skills in free text, programme catalogues
+list what is taught, and workforce studies often report only regional or
+EU-wide totals. The same holds for threats. Public threat-intelligence feeds
+publish observations continuously and worldwide, and annual reports such as
+the ENISA Threat Landscape summarise them for Europe (ENISA, 2024), but
+neither shows how activity develops in each country or when one country sees
+an unusual rise.
+
+The goal of ACE is to connect these sources in one country-level view: skill
+Demand (how often job ads ask for a Skill), skill Supply (how many profiles
+show it), the Skills Gap between the two, and threat activity. Every mention is
+matched against one closed Skill Taxonomy based on the European Cybersecurity
+Skills Framework (ECSF) (ENISA, 2022), so that Demand and Supply are counted in
+the same terms and can be compared.
+
+The project brief requires Kafka for ingestion, Cassandra for storage,
+Kubernetes or Docker Swarm for deployment, and no Apache Spark. This leads to
+an event-driven design: agents publish every record to Kafka, and later
+components meet only through Kafka topics, Cassandra tables or the REST API,
+so any period can be replayed. Because the data arrive as unbounded streams,
+most of the analysis is stream mining. Ten stages on Apache Flink use event
+time and checkpointed state (Carbone et al., 2017), and the counting stages
+keep summaries of bounded size instead of re-reading history. For threats,
+hourly windows are closed by watermarks, so late observations are still
+counted in the hour they belong to (Akidau et al., 2021), and bursts are found
+with Half-Space Trees, an online anomaly detector for evolving streams
+(Tan et al., 2011), as implemented in River (Montiel et al., 2021). Every
+service runs in its own container, and Kubernetes manifests deploy the core
+services (Burns et al., 2016).
+
+The rest of this report describes the datasets (Section 2), the system
+architecture (Section 3), and our tests and experiments (Section 4).
 
 <!-- M4 END -->
 
@@ -298,7 +351,13 @@ How the other stages are tested (one line each):
 
 <!-- M4 START: one line on how S7 and S8 are tested. -->
 
-- *S7, S8: to be written by M4.*
+- S7 is tested with fake threat events against exact hourly and daily counts,
+  including grace-period boundaries, repeated event IDs, late and invalid
+  records and checkpoint serialisation; S8 is tested with synthetic hourly
+  counts for warm-up, the score and upward gates, zero-filled quiet hours, the
+  cooldown and checkpoint restore, and on the demo data it must find only the
+  injected spike. For both stages, a real PyFlink run must match the plain
+  Python runner.
 
 <!-- M4 END -->
 
@@ -377,6 +436,22 @@ How the other stages are tested (one line each):
 ### M4
 
 <!-- M4 START -->
+<!-- Also cited by M4 and already listed above: ENISA (2022), Carbone et al.
+     (2017) and Burns et al. (2016) under M2; Montiel et al. (2021) under M3. -->
+- Akidau, T., Begoli, E., Chernyak, S., Hueske, F., Knight, K., Knowles, K.,
+  Mills, D., & Sotolongo, D. (2021). Watermarks in stream processing systems:
+  Semantics and comparative analysis of Apache Flink and Google Cloud
+  Dataflow. *Proceedings of the VLDB Endowment, 14*(12), 3135–3147.
+  <https://doi.org/10.14778/3476311.3476389>
+- European Union Agency for Cybersecurity (ENISA). (2024). *ENISA threat
+  landscape 2024*.
+  <https://www.enisa.europa.eu/publications/enisa-threat-landscape-2024>
+- ISC2. (2024). *2024 ISC2 cybersecurity workforce study*.
+  <https://www.isc2.org/Insights/2024/10/ISC2-2024-Cybersecurity-Workforce-Study>
+- (OLD) Tan, S. C., Ting, K. M., & Liu, T. F. (2011). Fast anomaly detection
+  for streaming data. In *Proceedings of the Twenty-Second International Joint
+  Conference on Artificial Intelligence* (pp. 1511–1515). AAAI Press.
+  <https://doi.org/10.5591/978-1-57735-516-8/IJCAI11-254>
 <!-- M4 END -->
 
 ### M5
