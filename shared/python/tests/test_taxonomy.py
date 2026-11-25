@@ -71,3 +71,38 @@ def test_key_set_and_roles_for() -> None:
 def test_invalid_taxonomy_directory_raises(tmp_path: Path) -> None:
     with pytest.raises(TaxonomyError):
         load_taxonomy(tmp_path)
+
+def test_canonical_v1_files_exist_and_match_all_member_contributions() -> None:
+    import csv
+    from ace.ecsf import ECSF_ROLES
+
+    tax_dir = Path(__file__).resolve().parents[2] / "taxonomy"
+    assert (tax_dir / "skills.csv").is_file()
+    assert (tax_dir / "certifications.csv").is_file()
+    assert (tax_dir / "ecsf_roles.csv").is_file()
+
+    tax = load_taxonomy()
+    assert set(tax.roles) == set(ECSF_ROLES)
+    assert len(tax.skills) == 83
+    assert len(tax.certifications) == 55
+
+    # Verify entries contributed by each team member (M1-M5) resolve canonically
+    assert tax.match("Credential Dumping") == Match("skill", "Credential Dumping")  # M1
+    assert tax.match("SIEM") == Match("skill", "SIEM")  # M2
+    assert tax.match("AWS Security") == Match("skill", "AWS Security")  # M3
+    assert tax.match("ATT&CK") == Match("skill", "MITRE ATT&CK")  # M4
+    assert tax.match("Cybersecurity Training") == Match("skill", "Cybersecurity Training")  # M5
+    assert tax.match("OSCP") == Match("certification", "OSCP")
+
+    contrib_dir = tax_dir / "contributions"
+    expected_skills = set()
+    for p in contrib_dir.glob("*_skills.csv"):
+        with p.open(encoding="utf-8", newline="") as f:
+            expected_skills.update(row["skill"].strip() for row in csv.DictReader(f))
+    assert set(tax.skills) == expected_skills
+
+    expected_certs = set()
+    for p in contrib_dir.glob("*_certifications.csv"):
+        with p.open(encoding="utf-8", newline="") as f:
+            expected_certs.update(row["certification"].strip() for row in csv.DictReader(f))
+    assert set(tax.certifications) == expected_certs
