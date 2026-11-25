@@ -4,6 +4,9 @@ import random
 import uuid
 from datetime import datetime, timedelta
 
+DEFAULT_SEED = 42
+DEFAULT_COUNT = 200
+
 # Países del alcance europeo (EU27 + UK, Suiza, etc.)
 EUROPEAN_COUNTRIES = [
     "DE",
@@ -32,7 +35,7 @@ JOB_ROLES = [
     ),
     (
         "Penetration Tester",
-        "Cyber Threat Intelligence Specialist",
+        "Penetration Tester",
         ["Penetration testing", "Metasploit", "Burp Suite", "Kali Linux", "Nmap"],
     ),
     (
@@ -71,22 +74,25 @@ SOURCES_JOBS = ["adzuna", "arbeitsagentur", "francetravail"]
 SOURCES_PROFILES = ["stackoverflow"]
 
 
-def generate_jobs(count=200):
+def _deterministic_uuid(rng: random.Random) -> str:
+    return str(uuid.UUID(int=rng.getrandbits(128), version=4))
+
+
+def generate_jobs(count: int = DEFAULT_COUNT, *, seed: int = DEFAULT_SEED) -> list[dict]:
+    rng = random.Random(seed)
     jobs = []
     base_date = datetime(2026, 10, 1)
 
     for i in range(count):
-        title, role, skills = random.choice(JOB_ROLES)
-        country = random.choice(EUROPEAN_COUNTRIES)
-        company = random.choice(COMPANIES)
-        days_offset = random.randint(0, 30)
-        posted_date = (base_date - timedelta(days=days_offset)).strftime(
-            "%Y-%m-%d"
-        )
+        title, _role, skills = rng.choice(JOB_ROLES)
+        country = rng.choice(EUROPEAN_COUNTRIES)
+        company = rng.choice(COMPANIES)
+        days_offset = rng.randint(0, 30)
+        posted_date = (base_date - timedelta(days=days_offset)).strftime("%Y-%m-%d")
 
         job = {
-            "event_id": str(uuid.uuid4()),
-            "source": random.choice(SOURCES_JOBS),
+            "event_id": _deterministic_uuid(rng),
+            "source": rng.choice(SOURCES_JOBS),
             "country": country,
             "posted_date": posted_date,
             "job_title": title,
@@ -96,41 +102,44 @@ def generate_jobs(count=200):
                 f"Required skills and technologies: {', '.join(skills)}. "
                 f"Experience in cybersecurity operations and incident handling is required."
             ),
-            "url": f"https://jobs.example.com/{country.lower()}/{i+1000}",
+            "url": f"https://jobs.example.com/{country.lower()}/{i + 1000}",
         }
         jobs.append(job)
     return jobs
 
 
-def generate_profiles(count=200):
+def generate_profiles(count: int = DEFAULT_COUNT, *, seed: int = DEFAULT_SEED) -> list[dict]:
+    rng = random.Random(seed + 1)
     profiles = []
     base_date = datetime(2026, 9, 15)
 
     for _ in range(count):
-        title, role, skills = random.choice(JOB_ROLES)
-        country = random.choice(EUROPEAN_COUNTRIES)
-        days_offset = random.randint(0, 60)
-        profile_date = (base_date - timedelta(days=days_offset)).strftime(
-            "%Y-%m-%d"
-        )
+        title, role, skills = rng.choice(JOB_ROLES)
+        country = rng.choice(EUROPEAN_COUNTRIES)
+        days_offset = rng.randint(0, 60)
+        profile_date = (base_date - timedelta(days=days_offset)).strftime("%Y-%m-%d")
+        years_experience = rng.randint(1, 15)
 
         # Seleccionar un subconjunto aleatorio de skills del profesional
-        profile_skills = random.sample(skills, k=random.randint(2, len(skills)))
+        profile_skills = rng.sample(skills, k=rng.randint(2, len(skills)))
 
         profile = {
-            "event_id": str(uuid.uuid4()),
-            "source": "stackoverflow",
+            "event_id": _deterministic_uuid(rng),
+            "source": rng.choice(SOURCES_PROFILES),
             "country": country,
             "profile_date": profile_date,
-            "role": title,
-            "skills": profile_skills,
-            "years_experience": random.randint(1, 15),
+            "headline": f"{title} ({role})",
+            "text": (
+                f"{title} with {years_experience} years of cybersecurity experience. "
+                f"Core skills and tools: {', '.join(profile_skills)}. "
+                f"Experienced in {role} workflows and security operations."
+            ),
         }
         profiles.append(profile)
     return profiles
 
 
-def main():
+def main(seed: int = DEFAULT_SEED, count: int = DEFAULT_COUNT) -> None:
     target_dir = os.path.join("shared", "testdata")
     os.makedirs(target_dir, exist_ok=True)
 
@@ -138,19 +147,19 @@ def main():
     profiles_path = os.path.join(target_dir, "profiles_sample.jsonl")
 
     # Guardar ofertas de trabajo en formato JSON Lines
-    jobs = generate_jobs(200)
-    with open(jobs_path, "w", encoding="utf-8") as f:
+    jobs = generate_jobs(count, seed=seed)
+    with open(jobs_path, "w", encoding="utf-8", newline="\n") as f:
         for job in jobs:
             f.write(json.dumps(job, ensure_ascii=False) + "\n")
     print(f"Generadas {len(jobs)} ofertas de prueba en: {jobs_path}")
 
     # Guardar perfiles en formato JSON Lines
-    profiles = generate_profiles(200)
-    with open(profiles_path, "w", encoding="utf-8") as f:
+    profiles = generate_profiles(count, seed=seed)
+    with open(profiles_path, "w", encoding="utf-8", newline="\n") as f:
         for profile in profiles:
             f.write(json.dumps(profile, ensure_ascii=False) + "\n")
     print(f"Generados {len(profiles)} perfiles de prueba en: {profiles_path}")
 
 
 if __name__ == "__main__":
-    main()  
+    main()
