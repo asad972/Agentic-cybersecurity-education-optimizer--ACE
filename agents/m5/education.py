@@ -3,6 +3,7 @@
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
+from ace.ecsf import ECSF_ROLES
 
 _REQUIRED_FIELDS = ("programme_id", "country", "name", "institution")
 _LEVELS = {"bachelor", "master", "phd", "other"}
@@ -23,6 +24,15 @@ def normalize_programme(record: Mapping[str, Any]) -> dict[str, Any]:
     name = _required_text(record["name"], "name")
     institution = _required_text(record["institution"], "institution")
     roles = _text_list(record.get("ecsf_roles", []), "ecsf_roles")
+    if len(roles) != len(set(roles)):
+        raise ValueError("ecsf_roles must not contain duplicate roles")
+    unknown_roles = set(roles) - ECSF_ROLES
+    if unknown_roles:
+        raise ValueError(
+            "ecsf_roles contains non-canonical ECSF role names: "
+            + ", ".join(sorted(unknown_roles))
+        )
+
     level = record.get("level")
     if level is not None:
         if not isinstance(level, str):

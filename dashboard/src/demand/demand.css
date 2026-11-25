@@ -1,0 +1,38 @@
+/* Skills demand dashboard. Colours and sizes follow the shell in styles.css. */
+.demand{margin-top:28px;display:grid;gap:20px}
+.demand-filters{display:flex;flex-wrap:wrap;gap:14px 18px;align-items:flex-end;background:#fff;border:1px solid #e0e7e5;border-radius:12px;padding:16px 20px}
+.demand-filters label{display:grid;gap:5px;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#5b6b70;font-weight:600;min-width:150px;flex:1 1 150px}
+.demand-filters label:nth-child(3){flex:2 1 220px}
+.demand-filters input,.demand-filters select{font:inherit;font-size:13px;letter-spacing:0;text-transform:none;font-weight:400;color:#273a42;background:#f8faf9;border:1px solid #cfdad6;border-radius:7px;padding:8px 10px;min-height:38px;width:100%}
+.demand-filters input:focus-visible,.demand-filters select:focus-visible,.demand-table summary:focus-visible,.link-button:focus-visible{outline:3px solid #d2a854;outline-offset:2px}
+.demand-filters select:disabled{color:#7d8b87}
+.demand-card{background:#fff;border:1px solid #e0e7e5;border-radius:12px;padding:20px 22px;box-shadow:0 4px 16px #183c3003;min-width:0}
+.demand-card-header h2{font-size:17px;font-weight:620;letter-spacing:-.3px;margin:0 0 4px}
+.demand-card-header p{font-size:12px;color:#5b6b70;margin:0 0 12px;line-height:1.6}
+.demand-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.demand-chart{width:100%}
+.demand-chart-canvas{width:100%;height:100%}
+.demand-legend{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:11px;color:#5b6b70;margin:6px 0 0}
+.swatch{display:inline-block;width:14px;height:10px;border-radius:2px;border:1px solid #d5ddda}
+.swatch.no-data{background:#f1f3f2}
+.swatch.outside{background:#fafbfa;border-style:dashed;margin-left:10px}
+.demand-table{margin-top:10px;font-size:12px}
+.demand-table summary{cursor:pointer;color:#2f5f52;font-weight:550;width:max-content}
+.demand-table table{border-collapse:collapse;margin-top:10px;min-width:260px}
+.demand-table caption{text-align:left;color:#5b6b70;padding-bottom:6px}
+.demand-table th,.demand-table td{text-align:left;padding:5px 14px 5px 0;border-bottom:1px solid #edf0ee;font-weight:400}
+.demand-table td{text-align:right;font-variant-numeric:tabular-nums}
+.demand-table thead th{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#5b6b70}
+.link-button{background:none;padding:0;color:#2f5f52;text-decoration:underline;text-underline-offset:2px}
+.demand-state{display:flex;align-items:center;justify-content:center;gap:10px;min-height:160px;font-size:12px;color:#5b6b70;text-align:center;padding:12px}
+.demand-notice{font-size:12px;color:#6b5a2f;background:#f8f5ec;border:1px solid #ece5d2;border-radius:8px;padding:8px 12px;margin:0 0 10px}
+.demand>.demand-notice{margin:0}
+.demand-problem{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;background:#fbf1ef;border:1px solid #efd6d0;color:#7a3324;border-radius:10px;padding:16px 18px;font-size:13px}
+.demand-problem p{margin:0;flex:1 1 260px}
+.demand-problem.compact{font-size:12px}
+.demand-problem button{display:inline-flex;align-items:center;gap:6px;background:#fff;border:1px solid #e3c6bf;color:#7a3324;border-radius:6px;padding:6px 12px;font-size:12px}
+.spin{animation:demand-spin 1s linear infinite}
+@keyframes demand-spin{to{transform:rotate(360deg)}}
+@media(max-width:1000px){.demand-grid{grid-template-columns:1fr}}
+@media(max-width:760px){.demand-card{padding:16px 14px}.demand-filters{padding:14px}}
+@media(prefers-reduced-motion:reduce){.spin{animation:none}}

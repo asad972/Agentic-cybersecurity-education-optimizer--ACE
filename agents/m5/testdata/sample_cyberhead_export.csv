@@ -1,0 +1,4 @@
+programme_id,title,provider,country,language,duration_hours,delivery_mode
+AT-001,Introduction to Cyber Security,Vienna Cyber Academy,Austria,English,40,online
+DE-001,Cloud Security Fundamentals,Berlin Security Institute,Germany,German,24,hybrid
+NL-001,SOC Analyst Bootcamp,Amsterdam Cyber Center,Netherlands,English,80,onsite

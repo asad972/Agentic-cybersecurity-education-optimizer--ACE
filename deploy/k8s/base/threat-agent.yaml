@@ -1,0 +1,70 @@
+# Threat agent (agents/threat/): polls OTX and AbuseIPDB every six hours,
+# answers collection tasks from tasks.collect and publishes to threats.events.
+# Its SQLite state (poll times, unsent messages) lives on a volume, so a
+# restarted pod carries on where it stopped. It needs OTX_API_KEY and
+# ABUSEIPDB_API_KEY from the Secret ace-api-keys and stops at start-up without them.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: threat-agent-state
+  labels:
+    app.kubernetes.io/name: threat-agent
+    app.kubernetes.io/component: agent
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: threat-agent
+  labels:
+    app.kubernetes.io/name: threat-agent
+    app.kubernetes.io/component: agent
+spec:
+  replicas: 1                     # one writer of the SQLite state
+  strategy:
+    type: Recreate                # the old pod lets go of the volume first
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: threat-agent
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: threat-agent
+        app.kubernetes.io/component: agent
+    spec:
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001            # lets the agent write to the volume
+      containers:
+        - name: threat-agent
+          image: ace-threat         # built locally: docker build -t ace-threat -f agents/threat/Dockerfile .
+          imagePullPolicy: IfNotPresent
+          # The image's default command: --consume-tasks
+          envFrom:
+            - configMapRef:
+                name: ace-config
+            - secretRef:
+                name: ace-api-keys
+                optional: true
+          volumeMounts:
+            - name: state
+              mountPath: /state
+          securityContext:
+            allowPrivilegeEscalation: false
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: state
+          persistentVolumeClaim:
+            claimName: threat-agent-state

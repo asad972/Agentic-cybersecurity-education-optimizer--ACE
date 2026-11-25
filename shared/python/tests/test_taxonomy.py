@@ -33,6 +33,18 @@ def test_load_repository_taxonomy_and_match_by_name_and_alias() -> None:
     assert tax.match("   ") is None
 
 
+def test_compile_phrase_pattern_unicode_and_symbols() -> None:
+    iso_pat = compile_phrase_pattern("ISO")
+    assert iso_pat.search("Aligned with ISO 27001 controls") is not None
+    assert iso_pat.search("ISOé") is None
+    assert iso_pat.search("éISO") is None
+
+    sec_plus_pat = compile_phrase_pattern("Security+")
+    assert sec_plus_pat.search("Holds CompTIA Security+ certification") is not None
+    assert sec_plus_pat.search("Security+1") is None
+    assert sec_plus_pat.search("CyberSecurity+") is None
+
+
 def test_extract_text_word_boundaries_and_role_inference() -> None:
     tax = load_taxonomy()
     result = tax.extract_text(
@@ -72,15 +84,38 @@ def test_invalid_taxonomy_directory_raises(tmp_path: Path) -> None:
     with pytest.raises(TaxonomyError):
         load_taxonomy(tmp_path)
 
-def test_compile_phrase_pattern_unicode_and_symbols() -> None:
-    iso_pattern = compile_phrase_pattern("ISO")
-    assert iso_pattern.search("Sécurité ISO 27001") is not None
-    assert iso_pattern.search("ISOé und Übung") is None
 
-    ubung_pattern = compile_phrase_pattern("Übung")
-    assert ubung_pattern.search("ISOé und Übung") is not None
+def test_canonical_v1_files_exist_and_match_all_member_contributions() -> None:
+    import csv
+    from ace.ecsf import ECSF_ROLES
 
-    sec_plus = compile_phrase_pattern("Security+")
-    assert sec_plus.search("Holds CompTIA Security+ certification") is not None
-    assert sec_plus.search("CompTIA Security") is None
-    assert sec_plus.search("Security+Plus") is None
+    tax_dir = Path(__file__).resolve().parents[2] / "taxonomy"
+    assert (tax_dir / "skills.csv").is_file()
+    assert (tax_dir / "certifications.csv").is_file()
+    assert (tax_dir / "ecsf_roles.csv").is_file()
+
+    tax = load_taxonomy()
+    assert set(tax.roles) == set(ECSF_ROLES)
+    assert len(tax.skills) == 83
+    assert len(tax.certifications) == 55
+
+    # Verify entries contributed by each team member (M1-M5) resolve canonically
+    assert tax.match("Credential Dumping") == Match("skill", "Credential Dumping")  # M1
+    assert tax.match("SIEM") == Match("skill", "SIEM")  # M2
+    assert tax.match("AWS Security") == Match("skill", "AWS Security")  # M3
+    assert tax.match("ATT&CK") == Match("skill", "MITRE ATT&CK")  # M4
+    assert tax.match("Cybersecurity Training") == Match("skill", "Cybersecurity Training")  # M5
+    assert tax.match("OSCP") == Match("certification", "OSCP")
+
+    contrib_dir = tax_dir / "contributions"
+    expected_skills = set()
+    for p in contrib_dir.glob("*_skills.csv"):
+        with p.open(encoding="utf-8", newline="") as f:
+            expected_skills.update(row["skill"].strip() for row in csv.DictReader(f))
+    assert set(tax.skills) == expected_skills
+
+    expected_certs = set()
+    for p in contrib_dir.glob("*_certifications.csv"):
+        with p.open(encoding="utf-8", newline="") as f:
+            expected_certs.update(row["certification"].strip() for row in csv.DictReader(f))
+    assert set(tax.certifications) == expected_certs
