@@ -13,33 +13,45 @@ inter-rater agreement or performance on real hiring data.
 
 ## Results on November 26, 2026
 
-The taxonomy baseline and Qwen completed all 50 ads at revision `0c4565f`.
-Qwen ran on native Ollama 0.40.18 using model digest prefix `359d7dd4bcda`.
-The 50 benchmark calls had zero cache hits and zero failures. Both modes found
-79 correct canonical Skill labels, added 18 incorrect labels, and missed 46.
+All three modes completed all 50 ads at scoring revision `719b54b`. Qwen's
+original live run used Ollama 0.40.18 and model digest prefix `359d7dd4bcda` at
+`0c4565f`. We replayed all 50 answers from the Cassandra cache at the scoring
+revision and checked that every extracted label matched the original run.
+Claude Haiku 5.5 made 50 successful live calls. ACE's budget ledger settled
+€0.007179 for the benchmark and €0.000096 for the separate smoke test.
 
-| Metric | Taxonomy baseline | Qwen |
-| --- | ---: | ---: |
-| Skill precision | 81.4% | 81.4% |
-| Skill recall | 63.2% | 63.2% |
-| Skill F1 | 71.2% | 71.2% |
-| Certification F1 | 96.3% | 96.3% |
-| ECSF role accuracy | 50.0% | 76.0% |
-| Unmapped phrase F1 | 0.0% | 24.4% |
+| Metric | Taxonomy baseline | Qwen | Claude |
+| --- | ---: | ---: | ---: |
+| Skill precision | 81.4% | 81.4% | 81.4% |
+| Skill recall | 63.2% | 63.2% | 63.2% |
+| Skill F1 | 71.2% | 71.2% | 71.2% |
+| Certification F1 | 96.3% | 96.3% | 96.3% |
+| ECSF role accuracy | 50.0% | 76.0% | 82.0% |
+| Unmapped phrase F1 | 0.0% | 24.4% | 52.5% |
 
-Skill F1 was 88.7% for English, 59.0% for German, and 50.9% for French in both
-modes. Qwen improved role classification on cases such as `de-03`, where it
-identified the Digital Forensics Investigator and the baseline returned no role.
-On `de-01` it found `Alarmpriorisierung`, a gold unmapped phrase, but also
-returned German expressions for existing canonical Skills as unmapped. It
-found 19 of the 40 gold unmapped phrases with 97 false positives. On `de-13`
-both modes picked up Cloud Security from a reference to another team's vacancy.
-The results illustrate how S2's union with the taxonomy baseline preserves
+Canonical Skill predictions matched on every ad, with 79 true positives,
+18 false positives and 46 false negatives. Skill F1 was 88.7% for English,
+59.0% for German, and 50.9% for French in all three modes. On `de-13`, all
+three picked up Cloud Security from a reference to another team's vacancy.
+These results illustrate how S2's union with the taxonomy baseline preserves
 existing matches and how exact alias coverage can limit multilingual recall.
 
-Claude has no measured result. The hosted preflight stopped before any call
-because no team API key was configured. `results.json` contains the observed
-baseline and local metrics and leaves the final recommendation unset.
+Claude correctly classified the privacy adviser in `en-13` as a Cyber Legal,
+Policy and Compliance Officer. Both models found the gold unmapped phrase
+`Alarmpriorisierung` for `de-01`; Claude still returned `Sigma-Regeln` as
+unmapped, even though it describes a canonical Skill. Claude recovered
+32 of 40 gold unmapped phrases with 50 false positives. Qwen found 19 of 40
+with 97 false positives.
+
+**Recommendation: keep Qwen as the S2 default.** Claude's canonical Skill F1
+gain was zero, with a 95% paired interval of `[0, 0]`. The measured gains for
+ECSF roles and unmapped phrases make Claude worth considering if either output
+becomes the primary target.
+
+The first hosted smoke exposed a wire-schema requirement. The Anthropic
+adapter now applies the SDK's `transform_schema()` before token counting and
+generation. ACE continues to validate returned data against the original
+Pydantic model. [Anthropic structured-output requirements](https://platform.claude.com/docs/en/build-with-claude/structured-outputs)
 
 ## Run
 
