@@ -1,0 +1,309 @@
+{
+  "coverage": {
+    "baseline": {
+      "cache_hits": 0,
+      "cached_response_cost_eur": "0",
+      "completed": 50,
+      "expected": 50,
+      "failed": {},
+      "input_tokens": 0,
+      "missing": [],
+      "model": null,
+      "output_tokens": 0,
+      "recovered_errors": 0,
+      "settled_spend_eur": "0",
+      "settled_spend_eur_by_utc_day": {}
+    },
+    "hosted": null,
+    "local": {
+      "cache_hits": 0,
+      "cached_response_cost_eur": "0",
+      "completed": 50,
+      "expected": 50,
+      "failed": {},
+      "input_tokens": 11909,
+      "missing": [],
+      "model": "qwen3:4b",
+      "output_tokens": 2870,
+      "recovered_errors": 0,
+      "settled_spend_eur": "0",
+      "settled_spend_eur_by_utc_day": {}
+    }
+  },
+  "final_comparison": null,
+  "paired_ads": 50,
+  "scores_on_common_ads": {
+    "baseline": {
+      "de": {
+        "ads": 15,
+        "certifications": {
+          "f1": 1.0,
+          "fn": 0,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "tp": 7
+        },
+        "role": {
+          "accuracy": 0.4,
+          "correct": 6
+        },
+        "skills": {
+          "f1": 0.5901639344262295,
+          "fn": 21,
+          "fp": 4,
+          "precision": 0.8181818181818182,
+          "recall": 0.46153846153846156,
+          "tp": 18
+        },
+        "unmapped": {
+          "f1": 0.0,
+          "fn": 10,
+          "fp": 0,
+          "precision": null,
+          "recall": 0.0,
+          "tp": 0
+        }
+      },
+      "en": {
+        "ads": 20,
+        "certifications": {
+          "f1": 0.9523809523809523,
+          "fn": 0,
+          "fp": 1,
+          "precision": 0.9090909090909091,
+          "recall": 1.0,
+          "tp": 10
+        },
+        "role": {
+          "accuracy": 0.65,
+          "correct": 13
+        },
+        "skills": {
+          "f1": 0.8867924528301887,
+          "fn": 2,
+          "fp": 10,
+          "precision": 0.8245614035087719,
+          "recall": 0.9591836734693877,
+          "tp": 47
+        },
+        "unmapped": {
+          "f1": 0.0,
+          "fn": 18,
+          "fp": 0,
+          "precision": null,
+          "recall": 0.0,
+          "tp": 0
+        }
+      },
+      "fr": {
+        "ads": 15,
+        "certifications": {
+          "f1": 0.9473684210526315,
+          "fn": 0,
+          "fp": 1,
+          "precision": 0.9,
+          "recall": 1.0,
+          "tp": 9
+        },
+        "role": {
+          "accuracy": 0.4,
+          "correct": 6
+        },
+        "skills": {
+          "f1": 0.509090909090909,
+          "fn": 23,
+          "fp": 4,
+          "precision": 0.7777777777777778,
+          "recall": 0.3783783783783784,
+          "tp": 14
+        },
+        "unmapped": {
+          "f1": 0.0,
+          "fn": 12,
+          "fp": 0,
+          "precision": null,
+          "recall": 0.0,
+          "tp": 0
+        }
+      },
+      "overall": {
+        "ads": 50,
+        "certifications": {
+          "f1": 0.9629629629629629,
+          "fn": 0,
+          "fp": 2,
+          "precision": 0.9285714285714286,
+          "recall": 1.0,
+          "tp": 26
+        },
+        "role": {
+          "accuracy": 0.5,
+          "correct": 25
+        },
+        "skills": {
+          "f1": 0.7117117117117117,
+          "fn": 46,
+          "fp": 18,
+          "precision": 0.8144329896907216,
+          "recall": 0.632,
+          "tp": 79
+        },
+        "unmapped": {
+          "f1": 0.0,
+          "fn": 40,
+          "fp": 0,
+          "precision": null,
+          "recall": 0.0,
+          "tp": 0
+        }
+      }
+    },
+    "local": {
+      "de": {
+        "ads": 15,
+        "certifications": {
+          "f1": 1.0,
+          "fn": 0,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "tp": 7
+        },
+        "role": {
+          "accuracy": 0.8,
+          "correct": 12
+        },
+        "skills": {
+          "f1": 0.5901639344262295,
+          "fn": 21,
+          "fp": 4,
+          "precision": 0.8181818181818182,
+          "recall": 0.46153846153846156,
+          "tp": 18
+        },
+        "unmapped": {
+          "f1": 0.2978723404255319,
+          "fn": 3,
+          "fp": 30,
+          "precision": 0.1891891891891892,
+          "recall": 0.7,
+          "tp": 7
+        }
+      },
+      "en": {
+        "ads": 20,
+        "certifications": {
+          "f1": 0.9523809523809523,
+          "fn": 0,
+          "fp": 1,
+          "precision": 0.9090909090909091,
+          "recall": 1.0,
+          "tp": 10
+        },
+        "role": {
+          "accuracy": 0.7,
+          "correct": 14
+        },
+        "skills": {
+          "f1": 0.8867924528301887,
+          "fn": 2,
+          "fp": 10,
+          "precision": 0.8245614035087719,
+          "recall": 0.9591836734693877,
+          "tp": 47
+        },
+        "unmapped": {
+          "f1": 0.29508196721311475,
+          "fn": 9,
+          "fp": 34,
+          "precision": 0.20930232558139536,
+          "recall": 0.5,
+          "tp": 9
+        }
+      },
+      "fr": {
+        "ads": 15,
+        "certifications": {
+          "f1": 0.9473684210526315,
+          "fn": 0,
+          "fp": 1,
+          "precision": 0.9,
+          "recall": 1.0,
+          "tp": 9
+        },
+        "role": {
+          "accuracy": 0.8,
+          "correct": 12
+        },
+        "skills": {
+          "f1": 0.509090909090909,
+          "fn": 23,
+          "fp": 4,
+          "precision": 0.7777777777777778,
+          "recall": 0.3783783783783784,
+          "tp": 14
+        },
+        "unmapped": {
+          "f1": 0.125,
+          "fn": 9,
+          "fp": 33,
+          "precision": 0.08333333333333333,
+          "recall": 0.25,
+          "tp": 3
+        }
+      },
+      "overall": {
+        "ads": 50,
+        "certifications": {
+          "f1": 0.9629629629629629,
+          "fn": 0,
+          "fp": 2,
+          "precision": 0.9285714285714286,
+          "recall": 1.0,
+          "tp": 26
+        },
+        "role": {
+          "accuracy": 0.76,
+          "correct": 38
+        },
+        "skills": {
+          "f1": 0.7117117117117117,
+          "fn": 46,
+          "fp": 18,
+          "precision": 0.8144329896907216,
+          "recall": 0.632,
+          "tp": 79
+        },
+        "unmapped": {
+          "f1": 0.24358974358974358,
+          "fn": 21,
+          "fp": 97,
+          "precision": 0.16379310344827586,
+          "recall": 0.475,
+          "tp": 19
+        }
+      }
+    }
+  },
+  "skill_f1_gains_over_baseline": {
+    "local": {
+      "de": 0.0,
+      "en": 0.0,
+      "fr": 0.0,
+      "overall": 0.0
+    }
+  },
+  "study": {
+    "corpus_sha256": "f9bb7756298d80e83723a385804d95bfc961b4b6a1776d82e94b18dd724d95a8",
+    "max_output_tokens": 512,
+    "prompt_version": "v3",
+    "revision": "0c4565f284c85a2597b0b2bd8d7aafdd6813d1da",
+    "sample": "benchmark",
+    "taxonomy_sha256": {
+      "certifications.csv": "af5b1619f5d16f3e56001019610eb3aacab75dc510e513d97119c9e9fd4f6684",
+      "ecsf_roles.csv": "c68bbae27248678e643b8034081477d048f2cd8ce3335ac9e2b8f4bf808486bf",
+      "skills.csv": "52cb6214b3539db20a0d20b4acda787573bdcaa2295c420aac32fb5314716d7a"
+    }
+  }
+}

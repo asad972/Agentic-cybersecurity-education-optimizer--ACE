@@ -1,6 +1,7 @@
 from dataclasses import replace
 from decimal import Decimal
 import json
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -106,6 +107,22 @@ def test_hosted_budget_failure_stops_the_run(ads, taxonomy):
     assert ads[1].id not in data["rows"]
 
 
+def test_cached_cost_is_separate_from_settled_hosted_spend(ads, taxonomy):
+    client = Mock()
+    client.store.budget_snapshot.side_effect = [
+        SimpleNamespace(spent_eur=Decimal("0.10")),
+        SimpleNamespace(spent_eur=Decimal("0.12")),
+    ]
+    client.generate.return_value = replace(answer(), cached=True, cost_eur=Decimal("0.03"))
+    data = checkpoint("hosted")
+    assert evaluate(ads[:1], taxonomy, data, Mock(), client)
+    baseline = checkpoint("baseline")
+    assert evaluate(ads[:1], taxonomy, baseline, Mock())
+    usage = summarize(ads[:1], {"baseline": baseline, "hosted": data})["coverage"]["hosted"]
+    assert usage["cached_response_cost_eur"] == "0.03"
+    assert usage["settled_spend_eur"] == "0.02"
+
+
 def test_partial_summary_scores_only_common_ads_and_makes_no_recommendation(ads, taxonomy):
     baseline = checkpoint("baseline")
     assert evaluate(ads, taxonomy, baseline, Mock())
@@ -118,3 +135,19 @@ def test_partial_summary_scores_only_common_ads_and_makes_no_recommendation(ads,
     assert result["coverage"]["baseline"]["completed"] == 50
     assert result["coverage"]["hosted"] is None
     assert result["final_comparison"] is None
+
+
+def test_complete_summary_produces_a_paired_recommendation(ads, taxonomy):
+    baseline = checkpoint("baseline")
+    assert evaluate(ads, taxonomy, baseline, Mock())
+    local = checkpoint("local")
+    hosted = checkpoint("hosted")
+    for ad in ads:
+        local["rows"][ad.id] = {
+            "status": "ok", "labels": {**ad.expected, "skills": []}, "errors": [],
+        }
+        hosted["rows"][ad.id] = {"status": "ok", "labels": ad.expected, "errors": []}
+    result = summarize(ads, {"baseline": baseline, "local": local, "hosted": hosted})
+    assert result["paired_ads"] == 50
+    assert result["final_comparison"]["recommendation"] == "hosted"
+    assert result["final_comparison"]["interval_95"]["valid_draws"] == 10_000
