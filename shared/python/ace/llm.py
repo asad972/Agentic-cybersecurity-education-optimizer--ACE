@@ -916,10 +916,14 @@ class AnthropicProvider:
 
     @staticmethod
     def _output_config(request: LLMRequest[Any]) -> dict[str, Any]:
+        from anthropic import transform_schema
+
+        # Use Anthropic's wire schema for both calls. LLMClient still validates
+        # the response against the original Pydantic model.
         return {
             "format": {
                 "type": "json_schema",
-                "schema": request.response_model.model_json_schema(),
+                "schema": transform_schema(request.response_model),
             }
         }
 
