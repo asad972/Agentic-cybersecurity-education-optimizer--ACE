@@ -90,7 +90,7 @@ Workforce records use `geography_level` (`country`, `region`, or `global`)
 and `geography`. A region or global estimate stays at the scope printed in its
 ISC2 source; regional totals are never apportioned to countries.
 
-**Orchestration:** the orchestrator is the planning agent, built with LangGraph or CrewAI in Python. Every 6 hours it reads coverage from Kafka (job ads per country from `agg.demand_daily`, programmes from `raw.programmes`, threats from `agg.threats_daily`, rejected messages from `errors.invalid`), finds gaps such as "few Job Ads for PL", and uses the LLM module to choose from a fixed list of actions that live sources can perform:
+**Orchestration:** the orchestrator is the planning agent in Python using `ace.llm` (with a deterministic rule-based fallback). Every 6 hours it reads coverage from Kafka (job ads per country from `agg.demand_daily`, programmes from `raw.programmes`, threats from `agg.threats_daily`, rejected messages from `errors.invalid`), finds gaps such as "few Job Ads for PL", and uses the LLM module to choose from a fixed list of actions that live sources can perform:
 
 | Action | Agent | Limit per task |
 | --- | --- | --- |
