@@ -145,8 +145,6 @@ jobs:
       # The batch jobs import ace.batch (#111), and its batch extra brings the
       # Cassandra driver, as in the batch Dockerfiles. Without the stages
       # extra, so River and its pandas pin stay out of this environment.
-      # Before #111 is on master, pip warns that the batch extra is missing
-      # and installs the shared package without it.
       - name: Install the shared package and the batch package
         run: python -m pip install -e "shared/python[batch]" -e "batch/${{ matrix.job }}[dev]"
       # From the repository root, because the jobs read shared/taxonomy from

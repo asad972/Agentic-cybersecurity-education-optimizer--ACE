@@ -14,17 +14,19 @@ A new push to a pull request cancels the run that is still going for the older c
 | Batch job (forecast), Batch job (gap) | Installs `shared/python` with only the `batch` extra, then `batch/forecast` or `batch/gap`, and runs its tests from the repository root; tests that need a live Cassandra skip themselves | Python 3.11, as in the batch images |
 | Monitoring exporter | Installs the shared package and `deploy/monitoring/exporter`, runs its tests | Python 3.11 |
 | Prometheus config and rules | `promtool check config` on `prometheus.yml` and the rules it loads, `promtool test rules` on the rule tests | `prom/prometheus` image |
-| M5 agents | Installs `shared/python` and runs the tests in `agents/m5` | Python 3.11, as in the M5 agent images |
+| M5 agents | Installs `shared/python` with the `llm` extra and runs the tests in `agents/m5` | Python 3.11, as in the M5 agent images |
 | Threat agent | Installs `shared/python` and `agents/threat/requirements-dev.txt`, runs `agents/threat/tests` | Python 3.12, as in `agents/threat/Dockerfile` |
 | Job ads agent | Installs `shared/python` plus `kafka-python`, `cassandra-driver` and `pyarrow` at the versions in `agents/job_ads/Dockerfile`, puts `agents` on the path and runs `agents/job_ads` | Python 3.11, as in `agents/job_ads/Dockerfile` |
+| Profiles agent | Installs `shared/python` plus `kafka-python` and `cassandra-driver` at the versions in `agents/profiles/Dockerfile`, puts `agents` on the path and runs `agents/profiles` | Python 3.11, as in `agents/profiles/Dockerfile` |
+| Orchestrator | Installs `shared/python` with the `llm` extra plus `kafka-python` at the version in `agents/orchestrator/Dockerfile`, puts `agents` on the path and runs `agents/orchestrator` | Python 3.11, as in `agents/orchestrator/Dockerfile` |
 | M3 experiments | Builds `experiments/m3/Dockerfile`, runs the stream experiment tests in its stream environment and the forecast and harness tests in its forecast environment, then `--check experiments/m3/results.json` recomputes every experiment and fails if a result differs | Docker |
 | API | Installs `api/` and runs `api/tests` | Python 3.12, as in `api/Dockerfile` |
 | Dashboard tests and build | `pnpm install --frozen-lockfile`, `pnpm test` (Vitest unit tests) and `pnpm build` (type check and production build) | Node 22, pnpm from `package.json` |
-| Docker images and Compose files | Checks `docker-compose.yml`, `api/compose.yml` and `dashboard/compose.yml`, then builds the API, dashboard, sink, monitoring exporter, three M5 agent, threat agent, job ads agent, forecast, gap, S3, S4, S7 and S8 images (built only, never pushed) | Docker |
+| Docker images and Compose files | Checks `docker-compose.yml`, `api/compose.yml` and `dashboard/compose.yml`, then builds the API, dashboard, sink, monitoring exporter, three M5 agent, threat agent, job ads agent, profiles agent, orchestrator, forecast, gap, S3, S4, S7 and S8 images (built only, never pushed) | Docker |
 | Setup script (bash) | `bash -n` and ShellCheck on `setup.sh` | Ubuntu |
 | Setup script (Windows PowerShell 5.1) | Parses `setup.ps1` and checks it is ASCII-only, since PowerShell 5.1 misreads other characters | Windows PowerShell 5.1 |
 
-New tests are picked up without changing the workflow: a stage's tests in `streaming/<stage>/tests/`, new tests in `agents/m5`, `agents/threat/tests`, `agents/job_ads/tests` or `batch/*/tests`, new API tests in `api/tests/`, new dashboard pages under `dashboard/src/`. The M3 experiment tests are the exception: each file is named in `ci.yml`, because it has to run in the right one of the image's two environments, so a new file in `experiments/m3/tests/` needs adding there. A stage that needs a package beyond the shared one adds it, pinned exactly, to the `stages` extra in `shared/python/pyproject.toml`, as River is, so the stage images and Flink get it too. Both stage jobs also install any `streaming/<stage>/requirements.txt`. Only a new image, a new agent folder or a new Python package with its own `pyproject.toml` needs a new step in `ci.yml`.
+New tests are picked up without changing the workflow: a stage's tests in `streaming/<stage>/tests/`, new tests in `agents/m5`, `agents/threat/tests`, `agents/job_ads/tests`, `agents/profiles/tests`, `agents/orchestrator/tests` or `batch/*/tests`, new API tests in `api/tests/`, new dashboard pages under `dashboard/src/`. The M3 experiment tests are the exception: each file is named in `ci.yml`, because it has to run in the right one of the image's two environments, so a new file in `experiments/m3/tests/` needs adding there. A stage that needs a package beyond the shared one adds it, pinned exactly, to the `stages` extra in `shared/python/pyproject.toml`, as River is, so the stage images and Flink get it too. Both stage jobs also install any `streaming/<stage>/requirements.txt`. Only a new image, a new agent folder or a new Python package with its own `pyproject.toml` needs a new step in `ci.yml`.
 
 Each stage folder and its `tests/` folder need an empty `__init__.py`, as in `streaming/s4_demand_frequency/`. Without them, two test files with the same name in different folders (for example two `test_stage.py`) stop the whole test run.
 
@@ -33,7 +35,7 @@ All jobs must pass before a pull request is merged. The Flink job is the slowest
 ### What is not checked yet
 
 - The setup scripts come with their own pull request. While `setup.sh` or `setup.ps1` is not on the branch, its job skips its check and still shows a green tick, with a notice such as "setup.sh is not on this branch" in the job's summary. A green tick on those two jobs only means "passed or not there yet". Every other job always runs.
-- Only the images that have a Dockerfile and a `docker build` step are built: the API, the dashboard, the sink, the monitoring exporter, the three M5 agents, the threat agent, the job ads agent, the forecast and gap jobs, and S3, S4, S7 and S8 in the `docker` job, plus the M3 experiments image in its own job. Apart from the M3 image, which runs its tests and the results check, the images are built but never started, so CI does not check that a container runs. A new Dockerfile (another agent or stage) needs its own `docker build` step.
+- Only the images that have a Dockerfile and a `docker build` step are built: the API, the dashboard, the sink, the monitoring exporter, the three M5 agents, the threat agent, the job ads agent, the profiles agent, the orchestrator, the forecast and gap jobs, and S3, S4, S7 and S8 in the `docker` job, plus the M3 experiments image in its own job. Apart from the M3 image, which runs its tests and the results check, the images are built but never started, so CI does not check that a container runs. A new Dockerfile (another agent or stage) needs its own `docker build` step.
 - No job runs against a real Kafka or Cassandra. Tests that need a live Cassandra (such as `shared/python/tests/test_llm_cassandra.py`) are skipped.
 
 ### Making the checks required
@@ -87,6 +89,15 @@ python -m pytest -q agents/job_ads
 Remove-Item Env:PYTHONPATH
 ```
 
+Profiles agent and orchestrator, in the same environment (`kafka-python` and `cassandra-driver` are already installed by the step above):
+
+```powershell
+$env:PYTHONPATH = 'shared/python;agents'
+python -m pytest -q agents/profiles
+python -m pytest -q agents/orchestrator
+Remove-Item Env:PYTHONPATH
+```
+
 Batch jobs, each in its own Python 3.11 environment (the forecast job pins pandas 3, which River in the shared package's `stages` extra cannot use, so only the `batch` extra is installed):
 
 ```powershell
@@ -99,8 +110,6 @@ C:\venvs\ace-gap\Scripts\Activate.ps1
 pip install -e "shared/python[batch]" -e "batch/gap[dev]"
 python -m pytest batch/gap/tests
 ```
-
-Until #111 is on master, pip warns that `ace` has no `batch` extra and installs the shared package without it. The batch jobs then still get the Cassandra driver from their own `pyproject.toml`.
 
 M3 experiments (Docker Desktop running). The image has two separate environments, so each test file runs with the Python it belongs to:
 
@@ -153,6 +162,8 @@ docker build -f agents/m5/workforce_agent/Dockerfile .
 docker build -f agents/m5/platform_agent/Dockerfile .
 docker build -f agents/threat/Dockerfile .
 docker build -f agents/job_ads/Dockerfile .
+docker build -f agents/profiles/Dockerfile .
+docker build -f agents/orchestrator/Dockerfile .
 docker build -f batch/forecast/Dockerfile .
 docker build -f batch/gap/Dockerfile .
 docker build --target runtime -f streaming/s3_top10/Dockerfile .
