@@ -1,7 +1,9 @@
 """Skills demand endpoints, tested with a fake Cassandra session (no driver, no database)."""
 from collections import namedtuple
 from datetime import date, datetime, timedelta, timezone
+from types import SimpleNamespace
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 import pytest
 
@@ -29,14 +31,26 @@ class Session:
         self.replay_days = []
         self.prepared = []
         self.reads = []
+        self.timeouts = []
         self.fail = None
+        self.now = 0.0            # fake clock, used by demand.monotonic in the slow-read tests
+        self.read_seconds = 0.0   # how long each read takes on the fake clock
+        self.prepare_seconds = 0.0  # how long each prepare takes on the fake clock
 
     def prepare(self, cql):
+        # Preparing is a network call; it must not block other requests on the cache lock.
+        assert not demand._prepared_lock.locked(), "prepare runs while holding the cache lock"
+        self.now += self.prepare_seconds
         self.prepared.append(cql)
         return cql
 
-    def execute(self, statement, values):
+    def execute(self, statement, values, timeout=None):
         assert statement in CQL.values(), "only prepared statements from CQL are executed"
+        self.timeouts.append(timeout)
+        if self.read_seconds > timeout:
+            self.now += timeout
+            raise TimeoutError("read timed out")
+        self.now += self.read_seconds
         if self.fail:
             raise self.fail
         values = tuple(values)
@@ -134,6 +148,15 @@ def test_demand_items_sums_the_skills_scope_most_demanded_first(client, session)
     assert countries == list(demand.SKILLS_SCOPE) and len(countries) == 32
 
 
+def test_skills_scope_is_eu27_eea_uk_and_switzerland():
+    eu27 = {"AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE",
+            "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE"}
+    eea_outside_eu = {"IS", "LI", "NO"}
+    assert len(eu27) == 27
+    assert len(demand.SKILLS_SCOPE) == 32
+    assert set(demand.SKILLS_SCOPE) == eu27 | eea_outside_eu | {"GB", "CH"}
+
+
 def test_demand_items_warns_when_a_partition_hits_the_limit(client, session, monkeypatch, caplog):
     monkeypatch.setattr(demand, "ITEMS_LIMIT", 2)
     session.demand_by_day[("DE", DAY, "skill")] = [ItemRow("SIEM", 5), ItemRow("Python", 2)]
@@ -143,6 +166,65 @@ def test_demand_items_warns_when_a_partition_hits_the_limit(client, session, mon
     assert response.status_code == 200
     warnings = [record.getMessage() for record in caplog.records]
     assert len(warnings) == 1 and "DE" in warnings[0] and "2-row limit" in warnings[0]
+
+
+def test_every_read_has_a_timeout(client, session):
+    client.get("/top10", params={"country": "DE", "kind": "skill", "date": "2026-10-01"})
+    client.get("/demand/map", params={"kind": "skill", "item": "SIEM", "date": "2026-10-01"})
+    client.get("/demand/items", params={"kind": "skill", "date": "2026-10-01"})
+    client.get("/demand/latest-day")
+    assert len(session.timeouts) > 4
+    assert set(session.timeouts) == {demand.READ_TIMEOUT}
+
+
+@pytest.mark.parametrize("path,params", [
+    ("/top10", {"country": "DE", "kind": "skill", "date": "2026-10-01"}),
+    ("/demand/items", {"kind": "skill", "date": "2026-10-01"}),
+    ("/demand/latest-day", {}),
+])
+def test_slow_reads_stop_at_the_request_budget(client, session, monkeypatch, path, params):
+    # Every read takes just under READ_TIMEOUT, so no single read times out.
+    monkeypatch.setattr(demand, "monotonic", lambda: session.now)
+    session.read_seconds = demand.READ_TIMEOUT - 0.1
+    response = client.get(path, params=params)
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Cassandra is too slow: the request ran out of time"}
+    assert session.now <= demand.REQUEST_BUDGET
+    assert len(session.timeouts) == 6   # 5 full reads of 4.9 s, then one capped at the 0.5 s left
+    assert session.timeouts[-1] == pytest.approx(demand.REQUEST_BUDGET - 5 * session.read_seconds)
+
+
+def test_a_late_prepare_does_not_run_past_the_request_budget(session, monkeypatch):
+    # Five reads use up all but 0.5 s of the budget; the next statement was never
+    # prepared, and a prepare can take PREPARE_TIMEOUT. Starting it would end past
+    # the budget (and nginx's 30 s), so the request stops before preparing.
+    monkeypatch.setattr(demand, "monotonic", lambda: session.now)
+    session.prepare_seconds = demand.PREPARE_TIMEOUT
+    session.read_seconds = (demand.REQUEST_BUDGET - demand.PREPARE_TIMEOUT - 0.5) / 5
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(database=Database(session))))
+
+    def reads(query):
+        for _ in range(5):
+            query("top10", "DE", DAY, "skill")
+        return query("map", "skill", "SIEM", DAY)
+
+    with pytest.raises(HTTPException) as raised:
+        demand._read(request, reads)
+    assert raised.value.status_code == 503
+    assert raised.value.detail == "Cassandra is too slow: the request ran out of time"
+    assert session.now <= demand.REQUEST_BUDGET
+    assert CQL["map"] not in session.prepared
+
+
+def test_one_timed_out_read_is_reported_as_unavailable(client, session, monkeypatch, caplog):
+    # A single read that times out long before the budget ends means Cassandra is not
+    # answering, not that the request ran out of time.
+    monkeypatch.setattr(demand, "monotonic", lambda: session.now)
+    session.read_seconds = demand.READ_TIMEOUT + 1
+    response = client.get("/demand/map", params={"kind": "skill", "item": "SIEM", "date": "2026-10-01"})
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Cassandra is unavailable"}
+    assert any("Demand read failed after 5.0 s" in record.getMessage() for record in caplog.records)
 
 
 def test_statements_are_prepared_once_per_session(client, session):
