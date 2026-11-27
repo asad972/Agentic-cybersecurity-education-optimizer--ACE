@@ -20,8 +20,9 @@ tables; it does not change shared schemas or stream contracts.
 - `EU` is not a country and is never written to `skills_gap`.
 
 The fixed scope is EU27, Iceland, Liechtenstein, Norway, `GB`, and Switzerland.
-Canonical Skills and ECSF mappings come from `shared/taxonomy/skills.csv` and
-`ecsf_roles.csv`. Contribution files are used until that canonical pair lands.
+Canonical Skills and ECSF mappings are loaded through `ace.taxonomy`, including
+its contribution-file fallback. Country scope, Cassandra connection settings,
+and calendar helpers come from `ace.batch`.
 Unknown historical Skills are skipped. One structured warning reports their
 aggregate Demand and Supply row counts without logging names or payloads.
 
@@ -35,7 +36,13 @@ If the month has no Demand input, existing role relationships are left intact.
 
 ## Run and test
 
+Skills Gap imports `ace.batch` and `ace.taxonomy` from the shared package. From
+the repository root, install the local `ace` package with its `batch` extra
+(which provides the Cassandra driver) before installing Skills Gap. Both steps
+use the same Python environment.
+
 ```bash
+python -m pip install -e "shared/python[batch]"
 python -m pip install -e "batch/gap[dev]"
 python -m pytest -q batch/gap/tests
 python -m ace_gap --month 2026-10

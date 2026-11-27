@@ -6,10 +6,11 @@ RUN apt-get update \
 
 WORKDIR /opt/ace
 
+COPY shared/python /tmp/ace-shared
 COPY batch/forecast/pyproject.toml /tmp/ace-forecast/pyproject.toml
 COPY batch/forecast/ace_forecast /tmp/ace-forecast/ace_forecast
-RUN python -m pip install --no-cache-dir /tmp/ace-forecast \
-    && rm -rf /tmp/ace-forecast
+RUN python -m pip install --no-cache-dir "/tmp/ace-shared[batch]" /tmp/ace-forecast \
+    && rm -rf /tmp/ace-shared /tmp/ace-forecast
 
 COPY shared/taxonomy /opt/ace/shared/taxonomy
 

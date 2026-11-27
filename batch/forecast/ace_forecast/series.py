@@ -6,16 +6,9 @@ from collections import defaultdict
 from datetime import date
 from typing import Iterable, Mapping
 
+from ace.batch import add_months, month_start
+
 from .types import DemandPoint, MonthlySeries
-
-
-def month_start(value: date) -> date:
-    return date(value.year, value.month, 1)
-
-
-def add_months(value: date, count: int) -> date:
-    index = value.year * 12 + value.month - 1 + count
-    return date(index // 12, index % 12 + 1, 1)
 
 
 def complete_month_cutoff(as_of: date) -> date:

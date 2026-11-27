@@ -1,4 +1,4 @@
-"""Tests for the shared ace.taxonomy module."""
+﻿"""Tests for the shared ace.taxonomy module."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ace.taxonomy import Match, TaxonomyError, key_set, load_taxonomy
+from ace.taxonomy import Match, TaxonomyError, _load_roles_file, compile_phrase_pattern, key_set, load_taxonomy
 
 
 def test_load_repository_taxonomy_and_match_by_name_and_alias() -> None:
@@ -31,6 +31,18 @@ def test_load_repository_taxonomy_and_match_by_name_and_alias() -> None:
     # Unmapped mention returns None
     assert tax.match("Quantum Blockchain Wizardry") is None
     assert tax.match("   ") is None
+
+
+def test_compile_phrase_pattern_unicode_and_symbols() -> None:
+    iso_pat = compile_phrase_pattern("ISO")
+    assert iso_pat.search("Aligned with ISO 27001 controls") is not None
+    assert iso_pat.search("ISOé") is None
+    assert iso_pat.search("éISO") is None
+
+    sec_plus_pat = compile_phrase_pattern("Security+")
+    assert sec_plus_pat.search("Holds CompTIA Security+ certification") is not None
+    assert sec_plus_pat.search("Security+1") is None
+    assert sec_plus_pat.search("CyberSecurity+") is None
 
 
 def test_extract_text_word_boundaries_and_role_inference() -> None:
@@ -71,3 +83,65 @@ def test_key_set_and_roles_for() -> None:
 def test_invalid_taxonomy_directory_raises(tmp_path: Path) -> None:
     with pytest.raises(TaxonomyError):
         load_taxonomy(tmp_path)
+
+
+def test_load_taxonomy_populates_role_summaries_skill_meta_and_cert_meta(tmp_path: Path) -> None:
+    tax = load_taxonomy()
+    assert len(tax.skill_meta) == len(tax.skills)
+    assert len(tax.cert_meta) == len(tax.certifications)
+
+    skill_by_name = {entry.skill: entry for entry in tax.skill_meta}
+    assert "Intrusion Detection" in skill_by_name
+    assert "Cyber Incident Responder" in skill_by_name["Intrusion Detection"].ecsf_roles
+    assert "Suricata" in skill_by_name["Intrusion Detection"].aliases
+
+    cert_by_name = {entry.certification: entry for entry in tax.cert_meta}
+    assert "BTL1" in cert_by_name
+    assert cert_by_name["BTL1"].issuer != ""
+
+    roles_csv = tmp_path / "ecsf_roles.csv"
+    roles_csv.write_text(
+        "role,summary,aliases\n"
+        "Cyber Incident Responder,Analyses and responds to cybersecurity incidents.,Incident Responder\n",
+        encoding="utf-8",
+    )
+    roles, aliases, summaries = _load_roles_file(roles_csv)
+    assert roles == ("Cyber Incident Responder",)
+    assert aliases["incident responder"] == "Cyber Incident Responder"
+    assert summaries["Cyber Incident Responder"] == "Analyses and responds to cybersecurity incidents."
+
+
+def test_canonical_v1_files_exist_and_match_all_member_contributions() -> None:
+    import csv
+    from ace.ecsf import ECSF_ROLES
+
+    tax_dir = Path(__file__).resolve().parents[2] / "taxonomy"
+    assert (tax_dir / "skills.csv").is_file()
+    assert (tax_dir / "certifications.csv").is_file()
+    assert (tax_dir / "ecsf_roles.csv").is_file()
+
+    tax = load_taxonomy()
+    assert set(tax.roles) == set(ECSF_ROLES)
+    assert len(tax.skills) == 83
+    assert len(tax.certifications) == 55
+
+    # Verify entries contributed by each team member (M1-M5) resolve canonically
+    assert tax.match("Credential Dumping") == Match("skill", "Credential Dumping")  # M1
+    assert tax.match("SIEM") == Match("skill", "SIEM")  # M2
+    assert tax.match("AWS Security") == Match("skill", "AWS Security")  # M3
+    assert tax.match("ATT&CK") == Match("skill", "MITRE ATT&CK")  # M4
+    assert tax.match("Cybersecurity Training") == Match("skill", "Cybersecurity Training")  # M5
+    assert tax.match("OSCP") == Match("certification", "OSCP")
+
+    contrib_dir = tax_dir / "contributions"
+    expected_skills = set()
+    for p in contrib_dir.glob("*_skills.csv"):
+        with p.open(encoding="utf-8", newline="") as f:
+            expected_skills.update(row["skill"].strip() for row in csv.DictReader(f))
+    assert set(tax.skills) == expected_skills
+
+    expected_certs = set()
+    for p in contrib_dir.glob("*_certifications.csv"):
+        with p.open(encoding="utf-8", newline="") as f:
+            expected_certs.update(row["certification"].strip() for row in csv.DictReader(f))
+    assert set(tax.certifications) == expected_certs

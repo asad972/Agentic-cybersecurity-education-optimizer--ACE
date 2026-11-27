@@ -21,6 +21,7 @@ RUN python -m venv /opt/ace-stream \
 
 RUN python -m venv /opt/ace-forecast \
     && /opt/ace-forecast/bin/python -m pip install --no-cache-dir \
+        -e "./shared/python[batch]" \
         -e "./batch/forecast[dev]" \
     && /opt/ace-forecast/bin/python -m pip check
 
