@@ -521,6 +521,9 @@ def test_anthropic_adapter_counts_the_structured_request_and_parses_response():
         api.messages.count_kwargs["output_config"]
         == api.messages.create_kwargs["output_config"]
     )
+    schema = api.messages.create_kwargs["output_config"]["format"]["schema"]
+    assert schema["additionalProperties"] is False
+    assert "additionalProperties" not in request.response_model.model_json_schema()
     assert api.messages.create_kwargs["max_tokens"] == 10
     assert api.messages.create_kwargs["system"] == "system"
 
