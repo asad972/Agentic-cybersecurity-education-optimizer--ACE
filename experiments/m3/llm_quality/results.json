@@ -58,7 +58,102 @@
       "upper": 0.0,
       "valid_draws": 10000
     },
-    "recommendation": "local"
+    "pre_union_skills": {
+      "hosted_f1_gain": {
+        "de": 0.1324786324786325,
+        "en": 0.5215850515463918,
+        "fr": 0.24313725490196075,
+        "overall": 0.3501014697743066
+      },
+      "interval_95": {
+        "lower": 0.2519509476031215,
+        "seed": 30,
+        "upper": 0.4598580616544689,
+        "valid_draws": 10000
+      },
+      "scores": {
+        "hosted": {
+          "de": {
+            "f1": 0.5555555555555556,
+            "fn": 24,
+            "fp": 0,
+            "precision": 1.0,
+            "recall": 0.38461538461538464,
+            "tp": 15
+          },
+          "en": {
+            "f1": 0.9278350515463918,
+            "fn": 4,
+            "fp": 3,
+            "precision": 0.9375,
+            "recall": 0.9183673469387755,
+            "tp": 45
+          },
+          "fr": {
+            "f1": 0.5098039215686274,
+            "fn": 24,
+            "fp": 1,
+            "precision": 0.9285714285714286,
+            "recall": 0.35135135135135137,
+            "tp": 13
+          },
+          "overall": {
+            "f1": 0.7227722772277227,
+            "fn": 52,
+            "fp": 4,
+            "precision": 0.948051948051948,
+            "recall": 0.584,
+            "tp": 73
+          }
+        },
+        "local": {
+          "de": {
+            "f1": 0.4230769230769231,
+            "fn": 28,
+            "fp": 2,
+            "precision": 0.8461538461538461,
+            "recall": 0.28205128205128205,
+            "tp": 11
+          },
+          "en": {
+            "f1": 0.40625,
+            "fn": 36,
+            "fp": 2,
+            "precision": 0.8666666666666667,
+            "recall": 0.2653061224489796,
+            "tp": 13
+          },
+          "fr": {
+            "f1": 0.26666666666666666,
+            "fn": 31,
+            "fp": 2,
+            "precision": 0.75,
+            "recall": 0.16216216216216217,
+            "tp": 6
+          },
+          "overall": {
+            "f1": 0.37267080745341613,
+            "fn": 95,
+            "fp": 6,
+            "precision": 0.8333333333333334,
+            "recall": 0.24,
+            "tp": 30
+          }
+        }
+      },
+      "source": "cached_s2_responses"
+    },
+    "recommendation": "local",
+    "recommendation_basis": "pipeline_skill_f1",
+    "role_accuracy": {
+      "hosted_gain": 0.05999999999999994,
+      "interval_95": {
+        "lower": -0.020000000000000018,
+        "seed": 30,
+        "upper": 0.14,
+        "valid_draws": 10000
+      }
+    }
   },
   "paired_ads": 50,
   "scores_on_common_ads": {

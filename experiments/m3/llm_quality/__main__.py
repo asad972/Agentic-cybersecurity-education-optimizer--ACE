@@ -16,7 +16,7 @@ import sys
 from tempfile import NamedTemporaryFile
 from typing import Any
 
-from ace.llm import BudgetExceededError, LLMClient, LLMError, LLMResult, LLMSettings
+from ace.llm import BudgetExceededError, CassandraLLMStore, LLMClient, LLMError, LLMResult, LLMSettings
 from ace.taxonomy import ExtractionResult, Taxonomy, load_taxonomy
 from s2_skill_extraction.llm_extractor import (
     DEFAULT_MAX_TOKENS,
@@ -25,7 +25,11 @@ from s2_skill_extraction.llm_extractor import (
     PROMPT_VERSION,
 )
 
-from .benchmark import Ad, LANGUAGES, MODES, paired_interval, read_corpus, recommend, score, validate_labels
+from .benchmark import (
+    Ad, LANGUAGES, MODES, combine, label_counts, metrics, paired_interval,
+    read_corpus, recommend, score, validate_labels,
+)
+from .cached_skills import read_model_skills
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -235,7 +239,11 @@ def coverage(checkpoint: dict[str, Any], ads: list[Ad]) -> dict[str, Any]:
     }
 
 
-def summarize(ads: list[Ad], checkpoints: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def summarize(
+    ads: list[Ad],
+    checkpoints: dict[str, dict[str, Any]],
+    model_skills: dict[str, dict[str, dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
     predictions = {
         mode: {ad_id: row["labels"] for ad_id, row in checkpoint["rows"].items() if row["status"] == "ok"}
         for mode, checkpoint in checkpoints.items()
@@ -249,10 +257,11 @@ def summarize(ads: list[Ad], checkpoints: dict[str, dict[str, Any]]) -> dict[str
         for mode, items in predictions.items()
     }
 
-    def f1_delta(mode: str, reference: str, name: str) -> float | None:
-        left = scores[mode][name]["skills"]["f1"]
-        right = scores[reference][name]["skills"]["f1"]
+    def difference(left: float | None, right: float | None) -> float | None:
         return left - right if left is not None and right is not None else None
+
+    def f1_delta(mode: str, reference: str, name: str) -> float | None:
+        return difference(scores[mode][name]["skills"]["f1"], scores[reference][name]["skills"]["f1"])
 
     gains = {
         mode: {name: f1_delta(mode, "baseline", name) for name in scopes}
@@ -267,7 +276,38 @@ def summarize(ads: list[Ad], checkpoints: dict[str, dict[str, Any]]) -> dict[str
                 "hosted_skill_f1_gain": differences,
                 "interval_95": interval,
                 "recommendation": recommend(differences["overall"], interval["lower"], differences),
+                "recommendation_basis": "pipeline_skill_f1",
+                "role_accuracy": {
+                    "hosted_gain": (
+                        scores["hosted"]["overall"]["role"]["accuracy"]
+                        - scores["local"]["overall"]["role"]["accuracy"]
+                    ),
+                    "interval_95": paired_interval(
+                        common, predictions["local"], predictions["hosted"], field="role"
+                    ),
+                },
             }
+            if model_skills is not None:
+                skill_scores = {
+                    mode: {
+                        name: metrics(combine([
+                            label_counts(ad, rows[ad.id], "skills") for ad in scope
+                        ]))
+                        for name, scope in scopes.items()
+                    }
+                    for mode, rows in model_skills.items()
+                }
+                comparison["pre_union_skills"] = {
+                    "source": "cached_s2_responses",
+                    "scores": skill_scores,
+                    "hosted_f1_gain": {
+                        name: difference(
+                            skill_scores["hosted"][name]["f1"], skill_scores["local"][name]["f1"]
+                        )
+                        for name in scopes
+                    },
+                    "interval_95": paired_interval(common, model_skills["local"], model_skills["hosted"]),
+                }
     return {
         "study": checkpoints["baseline"]["study"],
         "paired_ads": len(common),
@@ -279,6 +319,33 @@ def summarize(ads: list[Ad], checkpoints: dict[str, dict[str, Any]]) -> dict[str
         "skill_f1_gains_over_baseline": gains,
         "final_comparison": comparison,
     }
+
+
+def replay_cached_skills(
+    ads: list[Ad], taxonomy: Taxonomy, checkpoints: dict[str, dict[str, Any]]
+) -> dict[str, dict[str, dict[str, Any]]]:
+    if set(checkpoints) != set(MODES) or any(
+        data["rows"].get(ad.id, {}).get("status") != "ok"
+        for data in checkpoints.values()
+        for ad in ads
+    ):
+        raise ValueError("pre-union comparison requires complete baseline, local and hosted runs")
+    values: dict[str, dict[str, dict[str, Any]]] = {}
+    cache = CassandraLLMStore.from_env()
+    try:
+        for mode, model in MODELS.items():
+            rows = {}
+            for ad in ads:
+                skills = read_model_skills(ad, taxonomy, cache, mode=mode, model=model)
+                baseline = checkpoints["baseline"]["rows"][ad.id]["labels"]["skills"]
+                pipeline = checkpoints[mode]["rows"][ad.id]["labels"]["skills"]
+                if set(baseline) | set(skills) != set(pipeline):
+                    raise ValueError(f"{mode} {ad.id}: cache replay disagrees with the scored pipeline")
+                rows[ad.id] = {"skills": skills}
+            values[mode] = rows
+    finally:
+        cache.close()
+    return values
 
 
 def report(args: argparse.Namespace, taxonomy: Taxonomy) -> int:
@@ -305,7 +372,8 @@ def report(args: argparse.Namespace, taxonomy: Taxonomy) -> int:
             if row["status"] == "ok":
                 validate_labels(row["labels"], taxonomy)
         checkpoints[mode] = checkpoint
-    write_json(args.output, summarize(ads, checkpoints))
+    model_skills = replay_cached_skills(ads, taxonomy, checkpoints) if args.pre_union_from_cache else None
+    write_json(args.output, summarize(ads, checkpoints, model_skills))
     return 0
 
 
@@ -318,6 +386,10 @@ def main() -> int:
     score_command = commands.add_parser("score")
     for mode in MODES:
         score_command.add_argument(f"--{mode}", type=Path, required=mode == "baseline")
+    score_command.add_argument(
+        "--pre-union-from-cache", action="store_true",
+        help="also score the model's own grounded Skills using saved Cassandra answers",
+    )
     for command in (run_command, score_command):
         command.add_argument("--corpus", type=Path, default=CORPUS)
         command.add_argument("--taxonomy", type=Path, default=ROOT / "shared" / "taxonomy")

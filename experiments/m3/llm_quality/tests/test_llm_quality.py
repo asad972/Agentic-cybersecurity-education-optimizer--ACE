@@ -1,4 +1,5 @@
 from dataclasses import replace
+from datetime import UTC, datetime
 from decimal import Decimal
 import json
 from types import SimpleNamespace
@@ -6,7 +7,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from ace.llm import BudgetExceededError, LLMProviderError, LLMResult
+from ace.llm import BudgetExceededError, CacheRecord, LLMProviderError, LLMResult
 from ace.taxonomy import load_taxonomy
 from s2_skill_extraction.llm_extractor import ExtractedMentions
 
@@ -14,6 +15,7 @@ from experiments.m3.llm_quality.__main__ import CORPUS, ROOT, evaluate, summariz
 from experiments.m3.llm_quality.benchmark import (
     LANGUAGES, label_counts, metrics, paired_interval, read_corpus, recommend,
 )
+from experiments.m3.llm_quality.cached_skills import read_model_skills
 
 
 @pytest.fixture
@@ -75,6 +77,26 @@ def test_paired_interval_is_reproducible_and_uses_ad_pairs(ads):
     assert recommend(0.05, 0.01, {"de": -0.05, "fr": 0}) == "hosted"
     assert recommend(0.05, 0.01, {"de": 0, "fr": -0.06}) == "local"
     assert recommend(0.08, 0, {"de": 0, "fr": 0}) == "local"
+
+
+def test_cached_model_skills_exclude_baseline_and_ungrounded_labels(ads, taxonomy):
+    cache = Mock()
+    cache.get_cache.return_value = CacheRecord(
+        ExtractedMentions(mentions=["Splunk", "Splunk", "Linux"]).model_dump_json(),
+        "hosted", "claude-haiku-5-5", Decimal(0), 100, 12, datetime.now(UTC),
+    )
+    result = read_model_skills(
+        ads[0], taxonomy, cache, mode="hosted", model="claude-haiku-5-5"
+    )
+    assert result == ["Splunk"]
+    cache.get_cache.assert_called_once()
+
+
+def test_cache_miss_fails_without_a_provider_fallback(ads, taxonomy):
+    cache = Mock()
+    cache.get_cache.return_value = None
+    with pytest.raises(ValueError, match="hosted en-01: no cached answer"):
+        read_model_skills(ads[0], taxonomy, cache, mode="hosted", model="claude-haiku-5-5")
 
 
 def test_live_failure_is_not_scored_and_resume_skips_successes(ads, taxonomy, tmp_path):
@@ -151,3 +173,29 @@ def test_complete_summary_produces_a_paired_recommendation(ads, taxonomy):
     assert result["paired_ads"] == 50
     assert result["final_comparison"]["recommendation"] == "hosted"
     assert result["final_comparison"]["interval_95"]["valid_draws"] == 10_000
+
+
+def test_tied_pipeline_can_hide_pre_union_skill_and_role_differences(ads, taxonomy):
+    baseline = checkpoint("baseline")
+    assert evaluate(ads, taxonomy, baseline, Mock())
+    local = checkpoint("local")
+    hosted = checkpoint("hosted")
+    local_skills = {}
+    hosted_skills = {}
+    for ad in ads:
+        local_role = "Cybersecurity Architect" if ad.expected["role"] is None else None
+        local["rows"][ad.id] = {
+            "status": "ok", "labels": {**ad.expected, "role": local_role}, "errors": [],
+        }
+        hosted["rows"][ad.id] = {"status": "ok", "labels": ad.expected, "errors": []}
+        local_skills[ad.id] = {"skills": []}
+        hosted_skills[ad.id] = {"skills": ad.expected["skills"]}
+    result = summarize(
+        ads, {"baseline": baseline, "local": local, "hosted": hosted},
+        {"local": local_skills, "hosted": hosted_skills},
+    )["final_comparison"]
+    assert result["hosted_skill_f1_gain"]["overall"] == 0
+    assert result["pre_union_skills"]["hosted_f1_gain"]["overall"] == 1
+    assert result["role_accuracy"]["hosted_gain"] == 1
+    assert result["role_accuracy"]["interval_95"]["lower"] == 1
+    assert result["recommendation"] == "local"

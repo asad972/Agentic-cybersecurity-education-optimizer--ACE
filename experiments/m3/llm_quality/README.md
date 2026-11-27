@@ -9,7 +9,9 @@ gold. The corpus includes two ads with no canonical Skills per language, and the
 runner scores them before S2's Kafka emission filter. The labels were reviewed
 against the ads and taxonomy before the model runs. Authored excerpts represent
 controlled challenges, and a single labelling pass does not establish
-inter-rater agreement or performance on real hiring data.
+inter-rater agreement or performance on real hiring data. The authored
+excerpts and taxonomy-constrained gold labels favor exact alias matching.
+Real ads may be longer, noisier, and less closely aligned with the taxonomy.
 
 ## Results on November 26, 2026
 
@@ -33,20 +35,39 @@ Canonical Skill predictions matched on every ad, with 79 true positives,
 18 false positives and 46 false negatives. Skill F1 was 88.7% for English,
 59.0% for German, and 50.9% for French in all three modes. On `de-13`, all
 three picked up Cloud Security from a reference to another team's vacancy.
-These results illustrate how S2's union with the taxonomy baseline preserves
-existing matches and how exact alias coverage can limit multilingual recall.
+The pipeline tie reflects S2's union with the taxonomy baseline. It cannot
+distinguish the models' Skill extraction on this corpus.
+
+On November 27 we replayed all 100 model answers from Cassandra and scored the
+canonical Skills from the grounded, taxonomy-mapped LLM mentions before the
+union. This uses the same S2 prompt, grounding, and taxonomy.
+
+| Pre-union Skill metric | Qwen | Claude |
+| --- | ---: | ---: |
+| Overall precision | 83.3% | 94.8% |
+| Overall recall | 24.0% | 58.4% |
+| Overall F1 | 37.3% | 72.3% |
+| English F1 | 40.6% | 92.8% |
+| German F1 | 42.3% | 55.6% |
+| French F1 | 26.7% | 51.0% |
+
+Claude's pre-union Skill F1 lead was 35.0 percentage points, with a 95%
+paired bootstrap interval of 25.2 to 46.0 points.
 
 Claude correctly classified the privacy adviser in `en-13` as a Cyber Legal,
 Policy and Compliance Officer. Both models found the gold unmapped phrase
 `Alarmpriorisierung` for `de-01`; Claude still returned `Sigma-Regeln` as
 unmapped, even though it describes a canonical Skill. Claude recovered
 32 of 40 gold unmapped phrases with 50 false positives. Qwen found 19 of 40
-with 97 false positives.
+with 97 false positives. The role-accuracy difference was 41 versus 38 of 50
+ads, or 6 percentage points, with a 95% paired interval of −2 to 14 points.
 
-**Recommendation: keep Qwen as the S2 default.** Claude's canonical Skill F1
-gain was zero, with a 95% paired interval of `[0, 0]`. The measured gains for
-ECSF roles and unmapped phrases make Claude worth considering if either output
-becomes the primary target.
+**Recommendation: keep Qwen as the default for the current S2 pipeline.**
+Switching providers had no effect on the published canonical Skill labels that
+drive Demand counts. Claude selected stronger Skill candidates before the
+union and produced better unmapped phrases. Those gains matter if emerging
+Skills become the main objective or if S2 starts using model choices to
+filter the baseline. The role-accuracy interval includes zero.
 
 The first hosted smoke exposed a wire-schema requirement. The Anthropic
 adapter now applies the SDK's `transform_schema()` before token counting and
@@ -104,11 +125,16 @@ python -m experiments.m3.llm_quality run --mode hosted --smoke --output "$ACE_QU
 python -m experiments.m3.llm_quality run --mode hosted --output "$ACE_QUALITY_DIR/hosted.json"
 python -m experiments.m3.llm_quality score \
   --baseline "$ACE_QUALITY_DIR/baseline.json" --local "$ACE_QUALITY_DIR/local.json" \
-  --hosted "$ACE_QUALITY_DIR/hosted.json" --output "$ACE_QUALITY_DIR/results.json"
+  --hosted "$ACE_QUALITY_DIR/hosted.json" --pre-union-from-cache \
+  --output "$ACE_QUALITY_DIR/results.json"
 ```
 
-Omit either provider argument when its checkpoint is unavailable. Metrics use
-the intersection of successfully completed ads. Coverage and failure counts
+The optional `--pre-union-from-cache` flag requires all three complete
+checkpoints and their Cassandra cache. It reads cached answers without making
+provider calls and verifies the replay against every scored pipeline row.
+Omit the flag for pipeline-only scoring, or when an input checkpoint is
+incomplete. Omit either provider argument when its checkpoint is unavailable.
+Metrics use the intersection of successfully completed ads. Coverage and failure counts
 are shown separately for each mode. Cache hits retain the recorded token
 counts. The hosted spend uses the evaluator's delta in Cassandra's settled
 budget, which can include pessimistic charges for failed calls. Cache hits
@@ -117,7 +143,9 @@ revision when resuming its checkpoints.
 
 ## Decision rule
 
-Canonical Skill micro-F1 is primary. The runner also scores Certifications,
+Published canonical Skill micro-F1 is the deployment criterion. Pre-union
+Skill micro-F1 measures how well each model selects grounded canonical Skills.
+The runner also scores Certifications,
 exact ECSF roles, and exact normalized unmapped phrases. Claude is recommended
 only when it improves Skill micro-F1 by at least 0.05, the lower bound of the
 95% language-stratified paired bootstrap interval exceeds zero, and neither
@@ -126,7 +154,7 @@ with seed 30. The recommendation remains empty until all three modes cover
 all 50 ads.
 
 ```bash
-python -m pytest -q -m 'not flink' experiments/m3/llm_quality \
+python -m pytest -q -m 'not flink' experiments/m3/llm_quality/tests \
   streaming/s2_skill_extraction/tests shared/python/tests/test_llm.py \
   shared/python/tests/test_taxonomy.py
 ```

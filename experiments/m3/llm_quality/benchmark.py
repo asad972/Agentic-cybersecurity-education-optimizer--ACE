@@ -140,10 +140,23 @@ def paired_interval(
     hosted: dict[str, dict[str, Any]],
     *,
     iterations: int = 10_000,
+    field: str = "skills",
 ) -> dict[str, Any]:
+    def outcome(ad: Ad, prediction: dict[str, Any]) -> Counts:
+        if field == "role":
+            correct = ad.expected["role"] == prediction["role"]
+            return int(correct), int(not correct), 0
+        return label_counts(ad, prediction, field)
+
+    def value(counts: Counts) -> float | None:
+        tp, fp, fn = counts
+        if field == "role":
+            return ratio(tp, tp + fp)
+        return ratio(2 * tp, 2 * tp + fp + fn)
+
     strata = [
         [
-            (label_counts(ad, local[ad.id], "skills"), label_counts(ad, hosted[ad.id], "skills"))
+            (outcome(ad, local[ad.id]), outcome(ad, hosted[ad.id]))
             for ad in ads if ad.language == language
         ]
         for language in LANGUAGES
@@ -154,10 +167,10 @@ def paired_interval(
         paired = [pair for stratum in strata for pair in rng.choices(stratum, k=len(stratum))]
         local_counts = combine([pair[0] for pair in paired])
         hosted_counts = combine([pair[1] for pair in paired])
-        local_f1 = metrics(local_counts)["f1"]
-        hosted_f1 = metrics(hosted_counts)["f1"]
-        if local_f1 is not None and hosted_f1 is not None:
-            differences.append(hosted_f1 - local_f1)
+        local_score = value(local_counts)
+        hosted_score = value(hosted_counts)
+        if local_score is not None and hosted_score is not None:
+            differences.append(hosted_score - local_score)
     differences.sort()
     lower, upper = None, None
     if differences:
