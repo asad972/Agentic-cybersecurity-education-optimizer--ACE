@@ -8,7 +8,7 @@ A new push to a pull request cancels the run that is still going for the older c
 
 | Job | What it does | Runs on |
 | --- | --- | --- |
-| Shared package and stream stages | Installs `shared/python` with the `llm` extra and every stage's own `requirements.txt`, then runs all tests in `shared/python/tests` and `streaming/` except the Flink ones | Python 3.11 |
+| Shared package and stream stages | Installs `shared/python` with the `llm` extra and every stage's own `requirements.txt`, then runs all tests in `shared/python/tests` and `streaming/` except the Flink ones, and the LLM benchmark tests in `experiments/m3/llm_quality/tests` (fake answers, no model calls) | Python 3.11 |
 | Stream stages on Flink | Same installs plus PyFlink, then runs the tests marked `@pytest.mark.flink`: the same fake records through a real local Flink | Python 3.11, Java 17 |
 | Sink | Installs the shared package and `storage/sink`, runs `storage/sink/tests` | Python 3.11 |
 | Batch job (forecast), Batch job (gap) | Installs `shared/python` with only the `batch` extra, then `batch/forecast` or `batch/gap`, and runs its tests from the repository root; tests that need a live Cassandra skip themselves | Python 3.11, as in the batch images |
@@ -59,6 +59,7 @@ pip install -e "shared/python[flink,llm,dev]"
 Get-ChildItem streaming\*\requirements.txt | ForEach-Object { pip install -r $_.FullName }
 python -m pytest shared/python/tests -m "not flink"
 python -m pytest streaming -m "not flink"
+python -m pytest -q experiments/m3/llm_quality/tests
 python -m pytest shared/python/tests -m flink
 python -m pytest streaming -m flink
 ```
