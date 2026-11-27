@@ -153,7 +153,7 @@ This leaves `node_modules` in `dashboard/`, which git ignores. Docker images and
 docker compose config -q
 docker compose -f api/compose.yml config -q
 docker compose -f dashboard/compose.yml config -q
-docker build -f api/Dockerfile api
+docker build -f api/Dockerfile .
 docker build -f dashboard/Dockerfile dashboard
 docker build -f storage/sink/Dockerfile .
 docker build -f deploy/monitoring/exporter/Dockerfile .

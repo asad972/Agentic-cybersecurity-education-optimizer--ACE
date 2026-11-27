@@ -412,8 +412,10 @@ jobs:
           docker compose -f api/compose.yml config -q
           docker compose -f dashboard/compose.yml config -q
       # Images are built only, never pushed.
+      # From the repository root, as api/compose.yml builds it: the image
+      # copies shared/taxonomy and parts of shared/python next to the API.
       - name: Build the API image
-        run: docker build -f api/Dockerfile api
+        run: docker build -f api/Dockerfile .
       - name: Build the dashboard image
         run: docker build -f dashboard/Dockerfile dashboard
       - name: Build the sink image
