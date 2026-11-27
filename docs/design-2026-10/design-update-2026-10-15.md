@@ -2,7 +2,7 @@
 
 **Status: agreed by all five members on Oct 15, 2026.** Every point below was accepted as written.
 
-I compared our design with the professor's brief and with CyberSeek, and proposed the changes below. We went through every point together and all five of us agreed. The full detail is in [ARCHITECTURE.md](ARCHITECTURE.md); this page records what we decided and why.
+I compared our design with the professor's brief and with CyberSeek, and proposed the changes below. We went through every point together and all five of us agreed. The full detail is in [ARCHITECTURE.md](../ARCHITECTURE.md); this page records what we decided and why.
 
 ---
 

@@ -28,7 +28,7 @@ Every component runs in its own Docker container on Kubernetes (Docker Swarm as 
 
 ## 3. System architecture
 
-![ACE system architecture](images/architecture.png)
+![ACE system architecture](../images/architecture.png)
 
 ## 4. Stream-mining tasks and algorithms
 

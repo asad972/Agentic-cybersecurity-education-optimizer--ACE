@@ -1,0 +1,274 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1010" viewBox="0 0 1600 1010" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<defs><marker id="head" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#777"/></marker><marker id="head-rev" viewBox="0 0 10 10" refX="1" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M10,0 L0,5 L10,10 z" fill="#777"/></marker></defs>
+<rect width="1600" height="1010" fill="#fff"/>
+<text x="20" y="38" font-size="26" font-weight="700" fill="#222" text-anchor="start">ACE system architecture</text>
+<text x="20" y="64" font-size="15" font-weight="400" fill="#555" text-anchor="start">Solid arrows: data flow. The numbers follow the data from the online sources (1) to the web application (7). Dashed boxes are designed but not built yet.</text>
+<rect x="270" y="84" width="1320" height="792" rx="14" fill="none" stroke="#aaa" stroke-width="1.5" stroke-dasharray="8 6"/>
+<text x="286" y="103" font-size="14" font-weight="600" fill="#666" text-anchor="start">Docker containers · Docker Compose for development · Kubernetes manifests in deploy/k8s (partly complete)</text>
+<rect x="20" y="112" width="232" height="748" rx="12" fill="#f4f4f2" stroke="#9a9a94" stroke-width="1.5"/>
+<circle cx="44" cy="138" r="13" fill="#9a9a94"/>
+<text x="44" y="143" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">1</text>
+<text x="66" y="144" font-size="19" font-weight="700" fill="#222" text-anchor="start">Online sources</text>
+<text x="36" y="166" font-size="13" font-weight="400" fill="#555" text-anchor="start" font-style="italic">outside the system</text>
+<rect x="32" y="250" width="208" height="70" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="44" y="274" font-size="16" font-weight="600" fill="#222" text-anchor="start">Job ads</text>
+<text x="44" y="294" font-size="13" font-weight="400" fill="#555" text-anchor="start">German job-ad history</text>
+<text x="44" y="312" font-size="13" font-weight="400" fill="#555" text-anchor="start">2015–2026</text>
+<rect x="32" y="335" width="208" height="70" rx="7" fill="#fafafa" stroke="#999" stroke-dasharray="6 4"/>
+<text x="44" y="359" font-size="16" font-weight="600" fill="#888" text-anchor="start">IT professionals</text>
+<text x="44" y="379" font-size="13" font-weight="400" fill="#888" text-anchor="start">Stack Overflow survey</text>
+<rect x="32" y="420" width="208" height="70" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="44" y="444" font-size="16" font-weight="600" fill="#222" text-anchor="start">University courses</text>
+<text x="44" y="464" font-size="13" font-weight="400" fill="#555" text-anchor="start">ENISA CYBERHEAD</text>
+<rect x="32" y="505" width="208" height="70" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="44" y="529" font-size="16" font-weight="600" fill="#222" text-anchor="start">Workforce figures</text>
+<text x="44" y="549" font-size="13" font-weight="400" fill="#555" text-anchor="start">ISC2 reports</text>
+<rect x="32" y="590" width="208" height="70" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="44" y="614" font-size="16" font-weight="600" fill="#222" text-anchor="start">Similar platforms</text>
+<text x="44" y="634" font-size="13" font-weight="400" fill="#555" text-anchor="start">CyberSeek, ENISA ECSF</text>
+<rect x="32" y="675" width="208" height="70" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="44" y="699" font-size="16" font-weight="600" fill="#222" text-anchor="start">Cyber attacks</text>
+<text x="44" y="719" font-size="13" font-weight="400" fill="#555" text-anchor="start">OTX, AbuseIPDB feeds</text>
+<rect x="290" y="112" width="300" height="748" rx="12" fill="#eaf2fb" stroke="#4a7fc1" stroke-width="1.5"/>
+<circle cx="314" cy="138" r="13" fill="#4a7fc1"/>
+<text x="314" y="143" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">2</text>
+<text x="336" y="144" font-size="19" font-weight="700" fill="#222" text-anchor="start">Agents: collect</text>
+<text x="306" y="166" font-size="13" font-weight="400" fill="#555" text-anchor="start" font-style="italic">Python · one shared AI module</text>
+<rect x="302" y="185" width="276" height="62" rx="7" fill="#fafafa" stroke="#999" stroke-dasharray="6 4"/>
+<text x="314" y="209" font-size="16" font-weight="600" fill="#888" text-anchor="start">Orchestrator</text>
+<text x="314" y="229" font-size="13" font-weight="400" fill="#888" text-anchor="start">plans what to collect</text>
+<rect x="540" y="194" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="555.0" y="209" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M1</text>
+<rect x="460" y="194" width="75" height="20" rx="4" fill="#ffffff" stroke="#999" stroke-dasharray="3 2"/>
+<text x="497.5" y="209" font-size="12" font-weight="700" fill="#777" text-anchor="middle">planned</text>
+<rect x="302" y="250" width="276" height="70" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="314" y="274" font-size="16" font-weight="600" fill="#222" text-anchor="start">Job ads agent</text>
+<text x="314" y="294" font-size="13" font-weight="400" fill="#555" text-anchor="start">replays the job-ad history</text>
+<rect x="540" y="259" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="555.0" y="274" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M1</text>
+<rect x="302" y="335" width="276" height="70" rx="7" fill="#fafafa" stroke="#999" stroke-dasharray="6 4"/>
+<text x="314" y="359" font-size="16" font-weight="600" fill="#888" text-anchor="start">Profile agent</text>
+<text x="314" y="379" font-size="13" font-weight="400" fill="#888" text-anchor="start">survey answers → profiles</text>
+<rect x="540" y="344" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="555.0" y="359" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M1</text>
+<rect x="460" y="344" width="75" height="20" rx="4" fill="#ffffff" stroke="#999" stroke-dasharray="3 2"/>
+<text x="497.5" y="359" font-size="12" font-weight="700" fill="#777" text-anchor="middle">planned</text>
+<rect x="302" y="420" width="276" height="70" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="314" y="444" font-size="16" font-weight="600" fill="#222" text-anchor="start">Education agent</text>
+<text x="314" y="464" font-size="13" font-weight="400" fill="#555" text-anchor="start">courses → ECSF roles</text>
+<rect x="540" y="429" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="555.0" y="444" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M5</text>
+<rect x="505" y="429" width="30" height="20" rx="4" fill="#b0306a"/>
+<text x="520.0" y="444" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">AI</text>
+<rect x="302" y="505" width="276" height="70" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="314" y="529" font-size="16" font-weight="600" fill="#222" text-anchor="start">Workforce agent</text>
+<text x="314" y="549" font-size="13" font-weight="400" fill="#555" text-anchor="start">ISC2 figures per country</text>
+<rect x="540" y="514" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="555.0" y="529" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M5</text>
+<rect x="302" y="590" width="276" height="70" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="314" y="614" font-size="16" font-weight="600" fill="#222" text-anchor="start">Platform analysis agent</text>
+<text x="314" y="634" font-size="13" font-weight="400" fill="#555" text-anchor="start">compares similar platforms</text>
+<rect x="540" y="599" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="555.0" y="614" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M5</text>
+<rect x="302" y="675" width="276" height="70" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="314" y="699" font-size="16" font-weight="600" fill="#222" text-anchor="start">Threat agent</text>
+<text x="314" y="719" font-size="13" font-weight="400" fill="#555" text-anchor="start">attacks located by country</text>
+<rect x="540" y="684" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="555.0" y="699" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M4</text>
+<line x1="240" y1="285.0" x2="300" y2="285.0" stroke="#777" stroke-width="2" marker-end="url(#head)"/>
+<line x1="240" y1="370.0" x2="300" y2="370.0" stroke="#777" stroke-width="2" marker-end="url(#head)"/>
+<line x1="240" y1="455.0" x2="300" y2="455.0" stroke="#777" stroke-width="2" marker-end="url(#head)"/>
+<line x1="240" y1="540.0" x2="300" y2="540.0" stroke="#777" stroke-width="2" marker-end="url(#head)"/>
+<line x1="240" y1="625.0" x2="300" y2="625.0" stroke="#777" stroke-width="2" marker-end="url(#head)"/>
+<line x1="240" y1="710.0" x2="300" y2="710.0" stroke="#777" stroke-width="2" marker-end="url(#head)"/>
+<rect x="620" y="112" width="182" height="748" rx="12" fill="#f2edfb" stroke="#7a5cc4" stroke-width="1.5"/>
+<circle cx="644" cy="138" r="13" fill="#7a5cc4"/>
+<text x="644" y="143" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">3</text>
+<text x="666" y="144" font-size="19" font-weight="700" fill="#222" text-anchor="start">Kafka</text>
+<text x="636" y="166" font-size="13" font-weight="400" fill="#555" text-anchor="start" font-style="italic">event bus · 20 topics · M2</text>
+<rect x="636" y="186" width="150" height="32" rx="6" fill="#fff" stroke="#b9a8e6"/>
+<text x="711" y="207" font-size="13" font-weight="500" fill="#3d2b80" text-anchor="middle">tasks.collect</text>
+<rect x="636" y="232" width="150" height="32" rx="6" fill="#fff" stroke="#b9a8e6"/>
+<text x="711" y="253" font-size="13" font-weight="500" fill="#3d2b80" text-anchor="middle">raw.jobs</text>
+<rect x="636" y="278" width="150" height="32" rx="6" fill="#fff" stroke="#b9a8e6"/>
+<text x="711" y="299" font-size="13" font-weight="500" fill="#3d2b80" text-anchor="middle">raw.profiles</text>
+<rect x="636" y="324" width="150" height="32" rx="6" fill="#fff" stroke="#b9a8e6"/>
+<text x="711" y="345" font-size="13" font-weight="500" fill="#3d2b80" text-anchor="middle">raw.programmes</text>
+<rect x="636" y="370" width="150" height="32" rx="6" fill="#fff" stroke="#b9a8e6"/>
+<text x="711" y="391" font-size="13" font-weight="500" fill="#3d2b80" text-anchor="middle">raw.workforce</text>
+<rect x="636" y="416" width="150" height="32" rx="6" fill="#fff" stroke="#b9a8e6"/>
+<text x="711" y="437" font-size="13" font-weight="500" fill="#3d2b80" text-anchor="middle">threats.events</text>
+<rect x="636" y="462" width="150" height="32" rx="6" fill="#fff" stroke="#b9a8e6"/>
+<text x="711" y="483" font-size="13" font-weight="500" fill="#3d2b80" text-anchor="middle">jobs.clean</text>
+<rect x="636" y="508" width="150" height="32" rx="6" fill="#fff" stroke="#b9a8e6"/>
+<text x="711" y="529" font-size="13" font-weight="500" fill="#3d2b80" text-anchor="middle">skills.demand</text>
+<rect x="636" y="554" width="150" height="32" rx="6" fill="#fff" stroke="#b9a8e6"/>
+<text x="711" y="575" font-size="13" font-weight="500" fill="#3d2b80" text-anchor="middle">skills.supply</text>
+<rect x="636" y="600" width="150" height="32" rx="6" fill="#fff" stroke="#b9a8e6"/>
+<text x="711" y="621" font-size="13" font-weight="500" fill="#3d2b80" text-anchor="middle">agg.* (counts)</text>
+<rect x="636" y="646" width="150" height="32" rx="6" fill="#fff" stroke="#b9a8e6"/>
+<text x="711" y="667" font-size="13" font-weight="500" fill="#3d2b80" text-anchor="middle">alerts.*</text>
+<rect x="636" y="692" width="150" height="32" rx="6" fill="#fff" stroke="#b9a8e6"/>
+<text x="711" y="713" font-size="13" font-weight="500" fill="#3d2b80" text-anchor="middle">analysis.platforms</text>
+<rect x="636" y="738" width="150" height="32" rx="6" fill="#fff" stroke="#b9a8e6"/>
+<text x="711" y="759" font-size="13" font-weight="500" fill="#3d2b80" text-anchor="middle">errors.invalid</text>
+<line x1="578" y1="216" x2="634" y2="202" stroke="#777" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#head)" marker-start="url(#head-rev)"/>
+<line x1="590" y1="800" x2="634" y2="800" stroke="#777" stroke-width="2" marker-end="url(#head)"/>
+<rect x="524.0" y="786" width="72" height="22" rx="11" fill="#fff" stroke="#bbb"/>
+<text x="560" y="802" font-size="13" font-weight="600" fill="#444" text-anchor="middle">publish</text>
+<rect x="830" y="112" width="750" height="318" rx="12" fill="#e9f5ef" stroke="#3f9a6e" stroke-width="1.5"/>
+<circle cx="854" cy="138" r="13" fill="#3f9a6e"/>
+<text x="854" y="143" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">4</text>
+<text x="876" y="144" font-size="19" font-weight="700" fill="#222" text-anchor="start">Stream stages on Apache Flink</text>
+<text x="846" y="166" font-size="13" font-weight="400" fill="#555" text-anchor="start" font-style="italic">each stage is a PyFlink job that reads from Kafka and publishes its results back · no Spark</text>
+<text x="846" y="188" font-size="12" font-weight="700" fill="#3f7a5c" text-anchor="start">CLEAN &amp; UNDERSTAND</text>
+<rect x="846" y="194" width="360" height="56" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="858" y="218" font-size="16" font-weight="600" fill="#222" text-anchor="start">S1 Remove duplicate ads</text>
+<text x="858" y="238" font-size="13" font-weight="400" fill="#555" text-anchor="start">MinHash LSH</text>
+<rect x="1168" y="203" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="1183.0" y="218" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M1</text>
+<rect x="1214" y="194" width="350" height="56" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="1226" y="218" font-size="16" font-weight="600" fill="#222" text-anchor="start">S2 Find skills in each ad</text>
+<text x="1226" y="238" font-size="13" font-weight="400" fill="#555" text-anchor="start">taxonomy match + AI</text>
+<rect x="1526" y="203" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="1541.0" y="218" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M1</text>
+<rect x="1491" y="203" width="30" height="20" rx="4" fill="#b0306a"/>
+<text x="1506.0" y="218" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">AI</text>
+<text x="846" y="274" font-size="12" font-weight="700" fill="#3f7a5c" text-anchor="start">COUNT &amp; DETECT</text>
+<rect x="846" y="280" width="172" height="60" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="858" y="304" font-size="16" font-weight="600" fill="#222" text-anchor="start">S3 Top 10 skills</text>
+<text x="858" y="324" font-size="13" font-weight="400" fill="#555" text-anchor="start">Space-Saving</text>
+<rect x="980" y="289" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="995.0" y="304" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M2</text>
+<rect x="1026" y="280" width="172" height="60" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="1038" y="304" font-size="16" font-weight="600" fill="#222" text-anchor="start">S4 Demand</text>
+<text x="1038" y="324" font-size="13" font-weight="400" fill="#555" text-anchor="start">Count-Min Sketch</text>
+<rect x="1160" y="289" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="1175.0" y="304" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M2</text>
+<rect x="1206" y="280" width="172" height="60" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="1218" y="304" font-size="16" font-weight="600" fill="#222" text-anchor="start">S5 Supply</text>
+<text x="1218" y="324" font-size="13" font-weight="400" fill="#555" text-anchor="start">DGIM</text>
+<rect x="1340" y="289" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="1355.0" y="304" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M3</text>
+<rect x="1386" y="280" width="172" height="60" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="1398" y="304" font-size="16" font-weight="600" fill="#222" text-anchor="start">S6 Demand drift</text>
+<text x="1398" y="324" font-size="13" font-weight="400" fill="#555" text-anchor="start">ADWIN</text>
+<rect x="1520" y="289" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="1535.0" y="304" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M3</text>
+<rect x="846" y="350" width="172" height="60" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="858" y="374" font-size="16" font-weight="600" fill="#222" text-anchor="start">S7 Threat counts</text>
+<text x="858" y="394" font-size="13" font-weight="400" fill="#555" text-anchor="start">time windows</text>
+<rect x="980" y="359" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="995.0" y="374" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M4</text>
+<rect x="1026" y="350" width="172" height="60" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="1038" y="374" font-size="16" font-weight="600" fill="#222" text-anchor="start">S8 Attack bursts</text>
+<text x="1038" y="394" font-size="13" font-weight="400" fill="#555" text-anchor="start">Half-Space Trees</text>
+<rect x="1160" y="359" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="1175.0" y="374" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M4</text>
+<rect x="1206" y="350" width="172" height="60" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="1218" y="374" font-size="16" font-weight="600" fill="#222" text-anchor="start">S9 New skills</text>
+<text x="1218" y="394" font-size="13" font-weight="400" fill="#555" text-anchor="start">Lossy Counting</text>
+<rect x="1340" y="359" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="1355.0" y="374" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M5</text>
+<rect x="1386" y="350" width="172" height="60" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="1398" y="374" font-size="16" font-weight="600" fill="#222" text-anchor="start">S10 Companies</text>
+<text x="1398" y="394" font-size="13" font-weight="400" fill="#555" text-anchor="start">HyperLogLog</text>
+<rect x="1520" y="359" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="1535.0" y="374" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M5</text>
+<line x1="802" y1="168" x2="828" y2="168" stroke="#777" stroke-width="2" marker-end="url(#head)"/>
+<rect x="791.0" y="136" width="48" height="22" rx="11" fill="#fff" stroke="#bbb"/>
+<text x="815" y="152" font-size="13" font-weight="600" fill="#444" text-anchor="middle">read</text>
+<line x1="828" y1="400" x2="804" y2="400" stroke="#777" stroke-width="2" marker-end="url(#head)"/>
+<rect x="779.0" y="370" width="72" height="22" rx="11" fill="#fff" stroke="#bbb"/>
+<text x="815" y="386" font-size="13" font-weight="600" fill="#444" text-anchor="middle">results</text>
+<rect x="830" y="450" width="460" height="230" rx="12" fill="#fbf4e3" stroke="#c08a2a" stroke-width="1.5"/>
+<circle cx="854" cy="476" r="13" fill="#c08a2a"/>
+<text x="854" y="481" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">5</text>
+<text x="876" y="482" font-size="19" font-weight="700" fill="#222" text-anchor="start">Storage</text>
+<text x="846" y="504" font-size="13" font-weight="400" fill="#555" text-anchor="start" font-style="italic">Apache Cassandra · M2</text>
+<rect x="846" y="520" width="116" height="96" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="858" y="544" font-size="16" font-weight="600" fill="#222" text-anchor="start">Sink</text>
+<text x="858" y="564" font-size="13" font-weight="400" fill="#555" text-anchor="start">saves records</text>
+<text x="858" y="582" font-size="13" font-weight="400" fill="#555" text-anchor="start">and results</text>
+<rect x="924" y="529" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="939.0" y="544" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M2</text>
+<path d="M1000,512 L1000,644 A130,16 0 0 0 1260,644 L1260,512" fill="#fff" stroke="#c08a2a" stroke-width="1.5"/>
+<ellipse cx="1130" cy="512" rx="130" ry="16" fill="#fff" stroke="#c08a2a" stroke-width="1.5"/>
+<text x="1130" y="560" font-size="17" font-weight="700" fill="#222" text-anchor="middle">Cassandra</text>
+<text x="1130" y="584" font-size="13" font-weight="400" fill="#555" text-anchor="middle">job ads, profiles, courses,</text>
+<text x="1130" y="602" font-size="13" font-weight="400" fill="#555" text-anchor="middle">daily counts, Top 10s, alerts,</text>
+<text x="1130" y="620" font-size="13" font-weight="400" fill="#555" text-anchor="middle">forecasts, skills gap</text>
+<line x1="962" y1="568" x2="998" y2="568" stroke="#777" stroke-width="2" marker-end="url(#head)"/>
+<line x1="802" y1="568" x2="844" y2="568" stroke="#777" stroke-width="2" marker-end="url(#head)"/>
+<rect x="799.0" y="534" width="48" height="22" rx="11" fill="#fff" stroke="#bbb"/>
+<text x="823" y="550" font-size="13" font-weight="600" fill="#444" text-anchor="middle">save</text>
+<rect x="1310" y="450" width="270" height="230" rx="12" fill="#fbede7" stroke="#c9603f" stroke-width="1.5"/>
+<circle cx="1334" cy="476" r="13" fill="#c9603f"/>
+<text x="1334" y="481" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">6</text>
+<text x="1356" y="482" font-size="19" font-weight="700" fill="#222" text-anchor="start">Batch jobs</text>
+<text x="1326" y="504" font-size="13" font-weight="400" fill="#555" text-anchor="start" font-style="italic">pandas, statsmodels, LightGBM · M3</text>
+<rect x="1324" y="515" width="242" height="78" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="1336" y="539" font-size="16" font-weight="600" fill="#222" text-anchor="start">Forecast (weekly)</text>
+<text x="1336" y="559" font-size="13" font-weight="400" fill="#555" text-anchor="start">SARIMA or LightGBM, demand</text>
+<text x="1336" y="577" font-size="13" font-weight="400" fill="#555" text-anchor="start">12 months ahead, per country</text>
+<rect x="1528" y="524" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="1543.0" y="539" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M3</text>
+<rect x="1324" y="602" width="242" height="66" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="1336" y="626" font-size="16" font-weight="600" fill="#222" text-anchor="start">Skills gap (monthly)</text>
+<text x="1336" y="646" font-size="13" font-weight="400" fill="#555" text-anchor="start">demand ÷ supply</text>
+<rect x="1528" y="611" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="1543.0" y="626" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M3</text>
+<line x1="1262" y1="560" x2="1322" y2="560" stroke="#777" stroke-width="2" marker-end="url(#head)" marker-start="url(#head-rev)"/>
+<rect x="830" y="700" width="750" height="160" rx="12" fill="#eef6ea" stroke="#5a9a4a" stroke-width="1.5"/>
+<circle cx="854" cy="726" r="13" fill="#5a9a4a"/>
+<text x="854" y="731" font-size="15" font-weight="700" fill="#fff" text-anchor="middle">7</text>
+<text x="876" y="732" font-size="19" font-weight="700" fill="#222" text-anchor="start">Serving: API and web application</text>
+<text x="846" y="754" font-size="13" font-weight="400" fill="#555" text-anchor="start" font-style="italic">FastAPI, React · M4 and every member</text>
+<rect x="846" y="764" width="210" height="80" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="858" y="788" font-size="16" font-weight="600" fill="#222" text-anchor="start">Monitoring</text>
+<text x="858" y="808" font-size="13" font-weight="400" fill="#555" text-anchor="start">Prometheus + Grafana:</text>
+<text x="858" y="826" font-size="13" font-weight="400" fill="#555" text-anchor="start">pipeline health</text>
+<rect x="1018" y="773" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="1033.0" y="788" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M2</text>
+<rect x="1076" y="764" width="236" height="80" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="1088" y="788" font-size="16" font-weight="600" fill="#222" text-anchor="start">FastAPI service</text>
+<text x="1088" y="808" font-size="13" font-weight="400" fill="#555" text-anchor="start">only reader of Cassandra;</text>
+<text x="1088" y="826" font-size="13" font-weight="400" fill="#555" text-anchor="start">REST + live alerts</text>
+<rect x="1274" y="773" width="30" height="20" rx="4" fill="#e6e6e6"/>
+<text x="1289.0" y="788" font-size="12" font-weight="700" fill="#333" text-anchor="middle">M4</text>
+<rect x="1334" y="764" width="232" height="80" rx="7" fill="#fff" stroke="#cfcfcf"/>
+<text x="1346" y="788" font-size="16" font-weight="600" fill="#222" text-anchor="start">React web app</text>
+<text x="1346" y="808" font-size="13" font-weight="400" fill="#555" text-anchor="start">Europe map, 5 dashboards,</text>
+<text x="1346" y="826" font-size="13" font-weight="400" fill="#555" text-anchor="start">world threat map</text>
+<rect x="1519" y="773" width="39" height="20" rx="4" fill="#e6e6e6"/>
+<text x="1538.5" y="788" font-size="12" font-weight="700" fill="#333" text-anchor="middle">all</text>
+<line x1="1240" y1="660" x2="1240" y2="762" stroke="#777" stroke-width="2" marker-end="url(#head)"/>
+<rect x="1204.0" y="680" width="72" height="22" rx="11" fill="#fff" stroke="#bbb"/>
+<text x="1240" y="696" font-size="13" font-weight="600" fill="#444" text-anchor="middle">queries</text>
+<line x1="802" y1="800" x2="844" y2="800" stroke="#777" stroke-width="2" marker-end="url(#head)"/>
+<rect x="791.0" y="768" width="64" height="22" rx="11" fill="#fff" stroke="#bbb"/>
+<text x="823" y="784" font-size="13" font-weight="600" fill="#444" text-anchor="middle">health</text>
+<path d="M802,852 L1160,852 L1160,846" fill="none" stroke="#777" stroke-width="2" marker-end="url(#head)"/>
+<rect x="928.0" y="838" width="104" height="22" rx="11" fill="#fff" stroke="#bbb"/>
+<text x="980" y="854" font-size="13" font-weight="600" fill="#444" text-anchor="middle">live alerts</text>
+<line x1="1312" y1="804" x2="1332" y2="804" stroke="#777" stroke-width="2" marker-end="url(#head)"/>
+<line x1="1450" y1="844" x2="1450" y2="900" stroke="#777" stroke-width="2" marker-end="url(#head)"/>
+<ellipse cx="1450" cy="930" rx="120" ry="28" fill="#fff" stroke="#555" stroke-width="1.5"/>
+<text x="1450" y="936" font-size="16" font-weight="600" fill="#222" text-anchor="middle">Users in a browser</text>
+<text x="20" y="912" font-size="15" font-weight="700" fill="#222" text-anchor="start">Key</text>
+<line x1="22" y1="936" x2="82" y2="936" stroke="#777" stroke-width="2" marker-end="url(#head)"/>
+<text x="92" y="941" font-size="14" font-weight="400" fill="#444" text-anchor="start">data flow</text>
+<line x1="200" y1="936" x2="260" y2="936" stroke="#777" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#head)"/>
+<text x="270" y="941" font-size="14" font-weight="400" fill="#444" text-anchor="start">control (collection tasks)</text>
+<rect x="22" y="956" width="58" height="26" rx="5" fill="#fafafa" stroke="#999" stroke-dasharray="6 4"/>
+<text x="92" y="974" font-size="14" font-weight="400" fill="#444" text-anchor="start">designed, not built yet</text>
+<rect x="266" y="960" width="30" height="20" rx="4" fill="#b0306a"/>
+<text x="281.0" y="975" font-size="12" font-weight="700" fill="#fff" text-anchor="middle">AI</text>
+<text x="306" y="974" font-size="14" font-weight="400" fill="#444" text-anchor="start">uses the AI module to read text</text>
+<text x="560" y="912" font-size="15" font-weight="700" fill="#222" text-anchor="start">Owners</text>
+<text x="560" y="941" font-size="14" font-weight="400" fill="#444" text-anchor="start">M1 Singh Multani Gurinder</text>
+<text x="760" y="941" font-size="14" font-weight="400" fill="#444" text-anchor="start">M2 Ullah Asad</text>
+<text x="960" y="941" font-size="14" font-weight="400" fill="#444" text-anchor="start">M3 Bailey Kelen</text>
+<text x="560" y="971" font-size="14" font-weight="400" fill="#444" text-anchor="start">M4 Roomi Babar Ali</text>
+<text x="760" y="971" font-size="14" font-weight="400" fill="#444" text-anchor="start">M5 Richartz Lena</text>
+</svg>
