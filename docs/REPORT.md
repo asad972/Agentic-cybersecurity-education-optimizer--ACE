@@ -110,7 +110,7 @@ architecture (Section 3), and our tests and experiments (Section 4).
 
 To model European cybersecurity Demand and Supply, we combine two public labour-market datasets with a small synthetic fixture set used in CI. Historical job postings come from the `mischeiwiller/german-job-postings` Parquet archive on Hugging Face, which holds 70,584 German-language listings from 2015 to 2026 sourced from Bundesagentur für Arbeit records under Hugging Face's open research terms. Our job-ads collector maps `nuts_code` and `region` fields to ISO 3166-1 alpha-2 country codes inside our 32-country scope, constructs text descriptions from pre-annotated ESCO occupation and skill tags (European Commission, 2022), validates every record against `raw.jobs`, and replays the archive in global event-time order into S1 and S2. Two limitations apply: the free-text `description_derived` column is null in all 70,584 rows, so historical Demand depends on structured ESCO tags rather than raw prose, and geographic coverage concentrates in DACH (`DE`: 70,111, `AT`: 355, `CH`: 2, while 116 rows without valid region metadata are skipped). Live Adzuna and Bundesagentur für Arbeit polling is wired in the collector behind API credentials rather than run during offline replay.
 
-Practitioner Supply is estimated from the 2024 Stack Overflow Developer Survey (Stack Overflow, 2024), released as CSV microdata under the Open Database License (ODbL) with roughly 65,000 anonymised global responses. The profile collector keeps European respondents, strips direct identifiers, maps reported developer or security roles and technology stacks onto `raw.profiles`, and replays records with year-scoped event IDs through S2 and S5 to maintain rolling 365-day Supply counts for the monthly Skills Gap job. Because survey participation is self-selected among developers, software-engineering security roles are better represented than operational functions such as Tier-1 SOC analysts or GRC auditors, and European sample counts cluster heavily in `DE`, `GB`, and `FR`.
+Practitioner Supply is estimated from the 2025 Stack Overflow Developer Survey (Stack Overflow, 2025), released as CSV microdata under the Open Database License (ODbL). The profile collector keeps European respondents, strips direct identifiers, maps reported developer or security roles and technology stacks onto `raw.profiles`, and replays records with year-scoped event IDs through S2 and S5 to maintain rolling 365-day Supply counts for the monthly Skills Gap job. Because survey participation is self-selected among developers, software-engineering security roles are better represented than operational functions such as Tier-1 SOC analysts or GRC auditors, and European sample counts cluster heavily in `DE`, `GB`, and `FR`.
 
 For offline contract and replay checks without external downloads, `shared/testdata/` provides two repository-licensed JSONL files (`jobs_sample.jsonl` and `profiles_sample.jsonl`, 200 records each) generated with fixed seeds. These fixtures verify schema validation and event-time ordering rather than real labour-market frequencies.
 
@@ -337,7 +337,7 @@ How the other stages are tested (one line each):
 
 <!-- M1 START: one line on how S1 and S2 are tested. -->
 
-- S1 is tested on synthetic duplicate and near-duplicate job ads across 30-day country windows to check exact Jaccard similarity and MinHash-LSH filtering (Zhu et al., 2016), and S2 is tested with deterministic taxonomy fixtures, Unicode word-boundary cases, and recorded structured LLM responses for skill and ECSF role extraction (Zhang et al., 2022).
+- S1 is tested on synthetic duplicate and near-duplicate job ads across 30-day country windows to check exact Jaccard similarity and MinHash-LSH filtering (Lee et al., 2022), and S2 is tested with deterministic taxonomy fixtures, Unicode word-boundary cases, and recorded structured LLM responses for skill and ECSF role extraction (Zhang et al., 2022).
 
 <!-- M1 END -->
 
@@ -383,9 +383,9 @@ How the other stages are tested (one line each):
 <!-- M1 START -->
 
 - European Commission. (2022). *ESCO handbook: European Skills, Competences, Qualifications and Occupations* (v1.1). Publications Office of the European Union. <https://esco.ec.europa.eu/>
-- Stack Overflow. (2024). *2024 Stack Overflow Developer Survey*. <https://survey.stackoverflow.co/2024/>
+- Stack Overflow. (2025). *2025 Stack Overflow Developer Survey*. <https://survey.stackoverflow.co/2025/>
 - Zhang, M., Jensen, K. N., Sonniks, S. D., & Plank, B. (2022). SkillSpan: Hard and soft skill extraction from English job postings. In *Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies* (pp. 4962–4984). Association for Computational Linguistics.
-- Zhu, E., Nargesian, F., Pu, K. Q., & Miller, R. J. (2016). LSH ensemble: Internet-scale domain search. *Proceedings of the VLDB Endowment, 9*(12), 1185–1196.
+- Lee, K., Ippolito, D., Nystrom, A., Zhang, C., Eck, D., Callison-Burch, C., & Carlini, N. (2022). Deduplicating training data makes language models better. In *Proceedings of the 60th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)* (pp. 8424–8445). Association for Computational Linguistics. <https://doi.org/10.18653/v1/2022.acl-long.577>
 
 <!-- M1 END -->
 
