@@ -132,6 +132,11 @@ def read_topics(env: Any, topics: Iterable[str], bootstrap_servers: str, group_i
     Bounded stops at the offsets that are the latest when the job starts, which
     tests and one-off backfills use.
     """
+    # Check the names first, so a wrong call fails the same way with or without Flink installed.
+    names = [contracts.topic(name).name for name in topics]
+    if not names:
+        raise ValueError("read_topics needs at least one topic")
+
     from pyflink.common import Types, WatermarkStrategy
     from pyflink.common.serialization import SimpleStringSchema
     from pyflink.datastream.connectors.kafka import (
@@ -142,8 +147,7 @@ def read_topics(env: Any, topics: Iterable[str], bootstrap_servers: str, group_i
 
     pair = Types.TUPLE([Types.STRING(), Types.STRING()])
     streams = []
-    for name in topics:
-        topic = contracts.topic(name).name
+    for topic in names:
         builder = (KafkaSource.builder()
                    .set_bootstrap_servers(bootstrap_servers)
                    .set_topics(topic)
@@ -156,8 +160,6 @@ def read_topics(env: Any, topics: Iterable[str], bootstrap_servers: str, group_i
         # Event time and watermarks are assigned later, by build_flink.
         records = env.from_source(builder.build(), WatermarkStrategy.no_watermarks(), f"Kafka {topic}")
         streams.append(records.map(lambda text, topic=topic: (topic, text), output_type=pair))
-    if not streams:
-        raise ValueError("read_topics needs at least one topic")
     first, *rest = streams
     return first.union(*rest) if rest else first
 

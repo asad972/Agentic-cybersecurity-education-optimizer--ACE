@@ -13,7 +13,7 @@ git checkout -b m2/s3-top10
 git push -u origin m2/s3-top10
 ```
 
-Then open a pull request on GitHub and ask one teammate to review it.
+Then open a pull request on GitHub and ask one teammate to review it. GitHub runs the automatic checks described in [docs/ci.md](docs/ci.md) on every pull request; a pull request is merged only when all of them pass.
 
 ## Shared contracts
 
