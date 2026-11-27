@@ -39,10 +39,10 @@ All "in the selected time range" panels follow the time picker at the top right 
 
 ## Run it locally
 
-Start the main stack first, from the repository root:
+Start the main stack first, from the repository root. This also starts the API and the dashboard; see [Running the project](../../README.md#running-the-project):
 
 ```powershell
-docker compose up -d
+docker compose up -d --build --wait
 ```
 
 The monitoring containers join the main stack's Docker network, whose name comes from the folder the repository is in. Once, write it and a Grafana admin password of your choice to `deploy/monitoring/.env` (git ignores `.env` files):

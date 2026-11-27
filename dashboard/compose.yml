@@ -4,5 +4,8 @@ services:
     build: .
     ports:
       - "127.0.0.1:${ACE_DASHBOARD_PORT:-5173}:80"
+    # Docker Desktop knows host.docker.internal already; Linux Docker Engine needs this entry.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       ACE_API_URL: ${ACE_API_URL:-http://host.docker.internal:8000}

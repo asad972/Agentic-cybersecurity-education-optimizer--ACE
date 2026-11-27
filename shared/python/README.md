@@ -66,7 +66,7 @@ Subclass `WindowedStage` (counts per Country and window) or `RecordStage` (one r
 From the repository root (the same commands also work from `streaming/`):
 
 ```powershell
-docker compose up -d                                  # local Kafka and Cassandra
+docker compose up -d kafka kafka-init cassandra cassandra-init sink   # only Kafka, Cassandra and the sink
 $env:KAFKA_BOOTSTRAP_SERVERS = 'localhost:9092'       # the default
 python -m ace.kafka s4_demand_frequency.stage:DemandFrequency             # runs until stopped
 python -m ace.kafka s4_demand_frequency.stage:DemandFrequency --bounded   # reads what is there now, then stops

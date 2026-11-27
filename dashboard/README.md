@@ -7,14 +7,14 @@ placeholders. It does not use mock or sample data when the API is unavailable.
 
 ## Run with Docker
 
-From the repository root:
+`docker compose up -d --build --wait` from the repository root starts the dashboard together with the API and the rest of the stack; see [Running the project](../README.md#running-the-project). To start the dashboard on its own while the full stack runs, first stop only its dashboard with `docker compose stop dashboard`, because both use port 5173. The full stack's API keeps running on port 8000, and the dashboard started alone uses it. Then, from the repository root:
 
 ```bash
 docker compose -f dashboard/compose.yml up --build -d --wait
 ```
 
 Open http://localhost:5173. Stop with `docker compose -f dashboard/compose.yml stop`.
-If that port is occupied, prefix the startup command with `ACE_DASHBOARD_PORT=5174` and open port 5174.
+If that port is occupied, set `ACE_DASHBOARD_PORT=5174` in your shell before starting both the dashboard and the API, and open port 5174. The API reads the same setting to accept calls from that port; if you set `API_CORS_ORIGINS` yourself, add the new port there.
 The standalone image builds with `docker build -t ace-dashboard -f dashboard/Dockerfile dashboard`.
 
 ## Local development

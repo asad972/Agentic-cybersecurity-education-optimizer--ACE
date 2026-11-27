@@ -1,6 +1,6 @@
 # Monitoring for the local stack: the pipeline metrics exporter, Kafka exporter,
-# Prometheus and Grafana. Start the main stack first (docker compose up -d in the
-# repository root), then follow deploy/monitoring/README.md:
+# Prometheus and Grafana. Start the main stack first (docker compose up -d --build
+# --wait in the repository root), then follow deploy/monitoring/README.md:
 #
 #   docker compose -f deploy/monitoring/compose.yml up -d --build
 #
