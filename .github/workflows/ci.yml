@@ -265,6 +265,30 @@ jobs:
       - name: Run the job ads agent tests
         run: python -m pytest -q agents/job_ads
 
+  profiles-agent:
+    name: Profiles agent
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # The tests import profiles, so agents/ goes on the path, as for the job ads agent.
+    env:
+      PYTHONPATH: ${{ github.workspace }}/shared/python:${{ github.workspace }}/agents
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Same Python as agents/profiles/Dockerfile (python:3.11-slim).
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      # The same packages, at the same versions, as the agent's Dockerfile
+      # installs. Change both together.
+      - name: Install the shared package and the agent's requirements
+        run: |
+          python -m pip install -e "shared/python[dev]"
+          python -m pip install kafka-python==2.2.15 cassandra-driver==3.30.1
+      - name: Run the profiles agent tests
+        run: python -m pytest -q agents/profiles
+
   m3-experiments:
     name: M3 experiments
     runs-on: ubuntu-latest
@@ -389,6 +413,8 @@ jobs:
         run: docker build -f agents/threat/Dockerfile .
       - name: Build the job ads agent image
         run: docker build -f agents/job_ads/Dockerfile .
+      - name: Build the profiles agent image
+        run: docker build -f agents/profiles/Dockerfile .
       # Only the runtime stage: the test stage would rerun all stage tests,
       # which the two stage jobs above already do.
       - name: Build the stage images
