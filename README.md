@@ -59,7 +59,7 @@ This one command builds and starts the whole stack in the right order:
 
 1. Kafka and Cassandra
 2. `kafka-init` and `cassandra-init`, which create the topics and the tables and then stop
-3. the sink, which copies Kafka topics into Cassandra
+3. the sink, which copies Kafka topics into Cassandra, and the stream stages, once the topics exist
 4. the API, once the tables exist
 5. the dashboard, once the API is healthy
 
@@ -85,7 +85,9 @@ All services should show `Up` or `healthy`. `kafka-init` and `cassandra-init` sh
 
 The dashboard and API ports can be changed: set `ACE_DASHBOARD_PORT` or `ACE_API_PORT` in your shell before the start command, and use that port in the addresses above. The dashboard in Docker always calls the API on port 8000, so only move the API when you don't need the dashboard.
 
-The dashboard shows numbers only after data has passed through the pipeline. The agents and stream stages run separately; see the README in each folder under `agents/` and `streaming/`.
+The stream stages start with the rest, as three Flink jobs: `s7-threat-frequency` (S7 hourly and daily), `s8-threat-bursts` and `job-stages` (S1–S6, S9 and S10). Each job is one Java process of about 700 MB, so they add about 2 GB to Kafka, Cassandra (1 GB heap), the sink, the API and the dashboard. Make sure Docker may use enough memory for all of it (on Windows with WSL 2, the limit is in `.wslconfig`; on macOS, under Settings > Resources). If a stage container keeps restarting with exit code 137, it ran out of memory. Their checkpoints are on the `stage-checkpoints` volume, so a restarted stage continues where it stopped (see [shared/python/README.md](shared/python/README.md#running-a-stage-on-kafka)).
+
+The dashboard shows numbers only after data has passed through the pipeline. The agents run separately, except the threat agent, which starts with the rest once `COMPOSE_PROFILES=live` is in `.env`; see the README in each folder under `agents/`.
 
 ### After changing code
 
