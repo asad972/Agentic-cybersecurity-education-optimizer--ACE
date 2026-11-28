@@ -27,6 +27,7 @@ import argparse
 import hashlib
 import importlib
 import os
+import re
 import sys
 import tempfile
 import urllib.request
@@ -207,32 +208,50 @@ def write_topics(outputs: Any, bootstrap_servers: str, stage_name: str = "ace") 
     return rows.sink_to(sink).name("Kafka sink").uid(f"{stage_name}/kafka-sink")
 
 
-def checkpoint_dir(stages: Any) -> str:
+def job_name(stages: Any, job: str | None = None) -> str:
+    """The name of a job: `job` if given, else the name of its only stage.
+
+    The checkpoint folder is named after the job, not after its stages, so
+    adding a stage to a job or removing one keeps the other stages' state. A job
+    with several stages therefore needs its own name.
+    """
+    listed = _as_list(stages)
+    if job is None:
+        if len(listed) > 1:
+            raise ValueError("a job with several stages needs a job name (--job)")
+        return listed[0].name
+    # Only characters that a file:// URI keeps as they are: Flink creates the folder
+    # exactly as the URI spells it, so an escaped character (e.g. %2B for "+") would
+    # put it where latest_checkpoint() never looks.
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", job):
+        raise ValueError(f"a job name may only hold letters, digits, '-' and '_', got {job!r}")
+    return job
+
+
+def checkpoint_dir(stages: Any, job: str | None = None) -> str:
     """Where an unbounded job saves its checkpoints, as a file:// URI.
 
-    One folder per job, named after its stages, under ACE_CHECKPOINT_DIR
+    One folder per job, named after job_name(), under ACE_CHECKPOINT_DIR
     (default ~/.cache/ace/checkpoints). Without a folder Flink keeps
     checkpoints in memory, where a job's state may be at most 5 MB.
     """
-    return _checkpoint_folder(stages).as_uri()
+    return _checkpoint_folder(stages, job).as_uri()
 
 
-def _checkpoint_folder(stages: Any) -> Path:
+def _checkpoint_folder(stages: Any, job: str | None) -> Path:
     configured = os.environ.get("ACE_CHECKPOINT_DIR")
     base = Path(configured) if configured else Path.home() / ".cache" / "ace" / "checkpoints"
-    # "_" joins the stage names: as_uri() would escape "+" as %2B, and Flink then
-    # creates a folder literally named %2B, which latest_checkpoint() never finds.
-    return (base / "_".join(stage.name for stage in _as_list(stages))).resolve()
+    return (base / job_name(stages, job)).resolve()
 
 
-def latest_checkpoint(stages: Any) -> str | None:
+def latest_checkpoint(stages: Any, job: str | None = None) -> str | None:
     """The newest complete checkpoint of this job, as a file:// URI, or None.
 
     Flink puts each run's checkpoints in <checkpoint_dir>/<run id>/chk-<n>, and
     writes chk-<n>/_metadata last, so a folder without it was never finished
     (for example, the container stopped while writing it).
     """
-    finished = _checkpoint_folder(stages).glob("*/chk-*/_metadata")
+    finished = _checkpoint_folder(stages, job).glob("*/chk-*/_metadata")
     newest = max(finished, key=lambda metadata: metadata.stat().st_mtime, default=None)
     return newest.parent.as_uri() if newest else None
 
@@ -247,7 +266,8 @@ def _as_list(stages: Any) -> list[Any]:
     return listed
 
 
-def build_job(stages: Any, bootstrap_servers: str, bounded: bool = False) -> Any:
+def build_job(stages: Any, bootstrap_servers: str, bounded: bool = False,
+              job: str | None = None) -> Any:
     """A Flink job that runs one stage, or several side by side, between Kafka topics.
 
     Each stage reads its own input topics and writes its own outputs, exactly as
@@ -258,7 +278,8 @@ def build_job(stages: Any, bootstrap_servers: str, bounded: bool = False) -> Any
     state and the Kafka offsets they have processed, to checkpoint_dir(), and
     starts from latest_checkpoint() when there is one. So a restarted job
     continues where it stopped, state included. Without a checkpoint each stage
-    starts from its consumer group's committed offsets, with empty state.
+    starts from its consumer group's committed offsets, with empty state. An
+    unbounded job with several stages needs a `job` name for its checkpoints.
     """
     from pyflink.common import Configuration
 
@@ -277,11 +298,11 @@ def build_job(stages: Any, bootstrap_servers: str, bounded: bool = False) -> Any
         # checkpoint fail once S8 held one model per country.
         checkpoints = Configuration()
         checkpoints.set_string("execution.checkpointing.storage", "filesystem")
-        checkpoints.set_string("execution.checkpointing.dir", checkpoint_dir(stages))
+        checkpoints.set_string("execution.checkpointing.dir", checkpoint_dir(stages, job))
         # Keep the last checkpoint when the job stops, so the next start can use it.
         checkpoints.set_string("execution.checkpointing.externalized-checkpoint-retention",
                                "RETAIN_ON_CANCELLATION")
-        restore = latest_checkpoint(stages)
+        restore = latest_checkpoint(stages, job)
         if restore:
             checkpoints.set_string("execution.state-recovery.path", restore)
             # The new run owns the checkpoint and deletes it once it has a newer one.
@@ -303,11 +324,13 @@ def build_job(stages: Any, bootstrap_servers: str, bounded: bool = False) -> Any
     return env
 
 
-def run_on_kafka(stages: Any, bootstrap_servers: str | None = None, bounded: bool = False) -> None:
+def run_on_kafka(stages: Any, bootstrap_servers: str | None = None, bounded: bool = False,
+                 job: str | None = None) -> None:
     """Run one stage, or several in one job, on Kafka until stopped, or, if bounded, until the inputs are read."""
     stages = _as_list(stages)
     servers = bootstrap_servers or os.environ.get("KAFKA_BOOTSTRAP_SERVERS", DEFAULT_BOOTSTRAP_SERVERS)
-    build_job(stages, servers, bounded).execute("ace " + ", ".join(stage.name for stage in stages))
+    label = job or ", ".join(stage.name for stage in stages)
+    build_job(stages, servers, bounded, job).execute(f"ace {label}")
 
 
 def load_stage(spec: str, kwargs: dict[str, str] | None = None) -> Any:
@@ -343,6 +366,9 @@ def main(argv: list[str] | None = None) -> None:
                              "name several to run them in one job")
     parser.add_argument("--bounded", action="store_true",
                         help="process what is in the input topics now, then stop")
+    parser.add_argument("--job", metavar="NAME",
+                        help="the job's name, which names its checkpoint folder; needed with several "
+                             "stages unless --bounded, defaults to the stage's name with one")
     parser.add_argument("--arg", dest="stage_args", type=_stage_arg, action="append", default=[],
                         metavar="NAME=VALUE",
                         help="a setting passed to the stage class, e.g. --arg period=daily; repeatable; "
@@ -350,8 +376,10 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     if args.stage_args and len(args.stages) > 1:
         parser.error("--arg works with a single stage only")
+    if len(args.stages) > 1 and not args.bounded and args.job is None:
+        parser.error("--job NAME is needed to run several stages until stopped")
     stages = [load_stage(spec, dict(args.stage_args)) for spec in args.stages]
-    run_on_kafka(stages, bounded=args.bounded)
+    run_on_kafka(stages, bounded=args.bounded, job=args.job)
 
 
 if __name__ == "__main__":

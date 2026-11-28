@@ -199,7 +199,8 @@ class OtherCounts(Counts):
 def started(monkeypatch):
     """Replace run_on_kafka; returns the stages main() would have started."""
     seen = {}
-    monkeypatch.setattr(kafka, "run_on_kafka", lambda stages, bounded=False: seen.update(stages=stages))
+    monkeypatch.setattr(kafka, "run_on_kafka",
+                        lambda stages, bounded=False, job=None: seen.update(stages=stages, job=job))
     return seen
 
 
@@ -211,8 +212,17 @@ def test_main_passes_arg_settings_to_the_stage(started):
 
 
 def test_main_starts_several_stages_in_one_job(started):
-    kafka.main([f"{__name__}:Counts", f"{__name__}:OtherCounts"])
+    kafka.main([f"{__name__}:Counts", f"{__name__}:OtherCounts", "--job", "test-job"])
     assert [stage.name for stage in started["stages"]] == ["test-counts", "test-other-counts"]
+    assert started["job"] == "test-job"
+
+
+def test_several_stages_need_a_job_name_unless_bounded(started):
+    with pytest.raises(SystemExit):
+        kafka.main([f"{__name__}:Counts", f"{__name__}:OtherCounts"])
+    assert "stages" not in started
+    kafka.main([f"{__name__}:Counts", f"{__name__}:OtherCounts", "--bounded"])   # no checkpoints
+    assert started["job"] is None
 
 
 def test_arg_settings_are_refused_with_several_stages(started):
@@ -231,13 +241,24 @@ def test_one_job_refuses_two_stages_with_the_same_name():
 def test_checkpoints_go_to_one_folder_per_job(monkeypatch, tmp_path):
     monkeypatch.setenv("ACE_CHECKPOINT_DIR", str(tmp_path))
     assert kafka.checkpoint_dir(Counts()) == (tmp_path / "test-counts").resolve().as_uri()
-    several = kafka.checkpoint_dir([Counts(), OtherCounts()])
-    assert several == (tmp_path / "test-counts_test-other-counts").resolve().as_uri()
-    # Flink creates the folder exactly as the URI spells it, escapes included, so the
-    # URI must not escape anything or latest_checkpoint() looks in another folder.
-    assert "%" not in several
+    several = kafka.checkpoint_dir([Counts(), OtherCounts()], job="test-job")
+    assert several == (tmp_path / "test-job").resolve().as_uri()
     monkeypatch.delenv("ACE_CHECKPOINT_DIR")
     assert kafka.checkpoint_dir(Counts()).endswith("/.cache/ace/checkpoints/test-counts")
+
+
+def test_a_job_with_several_stages_is_named_after_the_job_not_its_stages():
+    """So adding a stage to a job, or removing one, keeps the others' checkpoints."""
+    assert kafka.job_name(Counts()) == "test-counts"
+    assert kafka.job_name([Counts()], job="test-job") == "test-job"
+    assert kafka.job_name([Counts(), OtherCounts()], job="test-job") == "test-job"
+    with pytest.raises(ValueError, match="needs a job name"):
+        kafka.job_name([Counts(), OtherCounts()])
+    # Flink creates the folder exactly as the file:// URI spells it, escapes included
+    # (e.g. %2B for "+"), so a name with such a character would never be found again.
+    for bad in ["a+b", "a b", "../up", "", "-x"]:
+        with pytest.raises(ValueError, match="job name"):
+            kafka.job_name(Counts(), job=bad)
 
 
 def _checkpoint(folder: Path, run: str, number: int, finished: bool = True, mtime: float = 0) -> Path:
@@ -258,9 +279,10 @@ def test_latest_checkpoint_is_the_newest_finished_one(monkeypatch, tmp_path):
     _checkpoint(folder, "run-b", 3, finished=False)          # being written when the job stopped
     _checkpoint(tmp_path / "test-other-counts", "run-c", 9, mtime=3_000)   # another job's
     assert kafka.latest_checkpoint(Counts()) == newest.resolve().as_uri()
-    # A job with several stages finds its checkpoints too.
-    both = _checkpoint(tmp_path / "test-counts_test-other-counts", "run-d", 1, mtime=4_000)
-    assert kafka.latest_checkpoint([Counts(), OtherCounts()]) == both.resolve().as_uri()
+    # A job with several stages finds its checkpoints by its name, whichever stages it has now.
+    job = _checkpoint(tmp_path / "test-job", "run-d", 1, mtime=4_000)
+    assert kafka.latest_checkpoint([Counts(), OtherCounts()], job="test-job") == job.resolve().as_uri()
+    assert kafka.latest_checkpoint([Counts()], job="test-job") == job.resolve().as_uri()
 
 
 def _settings(env) -> dict:
