@@ -131,8 +131,12 @@ class S2SkillExtractionStage(RecordStage):
         extraction = self._extract(topic, record)
         self._record_unmapped(len(extraction.unmapped))
 
-        # Shared contracts (skills_demand / skills_supply) currently require skills minItems >= 1.
-        if not extraction.skills:
+        if (
+            not extraction.skills
+            and not extraction.certifications
+            and not extraction.unmapped
+            and not extraction.ecsf_role
+        ):
             return
 
         if topic == JOBS_CLEAN:

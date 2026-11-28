@@ -295,3 +295,32 @@ def test_s2_skill_extraction_flink() -> None:
     local_pairs = sorted((o.topic, o.value["event_id"]) for o in local_res.outputs)
     flink_pairs = sorted((o.topic, o.value["event_id"]) for o in flink_outs)
     assert flink_pairs == local_pairs
+
+
+def test_s2_emits_empty_skills_when_unmapped_mentions_exist() -> None:
+    def _unmapped_only(topic: str, record: dict, taxonomy: object) -> object:
+        from ace.taxonomy import ExtractionResult
+
+        return ExtractionResult(
+            skills=(),
+            certifications=(),
+            unmapped=("Zero-Trust Mesh",),
+            ecsf_role=None,
+        )
+
+    stage = S2SkillExtractionStage(extractor=_unmapped_only, use_llm=False)
+    job_ad = {
+        "event_id": "44444444-4444-4444-4444-444444444444",
+        "source": "adzuna",
+        "country": "DE",
+        "posted_date": "2026-10-04",
+        "job_title": "Security Architect",
+        "company": "Acme",
+        "description": "Experience with Zero-Trust Mesh architectures.",
+    }
+    res = run_local(stage, [(JOBS_CLEAN, job_ad)])
+    assert len(res.invalid) == 0
+    demand = res.published(SKILLS_DEMAND)
+    assert len(demand) == 1
+    assert demand[0]["skills"] == []
+    assert demand[0]["unmapped"] == ["Zero-Trust Mesh"]

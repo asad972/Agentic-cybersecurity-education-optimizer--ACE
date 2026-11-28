@@ -51,7 +51,7 @@ def test_valid_message_passes():
     [
         ({"country": "Germany"}, "country"),       # must be a two-letter code such as DE
         ({"posted_date": "01.10.2026"}, "posted_date"),
-        ({"skills": []}, "skills"),
+        ({"skills": [123]}, "skills"),
         ({"salary": 50000}, "salary"),             # fields outside the schema are rejected
     ],
 )
@@ -104,3 +104,15 @@ def test_schemas_dir_can_be_set_for_containers(monkeypatch, tmp_path):
     monkeypatch.setenv("ACE_SCHEMAS_DIR", str(tmp_path))
     with pytest.raises(FileNotFoundError, match="ACE_SCHEMAS_DIR"):
         contracts.schemas_dir()
+
+def test_empty_skills_list_is_allowed_for_demand_and_supply():
+    assert contracts.check("skills.demand", demand_message(skills=[])) is None
+    supply_msg = {
+        "event_id": "22222222-2222-2222-2222-222222222222",
+        "source": "stackoverflow",
+        "country": "FR",
+        "profile_date": "2026-10-02",
+        "skills": [],
+        "unmapped": ["Zero-Trust Mesh"],
+    }
+    assert contracts.check("skills.supply", supply_msg) is None
