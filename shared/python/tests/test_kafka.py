@@ -245,6 +245,8 @@ def test_one_job_refuses_two_stages_with_the_same_name():
         kafka.build_job([Counts(), Counts()], "localhost:9092")
     with pytest.raises(ValueError, match="at least one stage"):
         kafka.build_job([], "localhost:9092")
+    with pytest.raises(ValueError, match="needs a job name"):
+        kafka.build_job([Counts(), OtherCounts()], "localhost:9092")
 
 
 def test_checkpoints_go_to_one_folder_per_job(monkeypatch, tmp_path):

@@ -284,11 +284,16 @@ def build_job(stages: Any, bootstrap_servers: str, bounded: bool = False,
     starts from its consumer group's committed offsets, with empty state. An
     unbounded job with several stages needs a `job` name for its checkpoints.
     """
+    # Check the stages and the job name first, so a wrong call fails the same way
+    # with or without Flink installed, as in read_topics.
+    stages = _as_list(stages)
+    if not bounded:
+        job_name(stages, job)
+
     from pyflink.common import Configuration
 
     from ace import stage as ace_stage
 
-    stages = _as_list(stages)
     env = ace_stage.flink_env()
     add_connector(env)
     roots = {ace_stage._import_root(contracts.__name__)}
