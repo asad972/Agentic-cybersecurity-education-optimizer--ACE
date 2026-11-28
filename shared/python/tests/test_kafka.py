@@ -189,6 +189,15 @@ class Periods(Counts):
 def test_load_stage_passes_settings_to_the_class():
     assert kafka.load_stage(f"{__name__}:Periods").period == "hourly"
     assert kafka.load_stage(f"{__name__}:Periods", {"period": "daily"}).period == "daily"
+    # Settings after "?" let several stages in one job each have their own.
+    assert kafka.load_stage(f"{__name__}:Periods?period=daily").period == "daily"
+    with pytest.raises(ValueError, match="NAME=VALUE"):
+        kafka.load_stage(f"{__name__}:Periods?daily")
+
+
+def test_main_gives_each_stage_its_own_inline_settings(started):
+    kafka.main(["--job", "test-job", f"{__name__}:Periods?period=hourly", f"{__name__}:Periods?period=daily"])
+    assert [stage.period for stage in started["stages"]] == ["hourly", "daily"]
 
 
 class OtherCounts(Counts):
@@ -358,3 +367,24 @@ def test_build_job_reads_the_input_topic_and_writes_to_kafka():
     nodes = [node["contents"] for node in json.loads(env.get_execution_plan())["nodes"]]
     assert nodes.count("Source: Kafka skills.demand") == 2
     assert nodes.count("Kafka sink: Writer") == 2
+
+
+@pytest.mark.flink
+def test_stages_sharing_an_input_report_its_invalid_records_once(monkeypatch):
+    """S7's hourly and daily branches both check threats.events; errors.invalid gets each bad event once."""
+    from pyflink.common import Types
+
+    pair = Types.TUPLE([Types.STRING(), Types.STRING()])
+    records = [("skills.demand", "{not json")]
+    outputs = []
+    # Kafka itself is replaced: each stage reads the list and its outputs are collected.
+    monkeypatch.setattr(kafka, "read_topics",
+                        lambda env, topics, servers, group_id, bounded=False:
+                        env.from_collection(records, type_info=pair))
+    monkeypatch.setattr(kafka, "write_topics",
+                        lambda stream, servers, stage_name="ace": outputs.append(stream))
+    kafka.build_job([Counts(), OtherCounts()], "localhost:9092", bounded=True)
+    rows = outputs[0].union(outputs[1]).map(lambda out: (out[0], out[1]), output_type=pair)
+    with rows.execute_and_collect() as results:
+        invalid = [tuple(row) for row in results if row[0] == "errors.invalid"]
+    assert invalid == [("errors.invalid", "skills.demand")]

@@ -135,14 +135,20 @@ services:
 
   # Stream stages, each a Flink job on Kafka from the shared image in streaming/Dockerfile.
   # The consumer group is the stage name, so a restarted stage continues where it stopped.
-  s7-threat-frequency-hourly:
+  # S7's hourly and daily branches run in one job, so an invalid threat event is
+  # reported to errors.invalid once, and the two share one Java process.
+  s7-threat-frequency:
     &stage
     build:
       context: .
       dockerfile: streaming/Dockerfile
     image: ace-stage
-    container_name: ace-s7-hourly
-    command: ["s7_threat_frequency.stage:ThreatFrequencyStage", "--arg", "period=hourly"]
+    container_name: ace-s7
+    command:
+      - --job
+      - s7-threat-frequency
+      - s7_threat_frequency.stage:ThreatFrequencyStage?period=hourly
+      - s7_threat_frequency.stage:ThreatFrequencyStage?period=daily
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -152,11 +158,6 @@ services:
     volumes:
       - stage-checkpoints:/checkpoints
     restart: on-failure
-
-  s7-threat-frequency-daily:
-    <<: *stage
-    container_name: ace-s7-daily
-    command: ["s7_threat_frequency.stage:ThreatFrequencyStage", "--arg", "period=daily"]
 
   s8-threat-bursts:
     <<: *stage

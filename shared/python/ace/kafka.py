@@ -315,10 +315,20 @@ def build_job(stages: Any, bootstrap_servers: str, bounded: bool = False,
             checkpoints.set_string("execution.state-recovery.ignore-unclaimed-state", "true")
             print(f"Restoring from {restore}", flush=True)
         env.configure(checkpoints)
+    checked_inputs: set[str] = set()
     for stage in stages:
         topics = stage.inputs if isinstance(stage, ace_stage.RecordStage) else (stage.input,)
         records = read_topics(env, topics, bootstrap_servers, group_id=stage.name, bounded=bounded)
         outputs, late = ace_stage.build_flink(stage, records)
+        # Stages in one job that read the same topic (S7's hourly and daily branches)
+        # each check its records. Only the first one reports an invalid input record,
+        # so it reaches errors.invalid once. Input errors carry the failed topic as key.
+        repeated = frozenset(contracts.topic(name).name for name in topics) & checked_inputs
+        if repeated:
+            invalid = contracts.INVALID_TOPIC
+            outputs = (outputs.filter(lambda out, skip=repeated: not (out[0] == invalid and out[1] in skip))
+                       .uid(f"{stage.name}/skip-repeated-input-errors"))
+        checked_inputs.update(contracts.topic(name).name for name in topics)
         write_topics(outputs, bootstrap_servers, stage.name)
         if late is not None:
             # The late stream only counts late records (late_records_total); this sink
@@ -340,25 +350,36 @@ def load_stage(spec: str, kwargs: dict[str, str] | None = None) -> Any:
     """'module:Class' -> a stage instance, e.g. 's4_demand_frequency.stage:DemandFrequency'.
 
     kwargs are passed to the class, for stages with constructor settings, e.g.
-    {'period': 'daily'} for S7's daily branch.
+    {'period': 'daily'} for S7's daily branch. Settings can also follow the spec
+    after a '?', comma-separated, e.g. 's7_threat_frequency.stage:ThreatFrequencyStage?period=daily',
+    so several stages in one job can each have their own.
 
     Stage packages live in streaming/. Run from the repository root, that folder
     is searched as well, so the same command works from the root and from streaming/.
     """
+    spec, _, settings = spec.partition("?")
     module_name, sep, class_name = spec.partition(":")
     if not sep or not module_name or not class_name:
         raise ValueError(f"expected module:Class, got {spec!r}")
+    inline = dict(_setting(text) for text in settings.split(",")) if settings else {}
     streaming = str(Path.cwd() / "streaming")
     if Path(streaming).is_dir() and streaming not in sys.path:
         sys.path.append(streaming)
-    return getattr(importlib.import_module(module_name), class_name)(**(kwargs or {}))
+    return getattr(importlib.import_module(module_name), class_name)(**{**inline, **(kwargs or {})})
+
+
+def _setting(text: str) -> tuple[str, str]:
+    name, sep, value = text.partition("=")
+    if not sep or not name:
+        raise ValueError(f"expected NAME=VALUE, got {text!r}")
+    return name, value
 
 
 def _stage_arg(text: str) -> tuple[str, str]:
-    name, sep, value = text.partition("=")
-    if not sep or not name:
-        raise argparse.ArgumentTypeError(f"expected NAME=VALUE, got {text!r}")
-    return name, value
+    try:
+        return _setting(text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from None
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -366,6 +387,7 @@ def main(argv: list[str] | None = None) -> None:
                                      description="Run a stream stage, or several in one job, on Kafka.")
     parser.add_argument("stages", nargs="+", metavar="stage",
                         help="module:Class, e.g. s4_demand_frequency.stage:DemandFrequency; "
+                             "settings may follow after '?', e.g. ...:ThreatFrequencyStage?period=daily; "
                              "name several to run them in one job")
     parser.add_argument("--bounded", action="store_true",
                         help="process what is in the input topics now, then stop")
@@ -375,7 +397,7 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--arg", dest="stage_args", type=_stage_arg, action="append", default=[],
                         metavar="NAME=VALUE",
                         help="a setting passed to the stage class, e.g. --arg period=daily; repeatable; "
-                             "only with a single stage")
+                             "only with a single stage (with several, put settings after '?' in each)")
     args = parser.parse_args(argv)
     if args.stage_args and len(args.stages) > 1:
         parser.error("--arg works with a single stage only")
