@@ -179,7 +179,10 @@ def write_topics(outputs: Any, bootstrap_servers: str, stage_name: str = "ace") 
     Records are written without a Kafka key. PyFlink can only serialise the whole
     record as the key, not one field of it. Nothing downstream reads the key:
     stages group by the record's own country field and the Cassandra sink ignores
-    it. The agents, which publish the raw topics, still set the key.
+    it. The agents, which publish the raw topics, still set the key. Without a key,
+    a topic with several partitions would spread one country's records over all
+    of them, so the agg.* and alerts.* topics, which S6 and S8 need in order per
+    country, have one partition (deploy/kafka/create-topics.sh).
 
     stage_name makes the operator uids unique when several stages share one job.
     """
