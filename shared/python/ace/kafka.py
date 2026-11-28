@@ -27,6 +27,7 @@ import argparse
 import hashlib
 import importlib
 import os
+import re
 import sys
 import tempfile
 import urllib.request
@@ -157,14 +158,17 @@ def read_topics(env: Any, topics: Iterable[str], bootstrap_servers: str, group_i
                    .set_value_only_deserializer(SimpleStringSchema()))
         if bounded:
             builder.set_bounded(KafkaOffsetsInitializer.latest())
-        # Event time and watermarks are assigned later, by build_flink.
-        records = env.from_source(builder.build(), WatermarkStrategy.no_watermarks(), f"Kafka {topic}")
-        streams.append(records.map(lambda text, topic=topic: (topic, text), output_type=pair))
+        # Event time and watermarks are assigned later, by build_flink. The uids tie
+        # the saved offsets to the stage and topic, not to the operator's place in the job.
+        records = (env.from_source(builder.build(), WatermarkStrategy.no_watermarks(), f"Kafka {topic}")
+                   .uid(f"{group_id}/kafka-source/{topic}"))
+        streams.append(records.map(lambda text, topic=topic: (topic, text), output_type=pair)
+                       .uid(f"{group_id}/topic-name/{topic}"))
     first, *rest = streams
     return first.union(*rest) if rest else first
 
 
-def write_topics(outputs: Any, bootstrap_servers: str) -> Any:
+def write_topics(outputs: Any, bootstrap_servers: str, stage_name: str = "ace") -> Any:
     """Write ace.stage.build_flink's (topic, key, JSON text) outputs to Kafka, each to its own topic.
 
     The topic comes from each output, so one sink serves a stage's results and
@@ -175,7 +179,12 @@ def write_topics(outputs: Any, bootstrap_servers: str) -> Any:
     Records are written without a Kafka key. PyFlink can only serialise the whole
     record as the key, not one field of it. Nothing downstream reads the key:
     stages group by the record's own country field and the Cassandra sink ignores
-    it. The agents, which publish the raw topics, still set the key.
+    it. The agents, which publish the raw topics, still set the key. Without a key,
+    a topic with several partitions would spread one country's records over all
+    of them, so the agg.* and alerts.* topics, which S6 and S8 need in order per
+    country, have one partition (deploy/kafka/create-topics.sh).
+
+    stage_name makes the operator uids unique when several stages share one job.
     """
     from pyflink.common import Row, Types
     from pyflink.common.serialization import SerializationSchema, SimpleStringSchema
@@ -183,8 +192,9 @@ def write_topics(outputs: Any, bootstrap_servers: str) -> Any:
     from pyflink.datastream.connectors.kafka import KafkaRecordSerializationSchema, KafkaSink
     from pyflink.java_gateway import get_gateway
 
-    rows = outputs.map(lambda output: Row(output[0], output[2]),
-                       output_type=Types.ROW([Types.STRING(), Types.STRING()]))
+    rows = (outputs.map(lambda output: Row(output[0], output[2]),
+                        output_type=Types.ROW([Types.STRING(), Types.STRING()]))
+            .uid(f"{stage_name}/kafka-rows"))
     # The topic selector picks the topic from column 0; this writes only column 1,
     # the JSON text. PyFlink has no Python class for it, so the Java one is used.
     value_only = SerializationSchema(
@@ -198,63 +208,208 @@ def write_topics(outputs: Any, bootstrap_servers: str) -> Any:
                                    .build())
             .set_delivery_guarantee(DeliveryGuarantee.AT_LEAST_ONCE)
             .build())
-    return rows.sink_to(sink).name("Kafka sink")
+    return rows.sink_to(sink).name("Kafka sink").uid(f"{stage_name}/kafka-sink")
 
 
-def build_job(stage: Any, bootstrap_servers: str, bounded: bool = False) -> Any:
-    """A Flink job that runs stage between Kafka topics: its input topics in, its outputs out.
+def job_name(stages: Any, job: str | None = None) -> str:
+    """The name of a job: `job` if given, else the name of its only stage.
 
-    The consumer group is the stage's name, so a restarted job continues where
-    it stopped. An unbounded job saves a checkpoint every CHECKPOINT_MS, with the
-    stage's state and the Kafka offsets it has processed.
+    The checkpoint folder is named after the job, not after its stages, so
+    adding a stage to a job or removing one keeps the other stages' state. A job
+    with several stages therefore needs its own name.
     """
+    listed = _as_list(stages)
+    if job is None:
+        if len(listed) > 1:
+            raise ValueError("a job with several stages needs a job name (--job)")
+        return listed[0].name
+    # Only characters that a file:// URI keeps as they are: Flink creates the folder
+    # exactly as the URI spells it, so an escaped character (e.g. %2B for "+") would
+    # put it where latest_checkpoint() never looks.
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", job):
+        raise ValueError(f"a job name may only hold letters, digits, '-' and '_', got {job!r}")
+    return job
+
+
+def checkpoint_dir(stages: Any, job: str | None = None) -> str:
+    """Where an unbounded job saves its checkpoints, as a file:// URI.
+
+    One folder per job, named after job_name(), under ACE_CHECKPOINT_DIR
+    (default ~/.cache/ace/checkpoints). Without a folder Flink keeps
+    checkpoints in memory, where a job's state may be at most 5 MB.
+    """
+    return _checkpoint_folder(stages, job).as_uri()
+
+
+def _checkpoint_folder(stages: Any, job: str | None) -> Path:
+    configured = os.environ.get("ACE_CHECKPOINT_DIR")
+    base = Path(configured) if configured else Path.home() / ".cache" / "ace" / "checkpoints"
+    return (base / job_name(stages, job)).resolve()
+
+
+def latest_checkpoint(stages: Any, job: str | None = None) -> str | None:
+    """The newest complete checkpoint of this job, as a file:// URI, or None.
+
+    Flink puts each run's checkpoints in <checkpoint_dir>/<run id>/chk-<n>, and
+    writes chk-<n>/_metadata last, so a folder without it was never finished
+    (for example, the container stopped while writing it).
+    """
+    finished = _checkpoint_folder(stages, job).glob("*/chk-*/_metadata")
+    newest = max(finished, key=lambda metadata: metadata.stat().st_mtime, default=None)
+    return newest.parent.as_uri() if newest else None
+
+
+def _as_list(stages: Any) -> list[Any]:
+    listed = list(stages) if isinstance(stages, (list, tuple)) else [stages]
+    if not listed:
+        raise ValueError("needs at least one stage")
+    names = [stage.name for stage in listed]
+    if len(set(names)) != len(names):
+        raise ValueError(f"stage names must be unique in one job, got {names}")
+    return listed
+
+
+def build_job(stages: Any, bootstrap_servers: str, bounded: bool = False,
+              job: str | None = None) -> Any:
+    """A Flink job that runs one stage, or several side by side, between Kafka topics.
+
+    Each stage reads its own input topics and writes its own outputs, exactly as
+    when it runs alone. Running several stages in one job shares one Java
+    process, which saves memory on a small machine.
+
+    An unbounded job saves a checkpoint every CHECKPOINT_MS, with the stages'
+    state and the Kafka offsets they have processed, to checkpoint_dir(), and
+    starts from latest_checkpoint() when there is one. So a restarted job
+    continues where it stopped, state included. Without a checkpoint each stage
+    starts from its consumer group's committed offsets, with empty state. An
+    unbounded job with several stages needs a `job` name for its checkpoints.
+    """
+    # Check the stages and the job name first, so a wrong call fails the same way
+    # with or without Flink installed, as in read_topics.
+    stages = _as_list(stages)
+    if not bounded:
+        job_name(stages, job)
+
+    from pyflink.common import Configuration
+
     from ace import stage as ace_stage
 
     env = ace_stage.flink_env()
     add_connector(env)
-    for root in {ace_stage._import_root(type(stage).__module__), ace_stage._import_root(contracts.__name__)}:
-        env.add_python_file(root)  # so Flink's Python workers can import the stage and ace
+    roots = {ace_stage._import_root(contracts.__name__)}
+    roots.update(ace_stage._import_root(type(stage).__module__) for stage in stages)
+    for root in roots:
+        env.add_python_file(root)  # so Flink's Python workers can import the stages and ace
     if not bounded:
         env.enable_checkpointing(CHECKPOINT_MS)
-    topics = stage.inputs if isinstance(stage, ace_stage.RecordStage) else (stage.input,)
-    records = read_topics(env, topics, bootstrap_servers, group_id=stage.name, bounded=bounded)
-    outputs, late = ace_stage.build_flink(stage, records)
-    write_topics(outputs, bootstrap_servers)
-    if late is not None:
-        # The late stream only counts late records (late_records_total); this sink
-        # writes nothing but makes Flink run that count.
-        late.filter(lambda _: False).print()
+        # Files, not the default in-memory storage: its 5 MB limit made every S8
+        # checkpoint fail once S8 held one model per country.
+        checkpoints = Configuration()
+        checkpoints.set_string("execution.checkpointing.storage", "filesystem")
+        checkpoints.set_string("execution.checkpointing.dir", checkpoint_dir(stages, job))
+        # Keep the last checkpoint when the job stops, so the next start can use it.
+        checkpoints.set_string("execution.checkpointing.externalized-checkpoint-retention",
+                               "RETAIN_ON_CANCELLATION")
+        restore = latest_checkpoint(stages, job)
+        if restore:
+            checkpoints.set_string("execution.state-recovery.path", restore)
+            # The new run owns the checkpoint and deletes it once it has a newer one.
+            checkpoints.set_string("execution.state-recovery.claim-mode", "CLAIM")
+            # State of a stage no longer in this job is dropped instead of blocking
+            # the start; the operator uids match the rest to their stages.
+            checkpoints.set_string("execution.state-recovery.ignore-unclaimed-state", "true")
+            print(f"Restoring from {restore}", flush=True)
+        env.configure(checkpoints)
+    checked_inputs: set[str] = set()
+    for stage in stages:
+        topics = stage.inputs if isinstance(stage, ace_stage.RecordStage) else (stage.input,)
+        records = read_topics(env, topics, bootstrap_servers, group_id=stage.name, bounded=bounded)
+        outputs, late = ace_stage.build_flink(stage, records)
+        # Stages in one job that read the same topic (S7's hourly and daily branches)
+        # each check its records. Only the first one reports an invalid input record,
+        # so it reaches errors.invalid once. Input errors carry the failed topic as key.
+        repeated = frozenset(contracts.topic(name).name for name in topics) & checked_inputs
+        if repeated:
+            invalid = contracts.INVALID_TOPIC
+            outputs = (outputs.filter(lambda out, skip=repeated: not (out[0] == invalid and out[1] in skip))
+                       .uid(f"{stage.name}/skip-repeated-input-errors"))
+        checked_inputs.update(contracts.topic(name).name for name in topics)
+        write_topics(outputs, bootstrap_servers, stage.name)
+        if late is not None:
+            # The late stream only counts late records (late_records_total); this sink
+            # writes nothing but makes Flink run that count.
+            late.filter(lambda _: False).uid(f"{stage.name}/late-drop").print().uid(f"{stage.name}/late-print")
     return env
 
 
-def run_on_kafka(stage: Any, bootstrap_servers: str | None = None, bounded: bool = False) -> None:
-    """Run stage on Kafka until it is stopped, or, if bounded, until its input topics are read."""
+def run_on_kafka(stages: Any, bootstrap_servers: str | None = None, bounded: bool = False,
+                 job: str | None = None) -> None:
+    """Run one stage, or several in one job, on Kafka until stopped, or, if bounded, until the inputs are read."""
+    stages = _as_list(stages)
     servers = bootstrap_servers or os.environ.get("KAFKA_BOOTSTRAP_SERVERS", DEFAULT_BOOTSTRAP_SERVERS)
-    build_job(stage, servers, bounded).execute(f"ace {stage.name}")
+    label = job or ", ".join(stage.name for stage in stages)
+    build_job(stages, servers, bounded, job).execute(f"ace {label}")
 
 
-def load_stage(spec: str) -> Any:
+def load_stage(spec: str, kwargs: dict[str, str] | None = None) -> Any:
     """'module:Class' -> a stage instance, e.g. 's4_demand_frequency.stage:DemandFrequency'.
+
+    kwargs are passed to the class, for stages with constructor settings, e.g.
+    {'period': 'daily'} for S7's daily branch. Settings can also follow the spec
+    after a '?', comma-separated, e.g. 's7_threat_frequency.stage:ThreatFrequencyStage?period=daily',
+    so several stages in one job can each have their own.
 
     Stage packages live in streaming/. Run from the repository root, that folder
     is searched as well, so the same command works from the root and from streaming/.
     """
+    spec, _, settings = spec.partition("?")
     module_name, sep, class_name = spec.partition(":")
     if not sep or not module_name or not class_name:
         raise ValueError(f"expected module:Class, got {spec!r}")
+    inline = dict(_setting(text) for text in settings.split(",")) if settings else {}
     streaming = str(Path.cwd() / "streaming")
     if Path(streaming).is_dir() and streaming not in sys.path:
         sys.path.append(streaming)
-    return getattr(importlib.import_module(module_name), class_name)()
+    return getattr(importlib.import_module(module_name), class_name)(**{**inline, **(kwargs or {})})
+
+
+def _setting(text: str) -> tuple[str, str]:
+    name, sep, value = text.partition("=")
+    if not sep or not name:
+        raise ValueError(f"expected NAME=VALUE, got {text!r}")
+    return name, value
+
+
+def _stage_arg(text: str) -> tuple[str, str]:
+    try:
+        return _setting(text)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(str(error)) from None
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(prog="python -m ace.kafka", description="Run a stream stage on Kafka.")
-    parser.add_argument("stage", help="module:Class, e.g. s4_demand_frequency.stage:DemandFrequency")
+    parser = argparse.ArgumentParser(prog="python -m ace.kafka",
+                                     description="Run a stream stage, or several in one job, on Kafka.")
+    parser.add_argument("stages", nargs="+", metavar="stage",
+                        help="module:Class, e.g. s4_demand_frequency.stage:DemandFrequency; "
+                             "settings may follow after '?', e.g. ...:ThreatFrequencyStage?period=daily; "
+                             "name several to run them in one job")
     parser.add_argument("--bounded", action="store_true",
                         help="process what is in the input topics now, then stop")
+    parser.add_argument("--job", metavar="NAME",
+                        help="the job's name, which names its checkpoint folder; needed with several "
+                             "stages unless --bounded, defaults to the stage's name with one")
+    parser.add_argument("--arg", dest="stage_args", type=_stage_arg, action="append", default=[],
+                        metavar="NAME=VALUE",
+                        help="a setting passed to the stage class, e.g. --arg period=daily; repeatable; "
+                             "only with a single stage (with several, put settings after '?' in each)")
     args = parser.parse_args(argv)
-    run_on_kafka(load_stage(args.stage), bounded=args.bounded)
+    if args.stage_args and len(args.stages) > 1:
+        parser.error("--arg works with a single stage only")
+    if len(args.stages) > 1 and not args.bounded and args.job is None:
+        parser.error("--job NAME is needed to run several stages until stopped")
+    stages = [load_stage(spec, dict(args.stage_args)) for spec in args.stages]
+    run_on_kafka(stages, bounded=args.bounded, job=args.job)
 
 
 if __name__ == "__main__":

@@ -179,6 +179,166 @@ def test_load_stage_imports_module_and_class():
             kafka.load_stage(bad)
 
 
+class Periods(Counts):
+    """A stage with a constructor setting, like S7's period."""
+
+    def __init__(self, period="hourly"):
+        self.period = period
+
+
+def test_load_stage_passes_settings_to_the_class():
+    assert kafka.load_stage(f"{__name__}:Periods").period == "hourly"
+    assert kafka.load_stage(f"{__name__}:Periods", {"period": "daily"}).period == "daily"
+    # Settings after "?" let several stages in one job each have their own.
+    assert kafka.load_stage(f"{__name__}:Periods?period=daily").period == "daily"
+    with pytest.raises(ValueError, match="NAME=VALUE"):
+        kafka.load_stage(f"{__name__}:Periods?daily")
+
+
+def test_main_gives_each_stage_its_own_inline_settings(started):
+    kafka.main(["--job", "test-job", f"{__name__}:Periods?period=hourly", f"{__name__}:Periods?period=daily"])
+    assert [stage.period for stage in started["stages"]] == ["hourly", "daily"]
+
+
+class OtherCounts(Counts):
+    name = "test-other-counts"
+
+
+@pytest.fixture
+def started(monkeypatch):
+    """Replace run_on_kafka; returns the stages main() would have started."""
+    seen = {}
+    monkeypatch.setattr(kafka, "run_on_kafka",
+                        lambda stages, bounded=False, job=None: seen.update(stages=stages, job=job))
+    return seen
+
+
+def test_main_passes_arg_settings_to_the_stage(started):
+    kafka.main([f"{__name__}:Periods", "--arg", "period=daily"])
+    assert [stage.period for stage in started["stages"]] == ["daily"]
+    with pytest.raises(SystemExit):
+        kafka.main([f"{__name__}:Periods", "--arg", "no-equals-sign"])
+
+
+def test_main_starts_several_stages_in_one_job(started):
+    kafka.main([f"{__name__}:Counts", f"{__name__}:OtherCounts", "--job", "test-job"])
+    assert [stage.name for stage in started["stages"]] == ["test-counts", "test-other-counts"]
+    assert started["job"] == "test-job"
+
+
+def test_several_stages_need_a_job_name_unless_bounded(started):
+    with pytest.raises(SystemExit):
+        kafka.main([f"{__name__}:Counts", f"{__name__}:OtherCounts"])
+    assert "stages" not in started
+    kafka.main([f"{__name__}:Counts", f"{__name__}:OtherCounts", "--bounded"])   # no checkpoints
+    assert started["job"] is None
+
+
+def test_arg_settings_are_refused_with_several_stages(started):
+    with pytest.raises(SystemExit):
+        kafka.main([f"{__name__}:Counts", f"{__name__}:OtherCounts", "--arg", "period=daily"])
+    assert "stages" not in started
+
+
+def test_one_job_refuses_two_stages_with_the_same_name():
+    with pytest.raises(ValueError, match="unique"):
+        kafka.build_job([Counts(), Counts()], "localhost:9092")
+    with pytest.raises(ValueError, match="at least one stage"):
+        kafka.build_job([], "localhost:9092")
+    with pytest.raises(ValueError, match="needs a job name"):
+        kafka.build_job([Counts(), OtherCounts()], "localhost:9092")
+
+
+def test_checkpoints_go_to_one_folder_per_job(monkeypatch, tmp_path):
+    monkeypatch.setenv("ACE_CHECKPOINT_DIR", str(tmp_path))
+    assert kafka.checkpoint_dir(Counts()) == (tmp_path / "test-counts").resolve().as_uri()
+    several = kafka.checkpoint_dir([Counts(), OtherCounts()], job="test-job")
+    assert several == (tmp_path / "test-job").resolve().as_uri()
+    monkeypatch.delenv("ACE_CHECKPOINT_DIR")
+    assert kafka.checkpoint_dir(Counts()).endswith("/.cache/ace/checkpoints/test-counts")
+
+
+def test_a_job_with_several_stages_is_named_after_the_job_not_its_stages():
+    """So adding a stage to a job, or removing one, keeps the others' checkpoints."""
+    assert kafka.job_name(Counts()) == "test-counts"
+    assert kafka.job_name([Counts()], job="test-job") == "test-job"
+    assert kafka.job_name([Counts(), OtherCounts()], job="test-job") == "test-job"
+    with pytest.raises(ValueError, match="needs a job name"):
+        kafka.job_name([Counts(), OtherCounts()])
+    # Flink creates the folder exactly as the file:// URI spells it, escapes included
+    # (e.g. %2B for "+"), so a name with such a character would never be found again.
+    for bad in ["a+b", "a b", "../up", "", "-x"]:
+        with pytest.raises(ValueError, match="job name"):
+            kafka.job_name(Counts(), job=bad)
+
+
+def _checkpoint(folder: Path, run: str, number: int, finished: bool = True, mtime: float = 0) -> Path:
+    chk = folder / run / f"chk-{number}"
+    chk.mkdir(parents=True)
+    if finished:
+        (chk / "_metadata").write_bytes(b"x")
+        os.utime(chk / "_metadata", (mtime, mtime))
+    return chk
+
+
+def test_latest_checkpoint_is_the_newest_finished_one(monkeypatch, tmp_path):
+    monkeypatch.setenv("ACE_CHECKPOINT_DIR", str(tmp_path))
+    folder = tmp_path / "test-counts"
+    assert kafka.latest_checkpoint(Counts()) is None
+    _checkpoint(folder, "run-a", 7, mtime=1_000)
+    newest = _checkpoint(folder, "run-b", 2, mtime=2_000)   # a later run restarts the numbering
+    _checkpoint(folder, "run-b", 3, finished=False)          # being written when the job stopped
+    _checkpoint(tmp_path / "test-other-counts", "run-c", 9, mtime=3_000)   # another job's
+    assert kafka.latest_checkpoint(Counts()) == newest.resolve().as_uri()
+    # A job with several stages finds its checkpoints by its name, whichever stages it has now.
+    job = _checkpoint(tmp_path / "test-job", "run-d", 1, mtime=4_000)
+    assert kafka.latest_checkpoint([Counts(), OtherCounts()], job="test-job") == job.resolve().as_uri()
+    assert kafka.latest_checkpoint([Counts()], job="test-job") == job.resolve().as_uri()
+
+
+def _settings(env) -> dict:
+    return dict(env._j_stream_execution_environment.getConfiguration().toMap())
+
+
+@pytest.mark.flink
+def test_an_unbounded_job_saves_checkpoints_to_files(monkeypatch, tmp_path):
+    """In memory, a job's checkpoint may be at most 5 MB; S8's models are bigger."""
+    monkeypatch.setenv("ACE_CHECKPOINT_DIR", str(tmp_path))
+    settings = _settings(kafka.build_job(Counts(), "localhost:9092"))
+    assert settings["execution.checkpointing.storage"] == "filesystem"
+    assert settings["execution.checkpointing.dir"] == kafka.checkpoint_dir(Counts())
+    assert settings["execution.checkpointing.externalized-checkpoint-retention"] == "RETAIN_ON_CANCELLATION"
+    assert "execution.state-recovery.path" not in settings   # nothing to restore yet
+    assert "execution.checkpointing.dir" not in _settings(kafka.build_job(OtherCounts(), "localhost:9092", bounded=True))
+
+
+@pytest.mark.flink
+def test_an_unbounded_job_starts_from_its_latest_checkpoint(monkeypatch, tmp_path):
+    monkeypatch.setenv("ACE_CHECKPOINT_DIR", str(tmp_path))
+    chk = _checkpoint(tmp_path / "test-counts", "run-a", 4, mtime=1_000)
+    settings = _settings(kafka.build_job(Counts(), "localhost:9092"))
+    assert settings["execution.state-recovery.path"] == chk.resolve().as_uri()
+    assert settings["execution.state-recovery.claim-mode"] == "CLAIM"
+    assert settings["execution.state-recovery.ignore-unclaimed-state"] == "true"
+    # A bounded run (tests, backfills) never restores.
+    assert "execution.state-recovery.path" not in _settings(kafka.build_job(Counts(), "localhost:9092", bounded=True))
+
+
+@pytest.mark.flink
+def test_every_operator_with_state_has_a_uid_from_its_stage():
+    """A checkpoint's state is matched to operators by uid. Without one, Flink derives
+    the id from the operator's place in the job, so adding a stage to a job could
+    stop the others' state from being restored."""
+    env = kafka.build_job([Counts(), OtherCounts()], "localhost:9092", bounded=True)
+    nodes = env._generate_stream_graph(clear_transformations=False).getStreamNodes().toArray()
+    stateful = [node for node in nodes
+                if node.getStateKeySerializer() is not None or node.getOperatorName().startswith("Source: Kafka")]
+    uids = [node.getTransformationUID() for node in stateful]
+    assert len(stateful) == 2 * 3   # per stage: the Kafka source, the windows, the publish step
+    assert all(uid and uid.split("/")[0] in {"test-counts", "test-other-counts"} for uid in uids)
+    assert len(set(uids)) == len(uids)
+
+
 REPO = Path(__file__).resolve().parents[3]
 LOAD_S4 = ("from ace.kafka import load_stage; "
            "print(type(load_stage('s4_demand_frequency.stage:DemandFrequency')).__name__)")
@@ -203,3 +363,30 @@ def test_build_job_reads_the_input_topic_and_writes_to_kafka():
     nodes = [node["contents"] for node in json.loads(env.get_execution_plan())["nodes"]]
     assert "Source: Kafka skills.demand" in nodes
     assert nodes.count("Kafka sink: Writer") == 1
+
+    # Two stages in one job: each keeps its own Kafka source and sink.
+    env = kafka.build_job([Counts(), OtherCounts()], "localhost:9092", bounded=True)
+    nodes = [node["contents"] for node in json.loads(env.get_execution_plan())["nodes"]]
+    assert nodes.count("Source: Kafka skills.demand") == 2
+    assert nodes.count("Kafka sink: Writer") == 2
+
+
+@pytest.mark.flink
+def test_stages_sharing_an_input_report_its_invalid_records_once(monkeypatch):
+    """S7's hourly and daily branches both check threats.events; errors.invalid gets each bad event once."""
+    from pyflink.common import Types
+
+    pair = Types.TUPLE([Types.STRING(), Types.STRING()])
+    records = [("skills.demand", "{not json")]
+    outputs = []
+    # Kafka itself is replaced: each stage reads the list and its outputs are collected.
+    monkeypatch.setattr(kafka, "read_topics",
+                        lambda env, topics, servers, group_id, bounded=False:
+                        env.from_collection(records, type_info=pair))
+    monkeypatch.setattr(kafka, "write_topics",
+                        lambda stream, servers, stage_name="ace": outputs.append(stream))
+    kafka.build_job([Counts(), OtherCounts()], "localhost:9092", bounded=True)
+    rows = outputs[0].union(outputs[1]).map(lambda out: (out[0], out[1]), output_type=pair)
+    with rows.execute_and_collect() as results:
+        invalid = [tuple(row) for row in results if row[0] == "errors.invalid"]
+    assert invalid == [("errors.invalid", "skills.demand")]

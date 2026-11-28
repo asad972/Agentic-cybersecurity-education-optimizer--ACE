@@ -63,7 +63,7 @@ configMapGenerator:
     literals:
       - CLUSTER_ID=MkU3OEVBNTcwNTJENDM2Qk
       - BROKERS=3                       # must match the StatefulSet replicas
-      - PARTITIONS=3                    # partitions per ACE topic
+      - PARTITIONS=3                    # partitions per ACE topic; agg.* and alerts.* always get 1
       - KAFKA_DEFAULT_REPLICATION_FACTOR=3
       - KAFKA_MIN_INSYNC_REPLICAS=2
       - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=3

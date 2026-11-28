@@ -322,7 +322,9 @@ def build_flink(stage: WindowedStage | RecordStage, stream):
                 bad = contracts.invalid_record(topic, name, reason, record)
                 yield invalid_tag, as_tuple(contracts.Outgoing(contracts.INVALID_TOPIC, topic, bad))
 
-    checked = stream.process(CheckInput(), output_type=pickled)
+    # Every operator gets a uid from the stage name, so a checkpoint's state is matched
+    # to its stage even when the job around it changes (e.g. a stage is added to it).
+    checked = stream.process(CheckInput(), output_type=pickled).uid(f"{name}/check-input")
     invalid = checked.get_side_output(invalid_tag)
 
     if isinstance(stage, RecordStage):
@@ -340,7 +342,7 @@ def build_flink(stage: WindowedStage | RecordStage, stream):
                 self.memory.update(memory)
 
         outputs = (checked.key_by(lambda item: stage.key(*item), key_type=Types.STRING())
-                   .process(Process(), output_type=out_type))
+                   .process(Process(), output_type=out_type).uid(f"{name}/process"))
         return outputs.union(invalid), None
 
     class EventTime(TimestampAssigner):
@@ -390,15 +392,16 @@ def build_flink(stage: WindowedStage | RecordStage, stream):
     watermarks = (WatermarkStrategy
                   .for_bounded_out_of_orderness(Duration.of_millis(_ms(stage.grace)))
                   .with_timestamp_assigner(EventTime()))
-    windows = (checked.assign_timestamps_and_watermarks(watermarks)
+    windows = (checked.assign_timestamps_and_watermarks(watermarks).uid(f"{name}/event-time")
                .key_by(lambda item: stage.key(item[1]), key_type=Types.STRING())
                .window(TumblingEventTimeWindows.of(Time.milliseconds(_ms(stage.window))))
                .side_output_late_data(late_tag)
                .aggregate(Accumulate(), window_function=Closed(),
-                          accumulator_type=pickled, output_type=pickled))
+                          accumulator_type=pickled, output_type=pickled)
+               .uid(f"{name}/windows"))
     outputs = (windows.key_by(lambda closed: closed[0], key_type=Types.STRING())
-               .process(Publish(), output_type=out_type))
-    late = windows.get_side_output(late_tag).map(CountLate(), output_type=pickled)
+               .process(Publish(), output_type=out_type).uid(f"{name}/publish"))
+    late = windows.get_side_output(late_tag).map(CountLate(), output_type=pickled).uid(f"{name}/count-late")
     return outputs.union(invalid), late
 
 

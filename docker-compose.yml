@@ -113,6 +113,78 @@ services:
       CASSANDRA_KEYSPACE: ace
     restart: on-failure
 
+  # Live threat collector (M4). It needs OTX_API_KEY and ABUSEIPDB_API_KEY in .env,
+  # so it is in the "live" profile: add COMPOSE_PROFILES=live to .env to start it with
+  # the rest. It polls both feeds every six hours and follows tasks.collect.
+  threat-agent:
+    build:
+      context: .
+      dockerfile: agents/threat/Dockerfile
+    container_name: ace-threat-agent
+    profiles: [live]
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      OTX_API_KEY: ${OTX_API_KEY:-}
+      ABUSEIPDB_API_KEY: ${ABUSEIPDB_API_KEY:-}
+    volumes:
+      - threat-state:/state
+    restart: on-failure
+
+  # Stream stages, each a Flink job on Kafka from the shared image in streaming/Dockerfile.
+  # The consumer group is the stage name, so a restarted stage continues where it stopped.
+  # S7's hourly and daily branches run in one job, so an invalid threat event is
+  # reported to errors.invalid once, and the two share one Java process.
+  s7-threat-frequency:
+    &stage
+    build:
+      context: .
+      dockerfile: streaming/Dockerfile
+    image: ace-stage
+    container_name: ace-s7
+    command:
+      - --job
+      - s7-threat-frequency
+      - s7_threat_frequency.stage:ThreatFrequencyStage?period=hourly
+      - s7_threat_frequency.stage:ThreatFrequencyStage?period=daily
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    # Checkpoints, one folder per job (ACE_CHECKPOINT_DIR in the image).
+    volumes:
+      - stage-checkpoints:/checkpoints
+    restart: on-failure
+
+  s8-threat-bursts:
+    <<: *stage
+    container_name: ace-s8
+    command: ["s8_threat_bursts.stage:ThreatBurstStage"]
+
+  # The job-ad and profile stages S1–S6, S9 and S10 run side by side in one Flink job.
+  # Each keeps its own topics and consumer group, but they share one Java process:
+  # about 700 MB instead of about 700 MB per stage. The checkpoints are named after
+  # the job (--job), so adding a stage here or removing one keeps the others' state.
+  job-stages:
+    <<: *stage
+    container_name: ace-job-stages
+    command:
+      - --job
+      - job-stages
+      - s1_dedup.stage:S1DedupStage
+      - s2_skill_extraction.stage:S2SkillExtractionStage
+      - s3_top10.stage:TopTen
+      - s4_demand_frequency.stage:DemandFrequency
+      - s5_supply_frequency.stage:SupplyFrequency
+      - s6_drift.stage:DemandDrift
+      - s9_emerging_skills.stage:EmergingSkillsStage
+      - s10_hiring_companies.stage:HiringCompaniesStage
+
 volumes:
   kafka-data:
   cassandra-data:
+  threat-state:
+  stage-checkpoints:
