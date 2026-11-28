@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import pickle
 import logging
 import threading
 import time
@@ -520,6 +521,9 @@ def test_anthropic_adapter_counts_the_structured_request_and_parses_response():
         api.messages.count_kwargs["output_config"]
         == api.messages.create_kwargs["output_config"]
     )
+    schema = api.messages.create_kwargs["output_config"]["format"]["schema"]
+    assert schema["additionalProperties"] is False
+    assert "additionalProperties" not in request.response_model.model_json_schema()
     assert api.messages.create_kwargs["max_tokens"] == 10
     assert api.messages.create_kwargs["system"] == "system"
 
@@ -573,3 +577,53 @@ def test_cache_rejects_corrupt_answer_without_calling_provider():
     with pytest.raises(LLMResponseError):
         generate(make_client(settings, provider, store))
     assert provider.calls == 0
+
+def test_in_memory_store_and_default_clock_client_pickle_roundtrip() -> None:
+    store = InMemoryLLMStore()
+    cached_record = CacheRecord(
+        answer='{"value": "cached"}',
+        provider="local",
+        model="qwen3:4b",
+        cost_eur=Decimal("0"),
+        input_tokens=5,
+        output_tokens=3,
+        created_at=NOW,
+    )
+    store.put_cache("skill_extraction", "hash-1", cached_record)
+    token = uuid.uuid4()
+    claim = store.try_claim(
+        "skill_extraction", "hash-2", token, NOW, NOW + timedelta(seconds=30)
+    )
+    assert claim.acquired is True
+    assert store.reserve_budget(NOW.date(), Decimal("0.40"), Decimal("0.25")) is True
+
+    restored_store = pickle.loads(pickle.dumps(store))
+    assert restored_store.get_cache("skill_extraction", "hash-1") == cached_record
+    assert (
+        restored_store.try_claim(
+            "skill_extraction", "hash-2", uuid.uuid4(), NOW, NOW + timedelta(seconds=30)
+        ).acquired
+        is False
+    )
+    assert restored_store.reserve_budget(NOW.date(), Decimal("0.40"), Decimal("0.20")) is False
+    assert restored_store.reserve_budget(NOW.date(), Decimal("0.40"), Decimal("0.15")) is True
+    restored_store.release_budget(NOW.date(), Decimal("0.40"))
+
+    settings = LLMSettings.from_env(
+        {
+            "LLM_PROVIDER": "local",
+            "LLM_LOCAL_URL": "http://ollama:11434",
+            "LLM_LOCAL_MODEL": "qwen3:4b",
+        }
+    )
+    provider = ScriptedProvider([ProviderResponse('{"value": "ok"}', 4, 2)])
+    client = LLMClient(settings, InMemoryLLMStore(), provider)
+    restored_client = pickle.loads(pickle.dumps(client))
+    result = restored_client.generate(
+        task="skill_extraction",
+        prompt_version="v1",
+        system_prompt="Return JSON.",
+        prompt="Extract value",
+        response_model=Answer,
+    )
+    assert result.value == Answer(value="ok")

@@ -1,10 +1,21 @@
+from dataclasses import dataclass
+
 import pytest
 
 from ace_gap.calculation import calculate_gap, calculate_role_relations
-from ace_gap.taxonomy import Taxonomy
 
 
-TAXONOMY = Taxonomy(
+@dataclass(frozen=True)
+class TaxonomyFixture:
+    skills: tuple[str, ...]
+    roles: tuple[str, ...]
+    skill_roles: tuple[tuple[str, tuple[str, ...]], ...]
+
+    def roles_for(self, skill: str) -> tuple[str, ...]:
+        return dict(self.skill_roles)[skill]
+
+
+TAXONOMY = TaxonomyFixture(
     skills=("Alpha", "Beta", "Delta", "Gamma"),
     roles=("Architect", "Implementer", "Researcher"),
     skill_roles=(
@@ -57,7 +68,7 @@ def test_role_relations_are_ordered_symmetric_jaccard_pairs():
 
 def test_role_top_ten_uses_positive_demand_and_deterministic_ties():
     skills = tuple(f"Skill {index:02d}" for index in range(12))
-    taxonomy = Taxonomy(
+    taxonomy = TaxonomyFixture(
         skills=skills,
         roles=("A", "B"),
         skill_roles=tuple((skill, ("A", "B") if index == 0 else ("A",)) for index, skill in enumerate(skills)),

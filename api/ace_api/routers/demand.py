@@ -1,35 +1,46 @@
 """Skills demand dashboard endpoints (M2, issue #23).
 
 Every endpoint reads Cassandra with prepared statements, one bounded
-partition per query. Driver classes are never imported here, so the module
-loads on Windows and in tests that use a fake session.
+partition per query. Only the session passed in by the app is used, so the
+endpoints run in tests with a fake session.
 """
 from datetime import date, datetime, timedelta, timezone
 import logging
 from threading import Lock
+from time import monotonic
 from typing import Annotated, Literal
 import weakref
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
+from ..countries import COUNTRIES
+
 log = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Skills demand"])
 
 # Skills Scope: EU27, the EEA countries outside the EU, the UK and Switzerland.
-SKILLS_SCOPE = (
-    "AT", "BE", "BG", "CY", "CZ", "DE", "DK", "EE", "ES", "FI", "FR", "GR", "HR", "HU",
-    "IE", "IT", "LT", "LU", "LV", "MT", "NL", "PL", "PT", "RO", "SE", "SI", "SK",
-    "IS", "LI", "NO",
-    "GB", "CH",
-)
+# The same list as the Europe map and /map/meta.
+SKILLS_SCOPE = tuple(COUNTRIES)
 # How many days before a starting day /demand/latest-day looks for data.
 LATEST_DAY_LOOKBACK = 31
 # How many days before the requested day /top10 looks for a Top 10.
 TOP10_LOOKBACK = 30
 # Most items read from one demand_by_day partition (one Country, day and kind).
 ITEMS_LIMIT = 5000
+# Seconds one read may take, as in map_data.
+READ_TIMEOUT = 5
+# Seconds all reads of one request may take together. Some endpoints read up to 32
+# partitions one after another, so without a total a slow Cassandra could keep a
+# worker thread busy for minutes. Kept below nginx's 30 s proxy_read_timeout.
+REQUEST_BUDGET = 25
+# Seconds preparing one statement may take: the session's default_timeout in
+# database.py. A prepare only starts when this much of the budget is left.
+PREPARE_TIMEOUT = 5
+# A read whose timeout the budget capped fails a moment before or after the
+# deadline; failing within this many seconds of it counts as running out of time.
+BUDGET_SLACK = 0.1
 
 CQL = {
     "top10": "SELECT rank, item, count FROM top10 WHERE country = ? AND day = ? AND kind = ? LIMIT 10",
@@ -93,6 +104,10 @@ class _Unavailable(Exception):
     pass
 
 
+class _OutOfTime(Exception):
+    """The request used up REQUEST_BUDGET before its next read."""
+
+
 _prepared = weakref.WeakKeyDictionary()
 _prepared_lock = Lock()
 
@@ -115,27 +130,54 @@ def _session(request: Request):
         raise _Unavailable() from None
 
 
-def _statement(session, name: str):
+def _statement(session, name: str, deadline: float):
+    # The lock only guards the cache. Preparing is a network round trip, so it runs
+    # outside the lock: one slow prepare must not hold up every other request. Two
+    # requests may prepare the same statement at once; the first one stored is kept.
     with _prepared_lock:
-        statements = _prepared.setdefault(session, {})
-        if name not in statements:
-            statements[name] = session.prepare(CQL[name])
-        return statements[name]
+        statement = _prepared.setdefault(session, {}).get(name)
+    if statement is not None:
+        return statement
+    # Preparing takes up to PREPARE_TIMEOUT seconds that no read timeout covers,
+    # so only start it if the budget still has room.
+    if deadline - monotonic() < PREPARE_TIMEOUT:
+        raise _OutOfTime()
+    statement = session.prepare(CQL[name])
+    with _prepared_lock:
+        return _prepared.setdefault(session, {}).setdefault(name, statement)
 
 
 def _read(request: Request, reads):
-    """Run reads(query) where query(name, *values) returns the rows; 503 on database errors."""
+    """Run reads(query) where query(name, *values) returns the rows; 503 on database errors.
+
+    Each read may take READ_TIMEOUT seconds, and all reads together REQUEST_BUDGET seconds.
+    Running out of that budget is also a 503 (the dashboard reads 504 as "API
+    unreachable"), but with its own message, so a slow database isn't reported as down.
+    """
+    started = monotonic()
+    deadline = started + REQUEST_BUDGET
     try:
         session = _session(request)
 
         def query(name, *values):
-            return list(session.execute(_statement(session, name), values))
+            statement = _statement(session, name, deadline)
+            # Worked out after the prepare, so its time counts against the budget.
+            left = deadline - monotonic()
+            if left <= 0:
+                raise _OutOfTime()
+            return list(session.execute(statement, values, timeout=min(READ_TIMEOUT, left)))
 
         return reads(query)
     except HTTPException:
         raise
     except Exception as error:
-        log.warning("Demand read failed (%s)", type(error).__name__)
+        elapsed = monotonic() - started
+        # _OutOfTime, or the last read timed out because the budget capped its timeout.
+        if isinstance(error, _OutOfTime) or elapsed >= REQUEST_BUDGET - BUDGET_SLACK:
+            log.warning("Demand request ran out of its %d s budget after %.1f s (%s)",
+                        REQUEST_BUDGET, elapsed, type(error).__name__)
+            raise HTTPException(status_code=503, detail="Cassandra is too slow: the request ran out of time") from None
+        log.warning("Demand read failed after %.1f s (%s)", elapsed, type(error).__name__)
         raise HTTPException(status_code=503, detail="Cassandra is unavailable") from None
 
 

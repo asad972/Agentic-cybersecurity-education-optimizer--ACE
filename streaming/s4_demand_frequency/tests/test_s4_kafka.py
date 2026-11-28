@@ -1,7 +1,7 @@
 """S4 end to end on a real Kafka: fake job ads into skills.demand, Demand counts out of agg.demand_daily.
 
-Opt-in, because it writes to the local Compose Kafka: start the stack
-(docker compose up -d) and set ACE_KAFKA_TESTS=1. The ads use the made-up
+Opt-in, because it writes to the local Compose Kafka: start Kafka
+(docker compose up -d kafka kafka-init) and set ACE_KAFKA_TESTS=1. The ads use the made-up
 country ZZ and a random day decades ahead, so they never mix with real data.
 """
 

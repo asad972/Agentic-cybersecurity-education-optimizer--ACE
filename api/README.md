@@ -4,6 +4,8 @@ This release provides the API process, Cassandra connection lifecycle and router
 
 ## Run with Docker
 
+`docker compose up -d --build --wait` from the repository root starts the API together with the rest of the stack; see [Running the project](../README.md#running-the-project). The steps below start the API on its own. It uses the same port 8000, so if the full stack is running, first stop its API and dashboard with `docker compose stop api dashboard` (that dashboard only reaches the full stack's API). Kafka and Cassandra keep running. To use the dashboard with this API, start the dashboard alone as in [dashboard/README.md](../dashboard/README.md).
+
 From the repository root, start Cassandra and initialize the existing schema:
 
 ```bash
@@ -30,7 +32,7 @@ python -m uvicorn ace_api.main:app --reload --host 127.0.0.1 --port 8000
 
 Run tests from the repository root with `python -m pytest -q -c api/pyproject.toml api/tests`. Unit tests use fake connections and need no running database. Verify the real connection separately with `/ready` against the root Cassandra stack.
 
-Build the API alone with `docker build -t ace-api -f api/Dockerfile api` (the build context is `api/`).
+Build the API alone from the repository root with `docker build -t ace-api -f api/Dockerfile .` (the build context is the repository root so `shared/taxonomy` and `ace.ecsf` are included).
 
 ## Add a teammate router
 

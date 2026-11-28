@@ -12,22 +12,14 @@ from cassandra import DriverException
 from fastapi import HTTPException
 from pydantic import BaseModel, FiniteFloat
 
+from .countries import COUNTRIES  # noqa: F401 (also imported from here by the map routers)
+
 log = logging.getLogger(__name__)
 Metric = Literal["job_ads", "demand", "supply", "gap", "programmes", "companies", "threats"]
 # The one list of metrics stored per Skill: they need `item`. Served by /map/meta.
 ITEM_METRICS = frozenset({"demand", "supply", "gap"})
 # Metrics that also report countries outside the Europe map (world threat map, #40).
 WORLD_METRICS = frozenset({"threats"})
-COUNTRIES = dict(sorted({
-    "AT": "Austria", "BE": "Belgium", "BG": "Bulgaria", "HR": "Croatia",
-    "CY": "Cyprus", "CZ": "Czechia", "DK": "Denmark", "EE": "Estonia",
-    "FI": "Finland", "FR": "France", "DE": "Germany", "GR": "Greece",
-    "HU": "Hungary", "IE": "Ireland", "IT": "Italy", "LV": "Latvia",
-    "LT": "Lithuania", "LU": "Luxembourg", "MT": "Malta", "NL": "Netherlands",
-    "PL": "Poland", "PT": "Portugal", "RO": "Romania", "SK": "Slovakia",
-    "SI": "Slovenia", "ES": "Spain", "SE": "Sweden", "IS": "Iceland",
-    "LI": "Liechtenstein", "NO": "Norway", "GB": "United Kingdom", "CH": "Switzerland",
-}.items(), key=lambda item: item[1]))
 METRICS = {
     "job_ads": ("Job advertisements", "job ads", "daily",
                 "Deduplicated job advertisements on the selected UTC date."),

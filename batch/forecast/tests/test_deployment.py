@@ -10,12 +10,15 @@ def test_forecast_package_pins_lightgbm_sklearn_runtime():
     dependencies = tomllib.loads(content)["project"]["dependencies"]
     assert "lightgbm==4.7.0" in dependencies
     assert "scikit-learn==1.9.1" in dependencies
+    assert "cassandra-driver==3.30.1" not in dependencies
 
 
 def test_dockerfile_uses_root_context_python_311_and_libgomp():
     content = (ROOT / "batch" / "forecast" / "Dockerfile").read_text(encoding="utf-8")
     assert "FROM python:3.11-slim" in content
     assert "libgomp1" in content
+    assert "COPY shared/python" in content
+    assert 'ace-shared[batch]' in content
     assert "COPY batch/forecast/" in content
     assert '["python", "-m", "ace_forecast"]' in content
 

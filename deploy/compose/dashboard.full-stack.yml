@@ -1,0 +1,11 @@
+# Changes to dashboard/compose.yml when it starts with the root docker-compose.yml.
+# Inside the shared Docker network the dashboard reaches the API by service name.
+
+services:
+  dashboard:
+    container_name: ace-dashboard
+    environment:
+      ACE_API_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy

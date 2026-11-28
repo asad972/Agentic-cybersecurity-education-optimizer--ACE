@@ -1,0 +1,15 @@
+# Changes to api/compose.yml when it starts with the root docker-compose.yml.
+# Inside the shared Docker network the API reaches Cassandra and Kafka by service name.
+# The values are fixed here because the root .env holds localhost addresses for code
+# running outside Docker.
+
+services:
+  api:
+    container_name: ace-api
+    environment:
+      CASSANDRA_HOSTS: cassandra
+      CASSANDRA_PORT: "9042"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on:
+      cassandra-init:
+        condition: service_completed_successfully

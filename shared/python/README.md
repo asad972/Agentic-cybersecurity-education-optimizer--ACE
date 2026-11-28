@@ -9,6 +9,7 @@ Code every member needs, installed in every Python container (agents, stream sta
 | `ace.taxonomy` | Skill matcher: maps a mention to a Skill, Certification or Role from `shared/taxonomy/` by exact name or alias, ignoring case; anything else is unmapped. | M1 |
 | `ace.llm` | The only path to an LLM. Local open-source model (Qwen via Ollama) or hosted model (Claude Haiku 5.5), switched by `LLM_PROVIDER`, answers cached in the `llm_cache` table, retries, JSON answers checked, daily budget (`LLM_DAILY_BUDGET_EUR`). Recorded answers in tests. | M3 |
 | `ace.replay` | Replays a dataset into Kafka in event-time order at `REPLAY_SECONDS_PER_DAY`, resuming from `replay_position` after a restart. Each agent supplies only the row → message mapping. | M1 |
+| `ace.batch` | Shared Skills Scope, Cassandra settings and connection lifecycle, and calendar-month helpers for Forecast and Skills Gap. | M3 |
 
 Timeline:
 
@@ -31,6 +32,13 @@ The `stages` extra pins River to **0.23.0**. Both `dev` and `flink` include
 no separate S8 requirements install is needed. Contracts-only installations
 remain lightweight. For stage logic without Java, install
 `pip install -e "shared/python[dev]"` and run `pytest streaming -m "not flink"`.
+
+Batch jobs use the lightweight `batch` extra, which installs the pinned
+Cassandra driver without River or PyFlink:
+
+```powershell
+pip install -e "shared/python[batch]"
+```
 
 **Windows:** PyFlink starts its Python workers through a batch file that breaks when the virtual environment's path has spaces or brackets, as our repo folder name does. Keep the virtual environment in a folder without them, and don't put the repo in `PYTHONPATH`; `pip install -e` is enough. `ace.stage` stops with a clear message if either is wrong. Linux containers are not affected.
 
@@ -58,7 +66,7 @@ Subclass `WindowedStage` (counts per Country and window) or `RecordStage` (one r
 From the repository root (the same commands also work from `streaming/`):
 
 ```powershell
-docker compose up -d                                  # local Kafka and Cassandra
+docker compose up -d kafka kafka-init cassandra cassandra-init sink   # only Kafka, Cassandra and the sink
 $env:KAFKA_BOOTSTRAP_SERVERS = 'localhost:9092'       # the default
 python -m ace.kafka s4_demand_frequency.stage:DemandFrequency             # runs until stopped
 python -m ace.kafka s4_demand_frequency.stage:DemandFrequency --bounded   # reads what is there now, then stops
