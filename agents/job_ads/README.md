@@ -23,7 +23,7 @@ Per `CONTRIBUTING.md`, large datasets are kept outside this repository. Download
 ```powershell
 New-Item -ItemType Directory -Force -Path data/german-job-postings | Out-Null
 Invoke-WebRequest `
-  -Uri "[https://huggingface.co/api/datasets/mischeiwiller/german-job-postings/parquet/default/train/0.parquet](https://huggingface.co/api/datasets/mischeiwiller/german-job-postings/parquet/default/train/0.parquet)" `
+  -Uri "https://huggingface.co/api/datasets/mischeiwiller/german-job-postings/parquet/default/train/0.parquet" `
   -OutFile "data/german-job-postings/0.parquet"
 ```
 

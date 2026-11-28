@@ -541,7 +541,7 @@ export function RolePage() {
                           )}
                           {item.aliases.length > 0 && (
                             <p className="role-aliases">
-                              Aliases: {item.aliases.join(' Â· ')}
+                              Aliases: {item.aliases.join(' · ')}
                             </p>
                           )}
                         </li>
@@ -674,7 +674,7 @@ export function RolePage() {
                             <strong>{prog.name}</strong>
                             <span>
                               {prog.institution}
-                              {prog.level ? ` Â· ${prog.level}` : ''}
+                              {prog.level ? ` · ${prog.level}` : ''}
                             </span>
                           </div>
                           {prog.url && (
